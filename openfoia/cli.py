@@ -381,6 +381,151 @@ def request_status(
     console.print(table)
 
 
+@request_app.command("send")
+def request_send(
+    agency: str = typer.Option(..., "--agency", "-a", help="Target agency (name or abbreviation)"),
+    subject: str = typer.Option(..., "--subject", "-s", help="Request subject"),
+    body: Optional[str] = typer.Option(None, "--body", "-b", help="Request body text"),
+    body_file: Optional[Path] = typer.Option(None, "--file", "-f", help="File containing request body"),
+    template: Optional[str] = typer.Option(None, "--template", "-t", help="Use template (standard/self)"),
+    name: str = typer.Option(..., "--name", "-n", help="Your full name"),
+    email: str = typer.Option(..., "--email", "-e", help="Your email address"),
+    method: str = typer.Option("email", "--method", "-m", help="Delivery method (email only for now)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without sending"),
+):
+    """Send a FOIA request to an agency.
+    
+    Sends via email by default. Requires SMTP configuration.
+    
+    Examples:
+        # Send with inline body
+        openfoia request send -a FBI -s "Records on X" -b "I request..." -n "Jane Doe" -e jane@example.com
+        
+        # Send from file
+        openfoia request send -a EPA -s "Pollution data" -f request.txt -n "John Smith" -e john@example.com
+        
+        # Use template
+        openfoia request send -a DOJ -s "Contract records" -t standard -n "Jane Doe" -e jane@example.com
+        
+        # Dry run (preview without sending)
+        openfoia request send -a FBI -s "Test" -t standard -n "Test User" -e test@example.com --dry-run
+    """
+    import asyncio
+    from .db import get_db_path, get_session
+    from .models import Agency
+    from .gateways.email import EmailGateway
+    from .gateways.base import DeliveryPayload
+    
+    # Get agency from database
+    agency_name = agency
+    agency_email = None
+    
+    db_path = get_db_path()
+    if db_path.exists():
+        with get_session() as session:
+            found = session.query(Agency).filter(
+                (Agency.abbreviation.ilike(agency)) | (Agency.name.ilike(f"%{agency}%"))
+            ).first()
+            if found:
+                agency_name = found.name
+                agency_email = found.foia_email
+    
+    if not agency_email:
+        rprint(f"[red]No FOIA email found for '{agency}'. Specify with --to or add agency to database.[/red]")
+        raise typer.Exit(1)
+    
+    # Get body content
+    if template:
+        from .templates import standard_request, records_about_self, RequesterInfo, RequestDetails
+        
+        requester = RequesterInfo(name=name, email=email)
+        details = RequestDetails(subject=subject, description=subject)
+        
+        if template == "standard":
+            body = standard_request(requester=requester, agency_name=agency_name, details=details)
+        elif template == "self":
+            body = records_about_self(requester=requester, agency_name=agency_name, record_type=subject)
+        else:
+            rprint(f"[red]Unknown template '{template}'. Use: standard, self[/red]")
+            raise typer.Exit(1)
+    elif body_file:
+        body = body_file.read_text()
+    elif not body:
+        rprint("[yellow]Enter request body (Ctrl+D when done):[/yellow]")
+        import sys
+        body = sys.stdin.read()
+    
+    # Build payload
+    payload = DeliveryPayload(
+        recipient_name=f"FOIA Officer at {agency_name}",
+        recipient_address=agency_email,
+        subject=subject,
+        body=body,
+        return_address=f"{name}\n{email}",
+    )
+    
+    # Preview
+    rprint("\n[bold cyan]FOIA Request[/bold cyan]")
+    rprint("─" * 50)
+    rprint(f"[cyan]To:[/cyan] {agency_email}")
+    rprint(f"[cyan]Subject:[/cyan] FOIA Request: {subject}")
+    rprint(f"[cyan]From:[/cyan] {name} <{email}>")
+    rprint("─" * 50)
+    
+    if dry_run:
+        rprint("\n[yellow]DRY RUN - Request not sent[/yellow]")
+        rprint("\n[dim]Request body preview:[/dim]")
+        preview = body[:500] + "..." if len(body) > 500 else body
+        rprint(preview)
+        return
+    
+    # Check for SMTP config
+    config_path = Path.home() / ".openfoia" / "config.json"
+    if not config_path.exists():
+        rprint("[yellow]No config found. Run 'openfoia config --init' to set up SMTP.[/yellow]")
+        rprint("[dim]Or set environment variables: OPENFOIA_SMTP_USER, OPENFOIA_SMTP_PASSWORD[/dim]")
+        raise typer.Exit(1)
+    
+    # Load config
+    import os
+    smtp_user = os.environ.get('OPENFOIA_SMTP_USER')
+    smtp_password = os.environ.get('OPENFOIA_SMTP_PASSWORD')
+    
+    if not smtp_user or not smtp_password:
+        import json
+        config = json.loads(config_path.read_text())
+        smtp_config = config.get('email', {})
+        smtp_user = smtp_user or smtp_config.get('smtp_user')
+        smtp_password = smtp_password or smtp_config.get('smtp_password')
+    
+    if not smtp_user or not smtp_password:
+        rprint("[red]SMTP credentials not configured.[/red]")
+        rprint("[dim]Set OPENFOIA_SMTP_USER and OPENFOIA_SMTP_PASSWORD env vars[/dim]")
+        rprint("[dim]Or run 'openfoia config --init'[/dim]")
+        raise typer.Exit(1)
+    
+    # Send
+    gateway = EmailGateway(
+        smtp_user=smtp_user,
+        smtp_password=smtp_password,
+        from_email=email,
+        from_name=name,
+    )
+    
+    rprint("\n[cyan]Sending...[/cyan]")
+    result = asyncio.run(gateway.send(payload))
+    
+    if result.success:
+        rprint(f"[bold green]✓ Request sent![/bold green]")
+        rprint(f"  Reference: {result.reference_id}")
+        rprint(f"  Sent at: {result.sent_at}")
+        rprint(f"\n[dim]Save this reference to track your request.[/dim]")
+    else:
+        rprint(f"[bold red]✗ Failed to send[/bold red]")
+        rprint(f"  Error: {result.error_message}")
+        raise typer.Exit(1)
+
+
 # === Document Commands ===
 
 
