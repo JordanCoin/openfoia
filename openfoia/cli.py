@@ -21,6 +21,74 @@ app = typer.Typer(
 )
 
 
+# === Init Command ===
+
+
+@app.command()
+def init(
+    force: bool = typer.Option(False, "--force", "-f", help="Re-initialize even if database exists"),
+    no_seed: bool = typer.Option(False, "--no-seed", help="Don't seed agency data"),
+):
+    """Initialize the OpenFOIA database.
+    
+    Creates ~/.openfoia/ directory and initializes the SQLite database
+    with tables and seed data (federal agencies).
+    
+    Examples:
+        openfoia init                # Initialize with agency data
+        openfoia init --no-seed      # Initialize without seed data
+        openfoia init --force        # Re-initialize (WARNING: loses data)
+    """
+    from .db import get_data_dir, get_db_path, init_db, seed_agencies, get_engine
+    
+    data_dir = get_data_dir()
+    db_path = get_db_path()
+    
+    rprint("\n[bold green]🔒 OpenFOIA Initialization[/bold green]")
+    rprint("─" * 50)
+    
+    if db_path.exists() and not force:
+        rprint(f"[cyan]Database already exists:[/cyan] {db_path}")
+        rprint("[dim]Use --force to re-initialize (WARNING: loses data)[/dim]")
+        
+        # Show stats
+        from .db import get_session
+        from .models import Agency, Request, Document
+        
+        with get_session() as session:
+            agency_count = session.query(Agency).count()
+            request_count = session.query(Request).count()
+            doc_count = session.query(Document).count()
+        
+        rprint(f"\n[cyan]Current data:[/cyan]")
+        rprint(f"  Agencies: {agency_count}")
+        rprint(f"  Requests: {request_count}")
+        rprint(f"  Documents: {doc_count}")
+        return
+    
+    if force and db_path.exists():
+        rprint(f"[yellow]Removing existing database...[/yellow]")
+        db_path.unlink()
+    
+    rprint(f"[cyan]Data directory:[/cyan] {data_dir}")
+    rprint(f"[cyan]Database:[/cyan] {db_path}")
+    
+    # Initialize
+    rprint("\n[cyan]Creating tables...[/cyan]")
+    init_db(seed=not no_seed)
+    
+    if not no_seed:
+        from .db import get_session
+        from .models import Agency
+        
+        with get_session() as session:
+            count = session.query(Agency).count()
+        rprint(f"[green]✓ Seeded {count} federal agencies[/green]")
+    
+    rprint("\n[bold green]✓ Initialization complete![/bold green]")
+    rprint("[dim]Run 'openfoia serve' to start the web interface.[/dim]\n")
+
+
 # === Server Command ===
 
 
@@ -368,6 +436,173 @@ def docs_ocr(
         rprint("  Pages: 15")
         rprint("  Confidence: 94.2%")
         rprint("  Characters extracted: 45,230")
+
+
+# === Agency Commands ===
+
+
+@agency_app.command("list")
+def agency_list(
+    level: Optional[str] = typer.Option(None, "--level", "-l", help="Filter by level (federal/state/local)"),
+    state: Optional[str] = typer.Option(None, "--state", "-s", help="Filter by state (2-letter code)"),
+    limit: int = typer.Option(50, "--limit", "-n", help="Maximum results"),
+):
+    """List agencies in the database."""
+    from .db import get_session, get_db_path
+    from .models import Agency, AgencyLevel
+    
+    db_path = get_db_path()
+    if not db_path.exists():
+        rprint("[yellow]Database not initialized. Run 'openfoia init' first.[/yellow]")
+        raise typer.Exit(1)
+    
+    with get_session() as session:
+        query = session.query(Agency)
+        
+        if level:
+            try:
+                level_enum = AgencyLevel(level.lower())
+                query = query.filter(Agency.level == level_enum)
+            except ValueError:
+                rprint(f"[red]Invalid level '{level}'. Use: federal, state, local, tribal[/red]")
+                raise typer.Exit(1)
+        
+        if state:
+            query = query.filter(Agency.state == state.upper())
+        
+        agencies = query.order_by(Agency.name).limit(limit).all()
+        
+        if not agencies:
+            rprint("[yellow]No agencies found.[/yellow]")
+            return
+        
+        table = Table(title=f"Agencies ({len(agencies)} results)")
+        table.add_column("Abbr", style="cyan", width=8)
+        table.add_column("Name")
+        table.add_column("Level", width=8)
+        table.add_column("Contact", width=30)
+        
+        for a in agencies:
+            contact = a.foia_email or a.foia_portal_url or "—"
+            if len(contact) > 28:
+                contact = contact[:25] + "..."
+            table.add_row(
+                a.abbreviation or "—",
+                a.name,
+                a.level.value,
+                contact,
+            )
+        
+        console.print(table)
+
+
+@agency_app.command("search")
+def agency_search(
+    query: str = typer.Argument(..., help="Search term"),
+    limit: int = typer.Option(20, "--limit", "-n", help="Maximum results"),
+):
+    """Search for agencies by name or abbreviation."""
+    from .db import get_session, get_db_path
+    from .models import Agency
+    
+    db_path = get_db_path()
+    if not db_path.exists():
+        rprint("[yellow]Database not initialized. Run 'openfoia init' first.[/yellow]")
+        raise typer.Exit(1)
+    
+    with get_session() as session:
+        # Search by name or abbreviation
+        search_term = f"%{query}%"
+        agencies = (
+            session.query(Agency)
+            .filter(
+                (Agency.name.ilike(search_term)) | 
+                (Agency.abbreviation.ilike(search_term))
+            )
+            .order_by(Agency.name)
+            .limit(limit)
+            .all()
+        )
+        
+        if not agencies:
+            rprint(f"[yellow]No agencies found matching '{query}'.[/yellow]")
+            return
+        
+        table = Table(title=f"Search results for '{query}' ({len(agencies)} found)")
+        table.add_column("Abbr", style="cyan", width=8)
+        table.add_column("Name")
+        table.add_column("Email/Portal")
+        
+        for a in agencies:
+            contact = a.foia_email or a.foia_portal_url or "—"
+            table.add_row(
+                a.abbreviation or "—",
+                a.name,
+                contact,
+            )
+        
+        console.print(table)
+
+
+@agency_app.command("info")
+def agency_info(
+    agency_id: str = typer.Argument(..., help="Agency abbreviation or name"),
+):
+    """Show detailed information about an agency."""
+    from .db import get_session, get_db_path
+    from .models import Agency
+    
+    db_path = get_db_path()
+    if not db_path.exists():
+        rprint("[yellow]Database not initialized. Run 'openfoia init' first.[/yellow]")
+        raise typer.Exit(1)
+    
+    with get_session() as session:
+        # Try abbreviation first, then name
+        agency = (
+            session.query(Agency)
+            .filter(
+                (Agency.abbreviation.ilike(agency_id)) |
+                (Agency.name.ilike(f"%{agency_id}%"))
+            )
+            .first()
+        )
+        
+        if not agency:
+            rprint(f"[red]Agency '{agency_id}' not found.[/red]")
+            raise typer.Exit(1)
+        
+        rprint(f"\n[bold cyan]{agency.name}[/bold cyan]")
+        if agency.abbreviation:
+            rprint(f"[dim]({agency.abbreviation})[/dim]")
+        rprint("─" * 50)
+        
+        table = Table(show_header=False, box=None)
+        table.add_column("Field", style="cyan", width=20)
+        table.add_column("Value")
+        
+        table.add_row("Level", agency.level.value.title())
+        if agency.state:
+            table.add_row("State", agency.state)
+        
+        rprint("\n[bold]Contact Information[/bold]")
+        if agency.foia_email:
+            table.add_row("Email", agency.foia_email)
+        if agency.foia_fax:
+            table.add_row("Fax", agency.foia_fax)
+        if agency.foia_portal_url:
+            table.add_row("Portal", agency.foia_portal_url)
+        if agency.foia_address:
+            table.add_row("Address", agency.foia_address.replace("\n", "\n                      "))
+        
+        table.add_row("Preferred Method", agency.preferred_method.value.replace("_", " ").title())
+        table.add_row("Typical Response", f"{agency.typical_response_days} days")
+        
+        if agency.fee_waiver_criteria:
+            table.add_row("Fee Waiver", agency.fee_waiver_criteria[:100] + "..." if len(agency.fee_waiver_criteria) > 100 else agency.fee_waiver_criteria)
+        
+        console.print(table)
+        rprint("")
 
 
 # === Campaign Commands ===
