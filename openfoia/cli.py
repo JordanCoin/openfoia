@@ -389,40 +389,128 @@ def docs_ingest(
     path: Path = typer.Argument(..., help="File or directory to ingest"),
     request_id: Optional[str] = typer.Option(None, "--request", "-r", help="Associate with request"),
     recursive: bool = typer.Option(True, "--recursive/--no-recursive", help="Recurse into directories"),
+    ocr: bool = typer.Option(False, "--ocr", help="Run OCR after ingestion"),
 ):
-    """Ingest documents into the system."""
+    """Ingest documents into the system.
+    
+    Copies documents to ~/.openfoia/docs/ and tracks them in the database.
+    Supports PDF, DOCX, TXT, and image files.
+    
+    Examples:
+        openfoia docs ingest ./response.pdf
+        openfoia docs ingest ./foia-docs/ --ocr
+        openfoia docs ingest ./evidence/ -r REQ-2026-001
+    """
+    import asyncio
+    from .db import get_data_dir, get_db_path, init_db
+    from .pipeline.ingest import DocumentIngester
+    
+    # Ensure database exists
+    db_path = get_db_path()
+    if not db_path.exists():
+        rprint("[yellow]Initializing database...[/yellow]")
+        init_db()
+    
+    storage_path = get_data_dir() / "docs"
+    ingester = DocumentIngester(storage_path=storage_path)
+    
+    results = []
+    
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
-        task = progress.add_task("Ingesting documents...", total=None)
-        
         if path.is_file():
-            # Single file
-            progress.update(task, description=f"Processing {path.name}...")
-            # TODO: Call ingester
-            rprint(f"[green]✓ Ingested {path.name}[/green]")
+            task = progress.add_task(f"Ingesting {path.name}...", total=None)
+            try:
+                result = asyncio.run(ingester.ingest_file(path, request_id=request_id))
+                results.append(result)
+                rprint(f"[green]✓[/green] {path.name} → {result.document_id[:8]}...")
+            except Exception as e:
+                rprint(f"[red]✗[/red] {path.name}: {e}")
         else:
             # Directory
-            files = list(path.rglob("*") if recursive else path.glob("*"))
-            files = [f for f in files if f.is_file()]
+            patterns = ['*.pdf', '*.PDF', '*.doc', '*.docx', '*.txt', '*.jpg', '*.png']
+            files = []
+            for pattern in patterns:
+                if recursive:
+                    files.extend(path.rglob(pattern))
+                else:
+                    files.extend(path.glob(pattern))
             
-            progress.update(task, total=len(files))
+            if not files:
+                rprint(f"[yellow]No supported files found in {path}[/yellow]")
+                return
+            
+            task = progress.add_task("Ingesting...", total=len(files))
+            
             for file in files:
-                progress.update(task, description=f"Processing {file.name}...")
-                # TODO: Call ingester
+                progress.update(task, description=f"Ingesting {file.name}...")
+                try:
+                    result = asyncio.run(ingester.ingest_file(file, request_id=request_id))
+                    results.append(result)
+                except Exception as e:
+                    rprint(f"[red]✗[/red] {file.name}: {e}")
                 progress.advance(task)
-            
-            rprint(f"[green]✓ Ingested {len(files)} files[/green]")
+    
+    # Summary
+    rprint(f"\n[green]✓ Ingested {len(results)} documents[/green]")
+    
+    total_pages = sum(r.page_count or 0 for r in results)
+    total_size = sum(r.file_size for r in results)
+    rprint(f"  Total pages: {total_pages}")
+    rprint(f"  Total size: {total_size / 1024 / 1024:.1f} MB")
+    rprint(f"  Storage: {storage_path}")
+    
+    # Run OCR if requested
+    if ocr and results:
+        rprint("\n[cyan]Running OCR...[/cyan]")
+        from .pipeline.ocr import OCREngine
+        engine = OCREngine(backend="tesseract")
+        
+        for result in results:
+            if result.mime_type == 'application/pdf':
+                rprint(f"  OCR: {result.filename}...")
+                try:
+                    ocr_result = asyncio.run(engine.process_pdf(result.file_path))
+                    rprint(f"    [green]✓[/green] {ocr_result.page_count} pages, {ocr_result.confidence:.1%} confidence")
+                except Exception as e:
+                    rprint(f"    [red]✗[/red] OCR failed: {e}")
 
 
 @docs_app.command("ocr")
 def docs_ocr(
-    document_id: str = typer.Argument(..., help="Document ID to OCR"),
-    backend: str = typer.Option("tesseract", "--backend", "-b", help="OCR backend"),
+    file_path: Path = typer.Argument(..., help="PDF file to OCR"),
+    backend: str = typer.Option("tesseract", "--backend", "-b", help="OCR backend (tesseract/google/aws)"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output text file"),
 ):
-    """Run OCR on a document."""
+    """Run OCR on a PDF document.
+    
+    Extracts text from scanned PDFs using Tesseract (default) or cloud APIs.
+    
+    Requirements:
+        - Tesseract: brew install tesseract (macOS) or apt install tesseract-ocr (Linux)
+        - pdf2image: requires poppler (brew install poppler)
+    
+    Examples:
+        openfoia docs ocr response.pdf
+        openfoia docs ocr scanned.pdf -o extracted.txt
+        openfoia docs ocr document.pdf --backend google
+    """
+    import asyncio
+    from .pipeline.ocr import OCREngine, RedactionDetector
+    
+    if not file_path.exists():
+        rprint(f"[red]File not found: {file_path}[/red]")
+        raise typer.Exit(1)
+    
+    if file_path.suffix.lower() != '.pdf':
+        rprint(f"[yellow]Warning: OCR works best on PDF files[/yellow]")
+    
+    engine = OCREngine(backend=backend)
+    detector = RedactionDetector()
+    
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -430,14 +518,51 @@ def docs_ocr(
     ) as progress:
         task = progress.add_task("Running OCR...", total=None)
         
-        # TODO: Run OCR
-        import time
-        time.sleep(2)  # Simulate processing
+        try:
+            result = asyncio.run(engine.process_pdf(file_path))
+        except ImportError as e:
+            rprint(f"[red]Missing dependency: {e}[/red]")
+            rprint("[dim]Install with: pip install pytesseract pdf2image[/dim]")
+            rprint("[dim]Also need: brew install tesseract poppler (macOS)[/dim]")
+            raise typer.Exit(1)
+        except Exception as e:
+            rprint(f"[red]OCR failed: {e}[/red]")
+            raise typer.Exit(1)
         
-        rprint("[green]✓ OCR complete[/green]")
-        rprint("  Pages: 15")
-        rprint("  Confidence: 94.2%")
-        rprint("  Characters extracted: 45,230")
+        progress.update(task, description="Detecting redactions...")
+        redactions = asyncio.run(detector.analyze(result.text, file_path))
+    
+    # Results
+    rprint(f"\n[bold green]✓ OCR Complete[/bold green]")
+    rprint("─" * 50)
+    
+    table = Table(show_header=False, box=None)
+    table.add_column("Metric", style="cyan", width=20)
+    table.add_column("Value")
+    
+    table.add_row("Pages", str(result.page_count))
+    table.add_row("Confidence", f"{result.confidence:.1%}")
+    table.add_row("Characters", f"{len(result.text):,}")
+    table.add_row("Backend", backend)
+    
+    if redactions['exemptions_cited']:
+        exemptions = ", ".join(e['code'] for e in redactions['exemptions_cited'])
+        table.add_row("Exemptions Found", exemptions)
+    
+    console.print(table)
+    
+    # Output
+    if output:
+        output.write_text(result.text)
+        rprint(f"\n[green]Text saved to {output}[/green]")
+    else:
+        rprint("\n[dim]Use --output to save extracted text[/dim]")
+    
+    # Show redaction details if found
+    if redactions['exemptions_cited']:
+        rprint("\n[yellow]⚠️  Exemptions cited in document:[/yellow]")
+        for ex in redactions['exemptions_cited']:
+            rprint(f"  • {ex['code']}: {ex['description']} ({ex['count']}x)")
 
 
 # === Agency Commands ===
