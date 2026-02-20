@@ -26,11 +26,75 @@ OpenFOIA is a **local-first, privacy-focused** toolkit for filing and tracking F
 # Install
 pip install openfoia
 
-# Start local server
+# Start local server (uses local Ollama by default)
 openfoia serve
 
 # Opens in your browser (private mode by default)
 # All data stays in ~/.openfoia/
+```
+
+## Configuration
+
+Copy the example config and customize:
+
+```bash
+cp config.example.json ~/.openfoia/config.json
+```
+
+### AI Provider (Entity Extraction)
+
+**Local models (recommended for privacy):**
+
+```json
+{
+  "ai": {
+    "provider": "ollama",
+    "ollama": {
+      "base_url": "http://localhost:11434",
+      "model": "llama3.2"
+    }
+  }
+}
+```
+
+Or use cloud APIs:
+
+```bash
+export OPENFOIA_ANTHROPIC_API_KEY="sk-ant-..."
+export OPENFOIA_OPENAI_API_KEY="sk-..."
+```
+
+### Gateway Adapters (Optional)
+
+Only needed if you want to **send** requests (vs just tracking):
+
+| Gateway | Provider | Cost | Config Key |
+|---------|----------|------|------------|
+| **Fax** | Twilio | $0.07/page | `OPENFOIA_TWILIO_ACCOUNT_SID` |
+| **Mail** | Lob | ~$1/letter | `OPENFOIA_LOB_API_KEY` |
+| **Email** | SMTP | Free | `gateways.email` in config |
+
+### Custom Entity Types
+
+Add domain-specific entities for your investigation:
+
+```json
+{
+  "entities": {
+    "custom_types": [
+      {
+        "name": "CONTRACT_NUMBER",
+        "pattern": "\\b[A-Z]{2,4}-\\d{4,}-\\d{4,}\\b",
+        "description": "Federal contract numbers"
+      },
+      {
+        "name": "CASE_NUMBER",
+        "pattern": "\\b\\d{2}-cv-\\d{4,}\\b",
+        "description": "Federal court case numbers"
+      }
+    ]
+  }
+}
 ```
 
 ## Privacy First

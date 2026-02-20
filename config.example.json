@@ -1,0 +1,121 @@
+{
+  "$schema": "https://openfoia.dev/config-schema.json",
+  "_comment": "Copy this to ~/.openfoia/config.json and fill in your keys",
+
+  "ai": {
+    "_comment": "Choose ONE provider. Local models recommended for privacy.",
+    
+    "provider": "ollama",
+    "ollama": {
+      "base_url": "http://localhost:11434",
+      "model": "llama3.2"
+    },
+
+    "_alt_anthropic": {
+      "provider": "anthropic",
+      "api_key": "sk-ant-...",
+      "model": "claude-sonnet-4-20250514"
+    },
+    
+    "_alt_openai": {
+      "provider": "openai",
+      "api_key": "sk-...",
+      "model": "gpt-4o"
+    },
+
+    "_alt_local_llamacpp": {
+      "provider": "openai",
+      "base_url": "http://localhost:8080/v1",
+      "api_key": "not-needed",
+      "model": "local"
+    }
+  },
+
+  "ocr": {
+    "_comment": "Tesseract is local and free. Cloud APIs are faster but cost money.",
+    
+    "backend": "tesseract",
+    
+    "_alt_google": {
+      "backend": "google",
+      "credentials_file": "~/.openfoia/google-credentials.json"
+    },
+    
+    "_alt_aws": {
+      "backend": "aws",
+      "region": "us-east-1",
+      "access_key_id": "AKIA...",
+      "secret_access_key": "..."
+    }
+  },
+
+  "gateways": {
+    "_comment": "Optional. Only needed if you want to SEND requests (vs just tracking).",
+    
+    "email": {
+      "smtp_host": "smtp.gmail.com",
+      "smtp_port": 587,
+      "smtp_user": "you@gmail.com",
+      "_smtp_password": "app-specific-password",
+      "from_name": "Your Name"
+    },
+
+    "fax": {
+      "_comment": "Twilio Programmable Fax - $0.07/page",
+      "provider": "twilio",
+      "_account_sid": "AC...",
+      "_auth_token": "...",
+      "from_number": "+1234567890"
+    },
+
+    "mail": {
+      "_comment": "Lob.com - Physical mail API - ~$1/letter",
+      "provider": "lob",
+      "_api_key": "live_...",
+      "return_address": {
+        "name": "Your Name",
+        "address_line1": "123 Main St",
+        "address_city": "Anytown",
+        "address_state": "NY",
+        "address_zip": "10001"
+      }
+    }
+  },
+
+  "entities": {
+    "_comment": "Custom entity types for your investigation domain",
+    
+    "custom_types": [
+      {
+        "name": "CONTRACT_NUMBER",
+        "pattern": "\\b[A-Z]{2,4}-\\d{4,}-\\d{4,}\\b",
+        "description": "Federal contract numbers"
+      },
+      {
+        "name": "CASE_NUMBER", 
+        "pattern": "\\b\\d{2}-cv-\\d{4,}\\b",
+        "description": "Federal court case numbers"
+      },
+      {
+        "name": "FOIA_TRACKING",
+        "pattern": "\\bFOI[A]?-\\d{4}-\\d+\\b",
+        "description": "Agency FOIA tracking numbers"
+      }
+    ],
+    
+    "extraction_prompt_suffix": "Also look for federal contract numbers, court case numbers, and agency-specific identifiers."
+  },
+
+  "privacy": {
+    "browser_default": "brave",
+    "always_private_mode": true,
+    "auto_redact_pii_in_exports": true,
+    "delete_processed_originals": false
+  },
+
+  "server": {
+    "host": "127.0.0.1",
+    "port": 0,
+    "_comment_port": "0 = random available port"
+  }
+}
