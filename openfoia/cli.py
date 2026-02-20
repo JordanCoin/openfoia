@@ -196,12 +196,14 @@ docs_app = typer.Typer(help="Process documents")
 campaign_app = typer.Typer(help="Manage campaigns")
 agency_app = typer.Typer(help="Manage agencies")
 analyze_app = typer.Typer(help="Analyze documents")
+template_app = typer.Typer(help="Request templates")
 
 app.add_typer(request_app, name="request")
 app.add_typer(docs_app, name="docs")
 app.add_typer(campaign_app, name="campaign")
 app.add_typer(agency_app, name="agency")
 app.add_typer(analyze_app, name="analyze")
+app.add_typer(template_app, name="template")
 
 
 # === Configuration ===
@@ -603,6 +605,139 @@ def agency_info(
         
         console.print(table)
         rprint("")
+
+
+# === Template Commands ===
+
+
+@template_app.command("list")
+def template_list():
+    """List available request templates."""
+    from .templates import list_templates
+    
+    templates = list_templates()
+    
+    table = Table(title="Available Templates")
+    table.add_column("Name", style="cyan")
+    table.add_column("Description")
+    
+    for t in templates:
+        table.add_row(t["name"], t["description"])
+    
+    console.print(table)
+    rprint("\n[dim]Use 'openfoia template generate <name>' to create a request.[/dim]")
+
+
+@template_app.command("generate")
+def template_generate(
+    template_name: str = typer.Argument(..., help="Template name (standard/appeal/self)"),
+    agency: str = typer.Option(..., "--agency", "-a", help="Target agency (name or abbreviation)"),
+    subject: str = typer.Option(..., "--subject", "-s", help="Request subject/description"),
+    name: str = typer.Option(..., "--name", "-n", help="Your full name"),
+    email: str = typer.Option(..., "--email", "-e", help="Your email address"),
+    address: str = typer.Option("", "--address", help="Your mailing address"),
+    organization: Optional[str] = typer.Option(None, "--org", help="Your organization"),
+    journalist: bool = typer.Option(False, "--journalist", "-j", help="You are a journalist"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file (default: stdout)"),
+    no_fee_waiver: bool = typer.Option(False, "--no-fee-waiver", help="Don't include fee waiver request"),
+    expedited: bool = typer.Option(False, "--expedited", help="Request expedited processing"),
+):
+    """Generate a FOIA request from a template.
+    
+    Examples:
+        openfoia template generate standard -a FBI -s "Records on X" -n "Jane Doe" -e jane@example.com
+        openfoia template generate standard -a EPA -s "Pollution data" -n "John Smith" -e john@example.com -j
+    """
+    from .templates import standard_request, appeal_denial, records_about_self, RequesterInfo, RequestDetails
+    
+    # Build requester info
+    requester = RequesterInfo(
+        name=name,
+        email=email,
+        address=address,
+        organization=organization,
+        is_journalist=journalist,
+    )
+    
+    # Get agency name from database if abbreviation
+    from .db import get_db_path
+    agency_name = agency
+    db_path = get_db_path()
+    if db_path.exists():
+        from .db import get_session
+        from .models import Agency
+        with get_session() as session:
+            found = session.query(Agency).filter(
+                (Agency.abbreviation.ilike(agency)) | (Agency.name.ilike(f"%{agency}%"))
+            ).first()
+            if found:
+                agency_name = found.name
+    
+    # Generate based on template type
+    if template_name == "standard":
+        details = RequestDetails(subject=subject, description=subject)
+        letter = standard_request(
+            requester=requester,
+            agency_name=agency_name,
+            details=details,
+            fee_waiver=not no_fee_waiver,
+            expedited=expedited,
+        )
+    elif template_name == "self":
+        letter = records_about_self(
+            requester=requester,
+            agency_name=agency_name,
+            record_type=subject,
+        )
+    elif template_name == "appeal":
+        rprint("[yellow]Appeal template requires additional information.[/yellow]")
+        rprint("[dim]Use the interactive mode: openfoia template appeal-wizard[/dim]")
+        return
+    else:
+        rprint(f"[red]Unknown template '{template_name}'. Use 'openfoia template list' to see options.[/red]")
+        raise typer.Exit(1)
+    
+    # Output
+    if output:
+        output.write_text(letter)
+        rprint(f"[green]✓ Request saved to {output}[/green]")
+    else:
+        rprint("\n" + "─" * 60)
+        rprint(letter)
+        rprint("─" * 60 + "\n")
+
+
+@template_app.command("exemptions")
+def template_exemptions():
+    """List common FOIA exemptions with explanations."""
+    
+    exemptions = [
+        ("b(1)", "National Security", "Classified information regarding national defense or foreign policy"),
+        ("b(2)", "Internal Personnel Rules", "Related solely to internal personnel rules and practices"),
+        ("b(3)", "Statutory Exemption", "Specifically exempted by another statute"),
+        ("b(4)", "Trade Secrets", "Trade secrets and confidential commercial/financial information"),
+        ("b(5)", "Deliberative Process", "Inter/intra-agency memos that are pre-decisional and deliberative"),
+        ("b(6)", "Personal Privacy", "Personnel, medical, or similar files where disclosure would invade privacy"),
+        ("b(7)(A)", "Law Enforcement - Interference", "Could interfere with enforcement proceedings"),
+        ("b(7)(B)", "Law Enforcement - Fair Trial", "Would deprive a person of a fair trial"),
+        ("b(7)(C)", "Law Enforcement - Privacy", "Could constitute unwarranted invasion of privacy"),
+        ("b(7)(D)", "Law Enforcement - Confidential Source", "Could reveal a confidential source"),
+        ("b(7)(E)", "Law Enforcement - Techniques", "Would disclose investigation techniques"),
+        ("b(7)(F)", "Law Enforcement - Safety", "Could endanger life or physical safety"),
+        ("b(8)", "Financial Institutions", "Examination/operating reports of financial institutions"),
+        ("b(9)", "Geological Info", "Geological/geophysical info about wells"),
+    ]
+    
+    table = Table(title="FOIA Exemptions (5 U.S.C. § 552(b))")
+    table.add_column("Exemption", style="cyan", width=10)
+    table.add_column("Name", width=25)
+    table.add_column("Description")
+    
+    for code, name, desc in exemptions:
+        table.add_row(code, name, desc)
+    
+    console.print(table)
+    rprint("\n[dim]When appealing, challenge the agency's application of these exemptions.[/dim]")
 
 
 # === Campaign Commands ===
