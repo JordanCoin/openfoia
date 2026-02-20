@@ -26,17 +26,19 @@ OpenFOIA is a **local-first, privacy-focused** toolkit for filing and tracking F
 
 ## Current Status
 
-| Feature | Status |
-|---------|--------|
-| CLI structure | ✅ Working |
-| Web UI shell | ✅ Working (htmx + Tailwind) |
-| Request drafting | 🚧 Scaffold |
-| Email/fax/mail sending | 🚧 Scaffold |
-| Document ingestion | 🚧 Scaffold |
-| OCR pipeline | 🚧 Scaffold |
-| Entity extraction | 🚧 Scaffold |
-| SQLite database | 🚧 Schema only |
-| Campaign coordination | 🚧 Scaffold |
+| Feature | Status | Issue |
+|---------|--------|-------|
+| CLI structure | ✅ Working | — |
+| Web UI shell | ✅ Working | [#9](https://github.com/JordanCoin/openfoia/issues/9) |
+| Agency database | 🚧 Scaffold | [#1](https://github.com/JordanCoin/openfoia/issues/1) |
+| Request templates | 🚧 Scaffold | [#2](https://github.com/JordanCoin/openfoia/issues/2) |
+| Email/fax/mail sending | 🚧 Scaffold | [#6](https://github.com/JordanCoin/openfoia/issues/6) [#7](https://github.com/JordanCoin/openfoia/issues/7) [#8](https://github.com/JordanCoin/openfoia/issues/8) |
+| OCR pipeline | 🚧 Scaffold | [#3](https://github.com/JordanCoin/openfoia/issues/3) |
+| Entity extraction | 🚧 Scaffold | [#4](https://github.com/JordanCoin/openfoia/issues/4) |
+| SQLite database | 🚧 Schema only | [#5](https://github.com/JordanCoin/openfoia/issues/5) |
+| Deadline tracking | 🚧 Scaffold | [#10](https://github.com/JordanCoin/openfoia/issues/10) |
+| Campaign coordination | 🚧 Scaffold | [#11](https://github.com/JordanCoin/openfoia/issues/11) |
+| Entity graph | 🚧 Scaffold | [#12](https://github.com/JordanCoin/openfoia/issues/12) |
 
 ## Quick Start
 
@@ -227,16 +229,24 @@ This is licensed under **AGPL-3.0** — if you modify and deploy it, you must sh
 
 ## Contributing
 
-This is early development — PRs welcome for:
-- [ ] Agency database (federal + state contacts)
-- [ ] Request templates that work
-- [ ] OCR pipeline implementation
-- [ ] Entity extraction with local models
-- [ ] Web UI improvements
-- [ ] Documentation
-- [ ] Tests
+This is early development — PRs welcome! Pick an issue and build it:
 
-See the code — most features are marked `# TODO`. Pick one and build it.
+| Issue | What | Difficulty |
+|-------|------|------------|
+| [#1](https://github.com/JordanCoin/openfoia/issues/1) | Agency Database (federal + state contacts) | 🟢 Easy |
+| [#2](https://github.com/JordanCoin/openfoia/issues/2) | Request Templates (proven FOIA language) | 🟢 Easy |
+| [#3](https://github.com/JordanCoin/openfoia/issues/3) | OCR Pipeline (Tesseract integration) | 🟡 Medium |
+| [#4](https://github.com/JordanCoin/openfoia/issues/4) | Entity Extraction (local LLM NER) | 🟡 Medium |
+| [#5](https://github.com/JordanCoin/openfoia/issues/5) | SQLite Database (schema + migrations) | 🟡 Medium |
+| [#6](https://github.com/JordanCoin/openfoia/issues/6) | Email Gateway (SMTP sending) | 🟡 Medium |
+| [#7](https://github.com/JordanCoin/openfoia/issues/7) | Fax Gateway (Twilio integration) | 🟡 Medium |
+| [#8](https://github.com/JordanCoin/openfoia/issues/8) | Mail Gateway (Lob integration) | 🟡 Medium |
+| [#9](https://github.com/JordanCoin/openfoia/issues/9) | Web UI (wire up htmx interface) | 🟡 Medium |
+| [#10](https://github.com/JordanCoin/openfoia/issues/10) | Deadline Tracking (auto-reminders) | 🟡 Medium |
+| [#11](https://github.com/JordanCoin/openfoia/issues/11) | Campaign Coordination (crowdsourced FOIA) | 🔴 Hard |
+| [#12](https://github.com/JordanCoin/openfoia/issues/12) | Entity Graph (relationship visualization) | 🔴 Hard |
+
+Most features have scaffolds in place — the structure exists, just needs implementation.
 
 ## Credits
 
