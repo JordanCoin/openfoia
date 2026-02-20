@@ -203,7 +203,11 @@ This is v0.0.1 — a working scaffold. PRs welcome for:
 
 ## Credits
 
-Built by journalists, for journalists. Inspired by the work of [MuckRock](https://www.muckrock.com/), [DocumentCloud](https://www.documentcloud.org/), and the [Reporters Committee for Freedom of the Press](https://www.rcfp.org/).
+Built by people who love journalists and believe in freedom of information — not journalists ourselves, just folks who want to support them with free tech.
+
+Inspired by the work of [MuckRock](https://www.muckrock.com/), [DocumentCloud](https://www.documentcloud.org/), and the [Reporters Committee for Freedom of the Press](https://www.rcfp.org/).
+
+*Free as in freedom, free as in beer.* 🍺
 
 ## License
 
