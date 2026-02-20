@@ -4,6 +4,10 @@
 
 Your data never leaves your machine. Transparency is patriotic. 🇺🇸
 
+> ⚠️ **v0.1.0 — Early Development**
+> 
+> This is a working scaffold. The CLI structure exists, the web UI renders, but most features are stubs. PRs welcome!
+
 ---
 
 ## What Is This?
@@ -12,26 +16,46 @@ OpenFOIA is a **local-first, privacy-focused** toolkit for filing and tracking F
 
 **The problem:** FOIA is powerful but painful. Agencies delay, deny, and obfuscate. Existing tools are either proprietary SaaS (your requests go through them) or manual spreadsheets.
 
-**The solution:** A self-hosted tool that:
-- Files requests via fax, mail, or email
-- Tracks deadlines and auto-reminds you to follow up
-- OCRs scanned response PDFs
-- Extracts entities (people, orgs, money, dates) using AI
-- Builds relationship graphs across documents
-- Coordinates crowdsourced campaigns (100 people FOIA the same thing)
+**The solution:** A self-hosted tool that will:
+- File requests via fax, mail, or email
+- Track deadlines and auto-remind you to follow up
+- OCR scanned response PDFs
+- Extract entities (people, orgs, money, dates) using AI
+- Build relationship graphs across documents
+- Coordinate crowdsourced campaigns (100 people FOIA the same thing)
+
+## Current Status
+
+| Feature | Status |
+|---------|--------|
+| CLI structure | ✅ Working |
+| Web UI shell | ✅ Working (htmx + Tailwind) |
+| Request drafting | 🚧 Scaffold |
+| Email/fax/mail sending | 🚧 Scaffold |
+| Document ingestion | 🚧 Scaffold |
+| OCR pipeline | 🚧 Scaffold |
+| Entity extraction | 🚧 Scaffold |
+| SQLite database | 🚧 Schema only |
+| Campaign coordination | 🚧 Scaffold |
 
 ## Quick Start
 
 ```bash
-# Install
-pip install openfoia
+# Clone the repo
+git clone https://github.com/JordanCoin/openfoia.git
+cd openfoia
 
-# Start local server (uses local Ollama by default)
+# Install in development mode
+pip install -e .
+
+# Start local server
 openfoia serve
 
 # Opens in your browser (private mode by default)
 # All data stays in ~/.openfoia/
 ```
+
+> **Note:** Not on PyPI yet. Install from source for now.
 
 ## Configuration
 
@@ -109,7 +133,7 @@ Add domain-specific entities for your investigation:
 
 **For sensitive investigations:** Use `openfoia serve --tor` to open in Tor Browser or Brave with Tor.
 
-## Features
+## Planned Features
 
 ### 📝 Request Management
 - Pre-loaded agency database (federal + state FOIA contacts)
@@ -139,22 +163,32 @@ Add domain-specific entities for your investigation:
 ## CLI Commands
 
 ```bash
+# Server
 openfoia serve                    # Start web interface
 openfoia serve --tor              # Open in Tor Browser
 openfoia serve --no-browser       # Just print URL
 
-openfoia request new              # Draft a new request
-openfoia request list             # List all requests
-openfoia request status REQ-001   # Check status
+# Requests (scaffold)
+openfoia request new --agency "FBI" --subject "Records on X"
+openfoia request list
+openfoia request status REQ-001
 
-openfoia docs ingest ./folder/    # Import documents
-openfoia docs ocr DOC-001         # Run OCR on a document
+# Documents (scaffold)
+openfoia docs ingest ./folder/
+openfoia docs ocr DOC-001
 
-openfoia analyze --request REQ-001  # Extract entities
-openfoia graph                      # Build entity graph
+# Analysis (scaffold)
+openfoia analyze extract DOC-001
+openfoia analyze graph
 
-openfoia campaign create          # Start a crowdsourced campaign
-openfoia campaign join ABC123     # Join existing campaign
+# Campaigns (scaffold)
+openfoia campaign create --name "Project X" --template ./req.txt
+openfoia campaign join ABC123
+openfoia campaign status ABC123
+
+# Configuration
+openfoia config --init            # Interactive setup
+openfoia config --show            # Show current config
 ```
 
 ## Browser Support
@@ -193,13 +227,16 @@ This is licensed under **AGPL-3.0** — if you modify and deploy it, you must sh
 
 ## Contributing
 
-This is v0.0.1 — a working scaffold. PRs welcome for:
-- [ ] More agency contacts (state/local)
-- [ ] Better request templates
-- [ ] OCR improvements
-- [ ] Entity extraction tuning
-- [ ] Web UI polish
+This is early development — PRs welcome for:
+- [ ] Agency database (federal + state contacts)
+- [ ] Request templates that work
+- [ ] OCR pipeline implementation
+- [ ] Entity extraction with local models
+- [ ] Web UI improvements
 - [ ] Documentation
+- [ ] Tests
+
+See the code — most features are marked `# TODO`. Pick one and build it.
 
 ## Credits
 
