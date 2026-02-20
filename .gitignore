@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Testing
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+
+# Local data (never commit user data!)
+*.db
+*.sqlite
+*.sqlite3
+~/.openfoia/
+
+# Secrets
+.env
+.env.local
+*.pem
+*.key
+credentials.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
