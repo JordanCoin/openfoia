@@ -178,15 +178,10 @@ def serve(
             rprint("[yellow]No browser auto-selected. Copy the URL above.[/yellow]\n")
     
     # Start the server
-    # TODO: Implement actual FastAPI server with token auth
-    rprint("[yellow]Server not yet implemented. This is the scaffold.[/yellow]")
-    rprint(f"[dim]Would start uvicorn on {host}:{port}[/dim]")
-    
-    # In real implementation:
-    # import uvicorn
-    # from .server import create_app
-    # app = create_app(token=token)
-    # uvicorn.run(app, host=host, port=port, log_level="warning")
+    from .server import run_server
+    from .db import get_data_dir
+
+    run_server(host=host, port=port, token=token, data_dir=get_data_dir())
 
 console = Console()
 
@@ -291,36 +286,78 @@ def request_new(
     body: Optional[str] = typer.Option(None, "--body", "-b", help="Request body (or use --file)"),
     body_file: Optional[Path] = typer.Option(None, "--file", "-f", help="File containing request body"),
     method: str = typer.Option("email", "--method", "-m", help="Delivery method (email/fax/mail)"),
+    name: str = typer.Option(..., "--name", "-n", help="Your full name"),
+    email_addr: str = typer.Option(..., "--email", "-e", help="Your email address"),
     send: bool = typer.Option(False, "--send", help="Send immediately"),
 ):
     """Create a new FOIA request."""
+    from uuid import uuid4
+    from .db import get_db_path, get_session, init_db
+    from .models import Agency as AgencyModel, Request as RequestModel, User, RequestStatus, DeliveryMethod
+
     if body_file:
         body = body_file.read_text()
     elif not body:
         rprint("[yellow]Enter request body (Ctrl+D when done):[/yellow]")
         import sys
         body = sys.stdin.read()
-    
-    # Generate request number
-    import uuid
-    req_num = f"REQ-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
-    
+
+    # Ensure database exists
+    db_path = get_db_path()
+    if not db_path.exists():
+        rprint("[yellow]Initializing database...[/yellow]")
+        init_db()
+
+    with get_session() as session:
+        # Find agency
+        found = session.query(AgencyModel).filter(
+            (AgencyModel.abbreviation.ilike(agency)) | (AgencyModel.name.ilike(f"%{agency}%"))
+        ).first()
+
+        if not found:
+            rprint(f"[red]Agency '{agency}' not found. Run 'openfoia agency search {agency}' to search.[/red]")
+            raise typer.Exit(1)
+
+        # Get or create user
+        user = session.query(User).filter(User.email == email_addr).first()
+        if not user:
+            user = User(id=str(uuid4()), email=email_addr, name=name)
+            session.add(user)
+            session.flush()
+
+        # Create request
+        req_num = f"REQ-{datetime.now().strftime('%Y%m%d')}-{uuid4().hex[:6].upper()}"
+
+        try:
+            delivery = DeliveryMethod(method.lower())
+        except ValueError:
+            delivery = DeliveryMethod.EMAIL
+
+        request = RequestModel(
+            id=str(uuid4()),
+            request_number=req_num,
+            requester_id=user.id,
+            agency_id=found.id,
+            subject=subject,
+            body=body,
+            delivery_method=delivery,
+            status=RequestStatus.DRAFT,
+            fee_waiver_requested=True,
+        )
+        session.add(request)
+
     table = Table(title="New FOIA Request")
     table.add_column("Field", style="cyan")
     table.add_column("Value")
     table.add_row("Request #", req_num)
-    table.add_row("Agency", agency)
+    table.add_row("Agency", found.name)
     table.add_row("Subject", subject)
     table.add_row("Method", method)
     table.add_row("Body", body[:100] + "..." if len(body) > 100 else body)
     console.print(table)
-    
-    if send:
-        rprint("[yellow]Sending request...[/yellow]")
-        # TODO: Actually send
-        rprint("[green]Request sent![/green]")
-    else:
-        rprint(f"\n[cyan]Request created as draft. Use 'openfoia request send {req_num}' to send.[/cyan]")
+
+    rprint(f"\n[green]Request saved to database.[/green]")
+    rprint(f"[cyan]Use 'openfoia request send --agency {agency} --subject \"{subject}\" --name \"{name}\" --email {email_addr}' to send.[/cyan]")
 
 
 @request_app.command("list")
@@ -330,34 +367,68 @@ def request_list(
     limit: int = typer.Option(20, "--limit", "-n", help="Maximum results"),
 ):
     """List FOIA requests."""
-    table = Table(title="FOIA Requests")
-    table.add_column("Request #", style="cyan")
-    table.add_column("Agency")
-    table.add_column("Subject")
-    table.add_column("Status")
-    table.add_column("Sent")
-    table.add_column("Days")
-    
-    # TODO: Query database
-    # For now, show placeholder
-    table.add_row(
-        "REQ-2026-001",
-        "FBI",
-        "Records on Project X",
-        "[yellow]processing[/yellow]",
-        "2026-01-15",
-        "35",
-    )
-    table.add_row(
-        "REQ-2026-002",
-        "DOJ",
-        "Contract spending",
-        "[green]complete[/green]",
-        "2026-01-20",
-        "30",
-    )
-    
-    console.print(table)
+    from .db import get_session, get_db_path
+    from .models import Request as RequestModel, Agency as AgencyModel, RequestStatus
+
+    db_path = get_db_path()
+    if not db_path.exists():
+        rprint("[yellow]Database not initialized. Run 'openfoia init' first.[/yellow]")
+        raise typer.Exit(1)
+
+    with get_session() as session:
+        query = session.query(RequestModel).join(AgencyModel)
+
+        if status:
+            try:
+                status_enum = RequestStatus(status.lower())
+                query = query.filter(RequestModel.status == status_enum)
+            except ValueError:
+                rprint(f"[red]Invalid status '{status}'.[/red]")
+                raise typer.Exit(1)
+
+        if agency:
+            query = query.filter(
+                (AgencyModel.abbreviation.ilike(agency)) |
+                (AgencyModel.name.ilike(f"%{agency}%"))
+            )
+
+        requests = query.order_by(RequestModel.created_at.desc()).limit(limit).all()
+
+        if not requests:
+            rprint("[yellow]No requests found.[/yellow]")
+            return
+
+        table = Table(title=f"FOIA Requests ({len(requests)} results)")
+        table.add_column("Request #", style="cyan")
+        table.add_column("Agency")
+        table.add_column("Subject")
+        table.add_column("Status")
+        table.add_column("Sent")
+        table.add_column("Days")
+
+        status_colors = {
+            "draft": "dim",
+            "sent": "cyan",
+            "processing": "yellow",
+            "complete": "green",
+            "denied": "red",
+            "appealed": "magenta",
+        }
+
+        for r in requests:
+            color = status_colors.get(r.status.value, "white")
+            sent_str = r.sent_at.strftime("%Y-%m-%d") if r.sent_at else "-"
+            days = str(r.days_pending()) if r.sent_at else "-"
+            table.add_row(
+                r.request_number,
+                r.agency.abbreviation or r.agency.name,
+                r.subject[:40] + "..." if len(r.subject) > 40 else r.subject,
+                f"[{color}]{r.status.value}[/{color}]",
+                sent_str,
+                days,
+            )
+
+        console.print(table)
 
 
 @request_app.command("status")
@@ -365,20 +436,74 @@ def request_status(
     request_id: str = typer.Argument(..., help="Request ID or number"),
 ):
     """Check status of a FOIA request."""
-    rprint(f"[cyan]Status for {request_id}:[/cyan]")
-    
-    # TODO: Query database and delivery gateway
-    table = Table()
-    table.add_column("Event", style="cyan")
-    table.add_column("Date")
-    table.add_column("Details")
-    
-    table.add_row("Created", "2026-01-15 10:00", "Draft created")
-    table.add_row("Sent", "2026-01-15 10:30", "Sent via email")
-    table.add_row("Acknowledged", "2026-01-17 14:22", "Agency tracking #: FOI-2026-1234")
-    table.add_row("Fee Estimate", "2026-02-01 09:00", "$45.00 estimated")
-    
-    console.print(table)
+    from .db import get_session, get_db_path
+    from .models import Request as RequestModel, Agency as AgencyModel, TimelineEvent
+
+    db_path = get_db_path()
+    if not db_path.exists():
+        rprint("[yellow]Database not initialized. Run 'openfoia init' first.[/yellow]")
+        raise typer.Exit(1)
+
+    with get_session() as session:
+        request = session.query(RequestModel).filter(
+            (RequestModel.request_number == request_id) | (RequestModel.id == request_id)
+        ).first()
+
+        if not request:
+            rprint(f"[red]Request '{request_id}' not found.[/red]")
+            raise typer.Exit(1)
+
+        rprint(f"\n[bold cyan]{request.request_number}[/bold cyan]")
+        rprint("=" * 50)
+
+        info_table = Table(show_header=False, box=None)
+        info_table.add_column("Field", style="cyan", width=20)
+        info_table.add_column("Value")
+
+        info_table.add_row("Agency", request.agency.name)
+        info_table.add_row("Subject", request.subject)
+        info_table.add_row("Status", request.status.value.replace("_", " ").title())
+        info_table.add_row("Delivery Method", request.delivery_method.value.replace("_", " ").title())
+        info_table.add_row("Created", request.created_at.strftime("%Y-%m-%d %H:%M"))
+        if request.sent_at:
+            info_table.add_row("Sent", request.sent_at.strftime("%Y-%m-%d %H:%M"))
+        if request.acknowledged_at:
+            info_table.add_row("Acknowledged", request.acknowledged_at.strftime("%Y-%m-%d %H:%M"))
+        if request.due_date:
+            overdue = " [red](OVERDUE)[/red]" if request.is_overdue() else ""
+            info_table.add_row("Due Date", request.due_date.strftime("%Y-%m-%d") + overdue)
+        if request.agency_tracking_number:
+            info_table.add_row("Tracking #", request.agency_tracking_number)
+        if request.fee_estimate:
+            info_table.add_row("Fee Estimate", f"${request.fee_estimate:,.2f}")
+        if request.fee_paid:
+            info_table.add_row("Fee Paid", f"${request.fee_paid:,.2f}")
+        if request.sent_at:
+            info_table.add_row("Days Pending", str(request.days_pending()))
+
+        console.print(info_table)
+
+        # Show timeline events
+        events = session.query(TimelineEvent).filter(
+            TimelineEvent.request_id == request.id
+        ).order_by(TimelineEvent.occurred_at).all()
+
+        if events:
+            rprint("\n[bold]Timeline[/bold]")
+            timeline_table = Table()
+            timeline_table.add_column("Event", style="cyan")
+            timeline_table.add_column("Date")
+            timeline_table.add_column("Details")
+
+            for event in events:
+                timeline_table.add_row(
+                    event.event_type,
+                    event.occurred_at.strftime("%Y-%m-%d %H:%M"),
+                    event.description,
+                )
+            console.print(timeline_table)
+
+        rprint("")
 
 
 @request_app.command("send")
@@ -1017,49 +1142,141 @@ def template_exemptions():
 def campaign_create(
     name: str = typer.Option(..., "--name", "-n", help="Campaign name"),
     description: str = typer.Option(..., "--desc", "-d", help="Campaign description"),
-    template: Path = typer.Option(..., "--template", "-t", help="Request template file"),
+    template_file: Path = typer.Option(..., "--template", "-t", help="Request template file"),
     target: int = typer.Option(100, "--target", help="Target number of requests"),
+    organizer_name: str = typer.Option(..., "--organizer", help="Organizer name"),
+    organizer_email: str = typer.Option(..., "--email", "-e", help="Organizer email"),
 ):
     """Create a new crowdsourced campaign."""
-    rprint(f"[cyan]Creating campaign: {name}[/cyan]")
-    
-    # TODO: Create campaign
-    import uuid
-    campaign_id = str(uuid.uuid4())[:8]
-    
-    rprint(f"[green]✓ Campaign created: {campaign_id}[/green]")
-    rprint(f"  Share this link to recruit participants:")
-    rprint(f"  [cyan]https://openfoia.org/campaign/{campaign_id}[/cyan]")
+    from uuid import uuid4
+    from .db import get_db_path, get_session, init_db
+    from .models import Campaign, User
+
+    db_path = get_db_path()
+    if not db_path.exists():
+        init_db()
+
+    if not template_file.exists():
+        rprint(f"[red]Template file not found: {template_file}[/red]")
+        raise typer.Exit(1)
+
+    template_body = template_file.read_text()
+
+    with get_session() as session:
+        # Get or create organizer
+        user = session.query(User).filter(User.email == organizer_email).first()
+        if not user:
+            user = User(id=str(uuid4()), email=organizer_email, name=organizer_name)
+            session.add(user)
+            session.flush()
+
+        campaign = Campaign(
+            id=str(uuid4()),
+            name=name,
+            description=description,
+            organizer_id=user.id,
+            request_template=template_body,
+            target_agency_ids=[],
+            target_request_count=target,
+            is_active=True,
+        )
+        session.add(campaign)
+        campaign_id = campaign.id
+
+    rprint(f"[green]Campaign created: {campaign_id[:8]}[/green]")
+    rprint(f"  Name: {name}")
+    rprint(f"  Target: {target} requests")
+    rprint(f"  Template: {template_file}")
 
 
-@campaign_app.command("join")
-def campaign_join(
-    campaign_id: str = typer.Argument(..., help="Campaign ID to join"),
-):
-    """Join an existing campaign."""
-    rprint(f"[cyan]Joining campaign {campaign_id}...[/cyan]")
-    # TODO: Join campaign
-    rprint("[green]✓ You have joined the campaign![/green]")
+@campaign_app.command("list")
+def campaign_list():
+    """List all campaigns."""
+    from .db import get_session, get_db_path
+    from .models import Campaign
+
+    db_path = get_db_path()
+    if not db_path.exists():
+        rprint("[yellow]Database not initialized. Run 'openfoia init' first.[/yellow]")
+        raise typer.Exit(1)
+
+    with get_session() as session:
+        campaigns = session.query(Campaign).order_by(Campaign.created_at.desc()).all()
+
+        if not campaigns:
+            rprint("[yellow]No campaigns found.[/yellow]")
+            return
+
+        table = Table(title=f"Campaigns ({len(campaigns)})")
+        table.add_column("ID", style="cyan", width=10)
+        table.add_column("Name")
+        table.add_column("Active")
+        table.add_column("Requests")
+        table.add_column("Target")
+        table.add_column("Created")
+
+        for c in campaigns:
+            active = "[green]Yes[/green]" if c.is_active else "[dim]No[/dim]"
+            table.add_row(
+                c.id[:8],
+                c.name,
+                active,
+                str(c.request_count()),
+                str(c.target_request_count),
+                c.created_at.strftime("%Y-%m-%d"),
+            )
+
+        console.print(table)
 
 
 @campaign_app.command("status")
 def campaign_status(
-    campaign_id: str = typer.Argument(..., help="Campaign ID"),
+    campaign_id: str = typer.Argument(..., help="Campaign ID (or prefix)"),
 ):
     """Check campaign progress."""
-    table = Table(title=f"Campaign Status: {campaign_id}")
-    table.add_column("Metric", style="cyan")
-    table.add_column("Value")
-    
-    # TODO: Get real stats
-    table.add_row("Participants", "47")
-    table.add_row("Requests Filed", "156 / 200")
-    table.add_row("Responses Received", "89")
-    table.add_row("Denials", "12")
-    table.add_row("Documents Collected", "1,247 pages")
-    table.add_row("Avg Response Time", "23 days")
-    
-    console.print(table)
+    from .db import get_session, get_db_path
+    from .models import Campaign, RequestStatus
+
+    db_path = get_db_path()
+    if not db_path.exists():
+        rprint("[yellow]Database not initialized. Run 'openfoia init' first.[/yellow]")
+        raise typer.Exit(1)
+
+    with get_session() as session:
+        campaign = session.query(Campaign).filter(
+            Campaign.id.like(f"{campaign_id}%")
+        ).first()
+
+        if not campaign:
+            rprint(f"[red]Campaign '{campaign_id}' not found.[/red]")
+            raise typer.Exit(1)
+
+        requests = campaign.requests
+        total = len(requests)
+        responded = sum(1 for r in requests if r.status in (
+            RequestStatus.PARTIAL_RESPONSE, RequestStatus.COMPLETE, RequestStatus.DENIED,
+        ))
+        denied = sum(1 for r in requests if r.status == RequestStatus.DENIED)
+        docs_count = sum(len(r.documents) for r in requests)
+        total_pages = sum(
+            d.page_count or 0
+            for r in requests
+            for d in r.documents
+        )
+
+        table = Table(title=f"Campaign: {campaign.name}")
+        table.add_column("Metric", style="cyan")
+        table.add_column("Value")
+
+        table.add_row("Participants", str(len(campaign.participants)))
+        table.add_row("Requests Filed", f"{total} / {campaign.target_request_count}")
+        table.add_row("Completion", f"{campaign.completion_rate() * 100:.1f}%")
+        table.add_row("Responses Received", str(responded))
+        table.add_row("Denials", str(denied))
+        table.add_row("Documents Collected", f"{docs_count} ({total_pages} pages)")
+        table.add_row("Active", "Yes" if campaign.is_active else "No")
+
+        console.print(table)
 
 
 # === Analyze Commands ===
@@ -1071,31 +1288,86 @@ def analyze_extract(
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file"),
 ):
     """Extract entities from a document."""
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Extracting entities...", total=None)
-        
-        # TODO: Run extraction
-        import time
-        time.sleep(3)
-        
-        rprint("[green]✓ Extraction complete[/green]")
-        
+    from .db import get_session, get_db_path
+    from .models import Document, Entity
+
+    db_path = get_db_path()
+    if not db_path.exists():
+        rprint("[yellow]Database not initialized. Run 'openfoia init' first.[/yellow]")
+        raise typer.Exit(1)
+
+    with get_session() as session:
+        doc = session.query(Document).filter(
+            (Document.id == document_id) | (Document.id.like(f"{document_id}%"))
+        ).first()
+
+        if not doc:
+            rprint(f"[red]Document '{document_id}' not found.[/red]")
+            raise typer.Exit(1)
+
+        if not doc.extracted_text:
+            rprint("[yellow]Document has no extracted text. Run OCR first:[/yellow]")
+            rprint(f"[dim]openfoia docs ocr {doc.file_path}[/dim]")
+            raise typer.Exit(1)
+
+        rprint(f"[cyan]Extracting entities from {doc.filename}...[/cyan]")
+
+        # Run extraction
+        import asyncio
+        from .pipeline.extract import EntityExtractor
+
+        extractor = EntityExtractor()
+        try:
+            result = asyncio.run(extractor.extract(doc.extracted_text))
+        except Exception as e:
+            rprint(f"[red]Extraction failed: {e}[/red]")
+            rprint("[dim]Ensure AI provider is configured: openfoia config --init[/dim]")
+            raise typer.Exit(1)
+
+        if not result.entities:
+            rprint("[yellow]No entities found in document.[/yellow]")
+            return
+
+        # Save to database
+        from uuid import uuid4
+        for ent in result.entities:
+            entity = Entity(
+                id=str(uuid4()),
+                document_id=doc.id,
+                entity_type=ent.entity_type,
+                raw_text=ent.raw_text,
+                normalized_text=ent.normalized_text,
+                confidence=ent.confidence,
+                context=ent.context,
+                page_number=ent.page_number,
+            )
+            session.add(entity)
+
+        doc.entities_extracted = True
+
+        rprint(f"[green]Extracted {len(result.entities)} entities[/green]")
+
         table = Table(title="Extracted Entities")
         table.add_column("Type", style="cyan")
         table.add_column("Entity")
         table.add_column("Confidence")
-        table.add_column("Occurrences")
-        
-        table.add_row("PERSON", "John Smith", "98%", "12")
-        table.add_row("ORGANIZATION", "Acme Corp", "95%", "8")
-        table.add_row("MONEY", "$1,500,000", "99%", "3")
-        table.add_row("DATE", "January 15, 2024", "97%", "5")
-        
+
+        for ent in result.entities:
+            table.add_row(
+                ent.entity_type.value,
+                ent.normalized_text,
+                f"{ent.confidence:.0%}",
+            )
+
         console.print(table)
+
+        if output:
+            import json as json_mod
+            output.write_text(json_mod.dumps(
+                [{"type": e.entity_type.value, "text": e.normalized_text, "confidence": e.confidence} for e in result.entities],
+                indent=2,
+            ))
+            rprint(f"\n[green]Entities saved to {output}[/green]")
 
 
 @analyze_app.command("graph")
@@ -1104,22 +1376,60 @@ def analyze_graph(
     campaign_id: Optional[str] = typer.Option(None, "--campaign", "-c", help="Analyze entire campaign"),
     output: Path = typer.Option("graph.json", "--output", "-o", help="Output file"),
 ):
-    """Build entity relationship graph."""
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Building entity graph...", total=None)
-        
-        # TODO: Build graph
-        import time
-        time.sleep(2)
-        
-        rprint(f"[green]✓ Graph exported to {output}[/green]")
-        rprint("  Entities: 234")
-        rprint("  Relationships: 567")
-        rprint("  Connected components: 12")
+    """Build entity relationship graph from extracted entities."""
+    from .db import get_session, get_db_path
+    from .models import Entity, Document, Request as RequestModel, entity_links
+
+    db_path = get_db_path()
+    if not db_path.exists():
+        rprint("[yellow]Database not initialized. Run 'openfoia init' first.[/yellow]")
+        raise typer.Exit(1)
+
+    with get_session() as session:
+        query = session.query(Entity)
+
+        if request_id:
+            query = query.join(Document).filter(Document.request_id == request_id)
+        elif campaign_id:
+            query = query.join(Document).join(RequestModel).filter(
+                RequestModel.campaign_id.like(f"{campaign_id}%")
+            )
+
+        entities = query.all()
+
+        if not entities:
+            rprint("[yellow]No entities found. Run entity extraction first.[/yellow]")
+            return
+
+        # Build graph data
+        nodes = [
+            {
+                "id": e.id,
+                "label": e.normalized_text,
+                "type": e.entity_type.value,
+                "confidence": e.confidence,
+            }
+            for e in entities
+        ]
+
+        links = session.query(entity_links).all()
+        edges = [
+            {
+                "source": link.source_id,
+                "target": link.target_id,
+                "type": link.link_type,
+            }
+            for link in links
+        ]
+
+        graph_data = {"nodes": nodes, "edges": edges}
+
+        import json as json_mod
+        output.write_text(json_mod.dumps(graph_data, indent=2))
+
+        rprint(f"[green]Graph exported to {output}[/green]")
+        rprint(f"  Entities: {len(nodes)}")
+        rprint(f"  Relationships: {len(edges)}")
 
 
 # === Main Entry Point ===
