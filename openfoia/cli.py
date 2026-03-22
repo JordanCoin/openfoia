@@ -3265,7 +3265,7 @@ def records_search(
         "opencorporates",
         "--source",
         "-s",
-        help="Data source (opencorporates, sec)",
+        help="Data source (muckrock, opencorporates, sec)",
     ),
     jurisdiction: Optional[str] = typer.Option(
         None, "--jurisdiction", "-j", help="Jurisdiction filter (e.g. us_ca, gb)"
@@ -3290,6 +3290,7 @@ def records_search(
         openfoia records search "Acme Corp" --source sec
         openfoia records search "Palantir" --source sec --type 10-K
         openfoia records search "Shell" --source opencorporates -j gb
+        openfoia records search "EPA water" --source muckrock
     """
     import asyncio
     from .records import get_adapter, list_sources
@@ -3338,7 +3339,28 @@ def records_search(
 
     entities = result.entities[:limit]
 
-    if source == "opencorporates":
+    if source == "muckrock":
+        table = Table()
+        table.add_column("ID", style="dim", width=8)
+        table.add_column("Title", style="cyan", max_width=40)
+        table.add_column("By", width=16)
+        table.add_column("Status", width=10)
+        table.add_column("Files", width=6)
+        table.add_column("Date", width=12)
+
+        for e in entities:
+            table.add_row(
+                e.identifiers.get("muckrock_id", "-"),
+                e.name,
+                e.extra_data.get("username", "-"),
+                e.status or "-",
+                str(e.extra_data.get("files_count", 0)),
+                (e.extra_data.get("completed") or e.extra_data.get("submitted") or "-")[:10],
+            )
+        console.print(table)
+        rprint(f"\n[dim]Download documents: openfoia records download <ID> --source muckrock[/dim]")
+
+    elif source == "opencorporates":
         table = Table()
         table.add_column("Name", style="cyan", max_width=30)
         table.add_column("Jurisdiction", width=12)
@@ -3394,6 +3416,109 @@ def records_search(
         console.print(table)
 
     rprint(f"\n[dim]Showing {len(entities)} of {result.total_results} results.[/dim]")
+
+
+@records_app.command("download")
+def records_download(
+    request_id: str = typer.Argument(..., help="MuckRock request ID"),
+    source: str = typer.Option("muckrock", "--source", "-s", help="Data source"),
+    output: Path = typer.Option("./downloads", "--output", "-o", help="Output directory"),
+    ingest: bool = typer.Option(False, "--ingest", help="Auto-ingest downloaded files into OpenFOIA"),
+):
+    """Download response documents from a FOIA request.
+
+    Fetches all response PDFs/documents attached to a completed FOIA request
+    and saves them locally. Optionally auto-ingests them into the pipeline.
+
+    Examples:
+        openfoia records download 68490 --source muckrock
+        openfoia records download 68490 -o ./epa-docs --ingest
+    """
+    import asyncio
+
+    if source != "muckrock":
+        rprint(f"[yellow]Download only supported for muckrock (got '{source}')[/yellow]")
+        raise typer.Exit(1)
+
+    from .records.muckrock import MuckRockAdapter
+
+    adapter = MuckRockAdapter()
+
+    # First fetch to show what we're downloading
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task(f"Fetching request {request_id}...", total=None)
+        try:
+            entity = asyncio.run(adapter.fetch(request_id))
+        except Exception as e:
+            rprint(f"[red]Failed to fetch request: {e}[/red]")
+            raise typer.Exit(1)
+
+    if not entity:
+        rprint(f"[red]Request {request_id} not found on MuckRock.[/red]")
+        raise typer.Exit(1)
+
+    files = entity.extra_data.get("files", [])
+    rprint(f"\n[bold cyan]{entity.name}[/bold cyan]")
+    rprint(f"  Status: {entity.status}")
+    rprint(f"  Documents: {len(files)}")
+
+    if not files:
+        rprint("[yellow]No response documents attached to this request.[/yellow]")
+        return
+
+    rprint(f"\n[cyan]Downloading {len(files)} file(s) to {output}/[/cyan]")
+
+    for f in files:
+        url = f.get("url", "")
+        filename = url.split("/")[-1] if url else "unknown"
+        rprint(f"  {filename}")
+
+    # Download
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Downloading...", total=None)
+        try:
+            downloaded = asyncio.run(adapter.download_files(request_id, str(output)))
+        except Exception as e:
+            rprint(f"[red]Download failed: {e}[/red]")
+            raise typer.Exit(1)
+
+    rprint(f"\n[green]{len(downloaded)} file(s) downloaded to {output}/[/green]")
+
+    for path in downloaded:
+        rprint(f"  {path}")
+
+    # Auto-ingest if requested
+    if ingest and downloaded:
+        rprint(f"\n[cyan]Ingesting into OpenFOIA...[/cyan]")
+        from .db import get_data_dir, get_db_path, init_db
+        from .pipeline.ingest import DocumentIngester
+
+        db_path = get_db_path()
+        if not db_path.exists():
+            init_db()
+
+        storage_path = get_data_dir() / "docs"
+        ingester = DocumentIngester(storage_path=storage_path)
+
+        ingested = 0
+        for path in downloaded:
+            try:
+                result = asyncio.run(ingester.ingest_file(Path(path)))
+                ingested += 1
+                rprint(f"  [green]Ingested:[/green] {Path(path).name} → {result.document_id[:8]}...")
+            except Exception as e:
+                rprint(f"  [red]Failed:[/red] {Path(path).name}: {e}")
+
+        rprint(f"\n[green]{ingested} file(s) ingested.[/green]")
+        rprint(f"[dim]Run 'openfoia analyze extract --all' to extract entities.[/dim]")
 
 
 # === Main Entry Point ===
