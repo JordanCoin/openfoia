@@ -513,6 +513,7 @@ def get_index_html() -> str:
         }
         #agency-dropdown { max-height: 200px; overflow-y: auto; }
         .agency-option:hover { background: rgba(59, 130, 246, 0.3); }
+        .status-filter.active { background: rgba(59, 130, 246, 0.5); }
         .toast {
             position: fixed; bottom: 2rem; right: 2rem; padding: 1rem 1.5rem;
             border-radius: 0.75rem; z-index: 50; transition: opacity 0.3s;
@@ -700,7 +701,17 @@ def get_index_html() -> str:
         <!-- Recent Requests -->
         <div class="mt-8">
             <div class="bg-white/10 rounded-xl p-6 backdrop-blur">
-                <h2 class="text-xl font-semibold mb-4">Recent Requests</h2>
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xl font-semibold">Recent Requests</h2>
+                    <div class="flex gap-2" id="status-filters">
+                        <button onclick="filterRequests('')" class="status-filter active text-xs px-3 py-1 rounded-full bg-white/20">All</button>
+                        <button onclick="filterRequests('draft')" class="status-filter text-xs px-3 py-1 rounded-full bg-white/5 hover:bg-white/10">Draft</button>
+                        <button onclick="filterRequests('sent')" class="status-filter text-xs px-3 py-1 rounded-full bg-white/5 hover:bg-white/10">Sent</button>
+                        <button onclick="filterRequests('processing')" class="status-filter text-xs px-3 py-1 rounded-full bg-white/5 hover:bg-white/10">Processing</button>
+                        <button onclick="filterRequests('complete')" class="status-filter text-xs px-3 py-1 rounded-full bg-white/5 hover:bg-white/10">Complete</button>
+                        <button onclick="filterRequests('denied')" class="status-filter text-xs px-3 py-1 rounded-full bg-white/5 hover:bg-white/10">Denied</button>
+                    </div>
+                </div>
                 <div id="requests-list" class="text-gray-400 text-center py-8">
                     No requests yet. Create your first FOIA request above.
                 </div>
@@ -795,9 +806,27 @@ def get_index_html() -> str:
             container.appendChild(tbl);
         }
 
+        var currentStatusFilter = '';
+
+        function filterRequests(status) {
+            currentStatusFilter = status;
+            // Update active button styling
+            document.querySelectorAll('.status-filter').forEach(function(btn) {
+                btn.classList.remove('active');
+                btn.classList.remove('bg-white/20');
+                btn.classList.add('bg-white/5');
+            });
+            event.target.classList.add('active');
+            event.target.classList.remove('bg-white/5');
+            event.target.classList.add('bg-white/20');
+            loadRequests();
+        }
+
         async function loadRequests() {
             try {
-                const resp = await fetch(apiUrl('/api/requests?limit=10'));
+                var url = '/api/requests?limit=10';
+                if (currentStatusFilter) url += '&status=' + currentStatusFilter;
+                const resp = await fetch(apiUrl(url));
                 const data = await resp.json();
                 renderRequestsTable(
                     document.getElementById('requests-list'),
