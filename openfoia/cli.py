@@ -1442,6 +1442,253 @@ def campaign_status(
         console.print(table)
 
 
+@campaign_app.command("join")
+def campaign_join(
+    campaign_id: str = typer.Argument(..., help="Campaign ID (or prefix)"),
+    name: str = typer.Option(..., "--name", "-n", help="Your full name"),
+    email: str = typer.Option(..., "--email", "-e", help="Your email address"),
+):
+    """Join a campaign as a participant."""
+    from uuid import uuid4
+    from .db import get_session, get_db_path, init_db
+    from .models import Campaign, User
+
+    db_path = get_db_path()
+    if not db_path.exists():
+        rprint("[yellow]Database not initialized. Run 'openfoia init' first.[/yellow]")
+        raise typer.Exit(1)
+
+    with get_session() as session:
+        matches = session.query(Campaign).filter(
+            Campaign.id.like(f"{campaign_id}%")
+        ).all()
+
+        if len(matches) == 0:
+            rprint(f"[red]Campaign '{campaign_id}' not found.[/red]")
+            raise typer.Exit(1)
+        if len(matches) > 1:
+            rprint(f"[red]Ambiguous campaign ID '{campaign_id}' matches {len(matches)} campaigns. Use full ID.[/red]")
+            raise typer.Exit(1)
+
+        campaign = matches[0]
+
+        if not campaign.is_active:
+            rprint(f"[red]Campaign '{campaign.name}' is no longer active.[/red]")
+            raise typer.Exit(1)
+
+        # Get or create user
+        user = session.query(User).filter(User.email == email).first()
+        if not user:
+            user = User(id=str(uuid4()), email=email, name=name)
+            session.add(user)
+            session.flush()
+
+        # Check if already a participant
+        if user in campaign.participants:
+            rprint(f"[yellow]You are already a participant in '{campaign.name}'.[/yellow]")
+            return
+
+        campaign.participants.append(user)
+        campaign_name = campaign.name
+        participant_count = len(campaign.participants)
+
+    rprint(f"[green]Joined campaign: {campaign_name}[/green]")
+    rprint(f"  Participants now: {participant_count}")
+
+
+@campaign_app.command("distribute")
+def campaign_distribute(
+    campaign_id: str = typer.Argument(..., help="Campaign ID (or prefix)"),
+):
+    """Distribute FOIA requests to campaign participants.
+
+    Generates individual requests from the campaign template for each
+    target agency and assigns them round-robin to participants.
+    """
+    from uuid import uuid4
+    from .db import get_session, get_db_path
+    from .models import (
+        Campaign, Agency as AgencyModel, Request as RequestModel,
+        RequestStatus, DeliveryMethod, User,
+    )
+
+    db_path = get_db_path()
+    if not db_path.exists():
+        rprint("[yellow]Database not initialized. Run 'openfoia init' first.[/yellow]")
+        raise typer.Exit(1)
+
+    with get_session() as session:
+        matches = session.query(Campaign).filter(
+            Campaign.id.like(f"{campaign_id}%")
+        ).all()
+
+        if len(matches) == 0:
+            rprint(f"[red]Campaign '{campaign_id}' not found.[/red]")
+            raise typer.Exit(1)
+        if len(matches) > 1:
+            rprint(f"[red]Ambiguous campaign ID '{campaign_id}' matches {len(matches)} campaigns. Use full ID.[/red]")
+            raise typer.Exit(1)
+
+        campaign = matches[0]
+
+        if not campaign.is_active:
+            rprint(f"[red]Campaign '{campaign.name}' is no longer active.[/red]")
+            raise typer.Exit(1)
+
+        participants = list(campaign.participants)
+        if not participants:
+            rprint(f"[red]No participants in campaign '{campaign.name}'. Use 'openfoia campaign join' first.[/red]")
+            raise typer.Exit(1)
+
+        # Resolve target agencies
+        target_ids = campaign.target_agency_ids or []
+        if target_ids:
+            agencies = session.query(AgencyModel).filter(AgencyModel.id.in_(target_ids)).all()
+        else:
+            # If no target agencies specified, use all agencies in the DB
+            agencies = session.query(AgencyModel).all()
+
+        if not agencies:
+            rprint("[red]No target agencies found.[/red]")
+            raise typer.Exit(1)
+
+        # Find which agency/participant combos already have requests
+        existing = set()
+        for req in campaign.requests:
+            existing.add((req.agency_id, req.requester_id))
+
+        # Generate requests round-robin
+        created = 0
+        skipped = 0
+        table = Table(title=f"Distributing: {campaign.name}")
+        table.add_column("Request #", style="cyan")
+        table.add_column("Agency")
+        table.add_column("Assigned To")
+        table.add_column("Status")
+
+        for i, agency in enumerate(agencies):
+            participant = participants[i % len(participants)]
+
+            if (agency.id, participant.id) in existing:
+                skipped += 1
+                continue
+
+            req_num = f"REQ-{datetime.now().strftime('%Y%m%d')}-{uuid4().hex[:6].upper()}"
+            request = RequestModel(
+                id=str(uuid4()),
+                request_number=req_num,
+                requester_id=participant.id,
+                agency_id=agency.id,
+                campaign_id=campaign.id,
+                subject=f"[{campaign.name}] FOIA Request",
+                body=campaign.request_template,
+                delivery_method=agency.preferred_method or DeliveryMethod.EMAIL,
+                status=RequestStatus.DRAFT,
+                fee_waiver_requested=True,
+            )
+            session.add(request)
+            table.add_row(
+                req_num,
+                agency.abbreviation or agency.name[:30],
+                participant.name,
+                "draft",
+            )
+            created += 1
+
+        console.print(table)
+        rprint(f"\n[green]Created {created} requests[/green] (skipped {skipped} already assigned)")
+        rprint(f"[dim]Participants can send their requests with 'openfoia request send'.[/dim]")
+
+
+@campaign_app.command("progress")
+def campaign_progress(
+    campaign_id: str = typer.Argument(..., help="Campaign ID (or prefix)"),
+):
+    """Show per-participant, per-agency status grid for a campaign."""
+    from .db import get_session, get_db_path
+    from .models import Campaign, Agency as AgencyModel, Request as RequestModel, User
+
+    db_path = get_db_path()
+    if not db_path.exists():
+        rprint("[yellow]Database not initialized. Run 'openfoia init' first.[/yellow]")
+        raise typer.Exit(1)
+
+    with get_session() as session:
+        matches = session.query(Campaign).filter(
+            Campaign.id.like(f"{campaign_id}%")
+        ).all()
+
+        if len(matches) == 0:
+            rprint(f"[red]Campaign '{campaign_id}' not found.[/red]")
+            raise typer.Exit(1)
+        if len(matches) > 1:
+            rprint(f"[red]Ambiguous campaign ID '{campaign_id}' matches {len(matches)} campaigns. Use full ID.[/red]")
+            raise typer.Exit(1)
+
+        campaign = matches[0]
+        requests = campaign.requests
+        participants = list(campaign.participants)
+
+        if not participants:
+            rprint(f"[yellow]No participants in campaign '{campaign.name}'.[/yellow]")
+            return
+
+        if not requests:
+            rprint(f"[yellow]No requests distributed yet. Run 'openfoia campaign distribute {campaign_id}'.[/yellow]")
+            return
+
+        # Collect unique agencies from requests
+        agency_ids = list({r.agency_id for r in requests})
+        agencies = session.query(AgencyModel).filter(AgencyModel.id.in_(agency_ids)).all()
+        agency_map = {a.id: (a.abbreviation or a.name[:15]) for a in agencies}
+
+        # Build status lookup: (participant_id, agency_id) -> status
+        status_map = {}
+        for r in requests:
+            status_map[(r.requester_id, r.agency_id)] = r.status.value
+
+        # Status symbols
+        STATUS_SYMBOLS = {
+            "draft": "[dim]draft[/dim]",
+            "pending_send": "[yellow]pending[/yellow]",
+            "sent": "[cyan]sent[/cyan]",
+            "acknowledged": "[cyan]ack[/cyan]",
+            "processing": "[blue]proc[/blue]",
+            "complete": "[green]done[/green]",
+            "denied": "[red]denied[/red]",
+            "partial_response": "[green]partial[/green]",
+        }
+
+        rprint(f"\n[bold]Campaign: {campaign.name}[/bold]")
+        rprint(f"Participants: {len(participants)} | Agencies: {len(agencies)} | Requests: {len(requests)}")
+
+        table = Table(title="Progress Grid")
+        table.add_column("Participant", style="cyan")
+
+        for aid in agency_ids:
+            table.add_column(agency_map.get(aid, aid[:8]), justify="center")
+
+        for p in participants:
+            row = [p.name]
+            for aid in agency_ids:
+                status = status_map.get((p.id, aid))
+                if status:
+                    row.append(STATUS_SYMBOLS.get(status, status))
+                else:
+                    row.append("[dim]-[/dim]")
+            table.add_row(*row)
+
+        console.print(table)
+
+        # Summary stats
+        total = len(requests)
+        sent_count = sum(1 for r in requests if r.status.value not in ("draft", "pending_send"))
+        complete_count = sum(1 for r in requests if r.status.value == "complete")
+        denied_count = sum(1 for r in requests if r.status.value == "denied")
+
+        rprint(f"\n  Sent: {sent_count}/{total} | Complete: {complete_count}/{total} | Denied: {denied_count}/{total}")
+
+
 # === Analyze Commands ===
 
 
@@ -1546,9 +1793,14 @@ def analyze_extract(
 def analyze_graph(
     request_id: Optional[str] = typer.Option(None, "--request", "-r", help="Analyze single request"),
     campaign_id: Optional[str] = typer.Option(None, "--campaign", "-c", help="Analyze entire campaign"),
-    output: Path = typer.Option("graph.json", "--output", "-o", help="Output file"),
+    output: Path = typer.Option("graph.json", "--output", "-o", help="Output file for JSON"),
+    view: bool = typer.Option(False, "--view", "-v", help="Open interactive HTML visualization in browser"),
 ):
-    """Build entity relationship graph from extracted entities."""
+    """Build entity relationship graph from extracted entities.
+
+    Exports graph data as JSON. Use --view to generate and open an interactive
+    HTML visualization with nodes colored by entity type.
+    """
     from .db import get_session, get_db_path
     from .models import Entity, Document, Request as RequestModel, entity_links
 
@@ -1575,16 +1827,20 @@ def analyze_graph(
 
         entity_ids = {e.id for e in entities}
 
-        # Build graph data
-        nodes = [
-            {
+        # Build node data with document occurrences
+        nodes = []
+        for e in entities:
+            node = {
                 "id": e.id,
                 "label": e.normalized_text,
                 "type": e.entity_type.value,
                 "confidence": e.confidence,
+                "document_id": e.document_id,
+                "raw_text": e.raw_text,
+                "context": e.context or "",
+                "page_number": e.page_number,
             }
-            for e in entities
-        ]
+            nodes.append(node)
 
         links_q = session.query(entity_links)
         if entity_ids:
@@ -1609,6 +1865,414 @@ def analyze_graph(
         rprint(f"[green]Graph exported to {output}[/green]")
         rprint(f"  Entities: {len(nodes)}")
         rprint(f"  Relationships: {len(edges)}")
+
+        if view:
+            html_path = output.with_suffix(".html")
+            _generate_graph_html(graph_data, html_path)
+            rprint(f"[green]Visualization exported to {html_path}[/green]")
+
+            import webbrowser
+            webbrowser.open(f"file://{html_path.resolve()}")
+            rprint("[cyan]Opened in browser.[/cyan]")
+
+
+def _generate_graph_html(graph_data: dict, output_path: Path) -> None:
+    """Generate a standalone HTML file with an interactive entity graph visualization.
+
+    Uses a canvas-based d3-force-style simulation. Nodes are colored by entity type,
+    edges are labeled with relationship type, and clicking a node shows its
+    occurrences across documents.
+    """
+    import json as json_mod
+
+    graph_json = json_mod.dumps(graph_data)
+
+    # The HTML is a self-contained page with inline JS for the force graph.
+    # All entity data from the user's own local database is embedded as JSON.
+    # The escapeHtml() function in the JS sanitizes all text before display.
+    html_content = _GRAPH_HTML_TEMPLATE.replace("__GRAPH_DATA__", graph_json)
+    output_path.write_text(html_content)
+
+
+_GRAPH_HTML_TEMPLATE = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenFOIA Entity Graph</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e0e0e0; overflow: hidden; }
+  #graph { width: 100vw; height: 100vh; }
+  #info-panel {
+    position: fixed; top: 16px; right: 16px; width: 340px;
+    background: rgba(20, 20, 20, 0.95); border: 1px solid #333;
+    border-radius: 8px; padding: 16px; display: none;
+    max-height: 80vh; overflow-y: auto; z-index: 10;
+  }
+  #info-panel h2 { font-size: 16px; margin-bottom: 8px; color: #fff; }
+  #info-panel .label { color: #888; font-size: 12px; text-transform: uppercase; margin-top: 10px; }
+  #info-panel .value { font-size: 14px; margin-bottom: 4px; }
+  #info-panel .occurrence { background: #1a1a2e; border-radius: 4px; padding: 8px; margin: 4px 0; font-size: 13px; }
+  #info-panel .close { position: absolute; top: 8px; right: 12px; cursor: pointer; color: #888; font-size: 18px; }
+  #legend {
+    position: fixed; bottom: 16px; left: 16px;
+    background: rgba(20, 20, 20, 0.95); border: 1px solid #333;
+    border-radius: 8px; padding: 12px 16px; z-index: 10;
+  }
+  #legend h3 { font-size: 13px; margin-bottom: 8px; color: #aaa; }
+  .legend-item { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 12px; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 50%; }
+  #title {
+    position: fixed; top: 16px; left: 16px;
+    background: rgba(20, 20, 20, 0.95); border: 1px solid #333;
+    border-radius: 8px; padding: 12px 16px; z-index: 10;
+  }
+  #title h1 { font-size: 16px; color: #fff; }
+  #title p { font-size: 12px; color: #888; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div id="title">
+  <h1>OpenFOIA Entity Graph</h1>
+  <p id="stats"></p>
+</div>
+<div id="legend"></div>
+<div id="info-panel">
+  <span class="close" onclick="document.getElementById('info-panel').style.display='none'">&times;</span>
+  <div id="info-content"></div>
+</div>
+<canvas id="graph"></canvas>
+
+<script>
+(function() {
+"use strict";
+var graphData = __GRAPH_DATA__;
+
+var TYPE_COLORS = {
+  person: '#e74c3c',
+  organization: '#3498db',
+  location: '#2ecc71',
+  date: '#f39c12',
+  money: '#9b59b6',
+  document_id: '#1abc9c',
+  phone: '#e67e22',
+  email: '#e91e63',
+  address: '#00bcd4'
+};
+
+// Stats
+var nodeCount = graphData.nodes.length;
+var edgeCount = graphData.edges.length;
+var typesSet = {};
+graphData.nodes.forEach(function(n) { typesSet[n.type] = true; });
+var types = Object.keys(typesSet).sort();
+document.getElementById('stats').textContent = nodeCount + ' entities, ' + edgeCount + ' relationships';
+
+// Legend
+var legendEl = document.getElementById('legend');
+var legendHTML = '<h3>Entity Types</h3>';
+types.forEach(function(t) {
+  var color = TYPE_COLORS[t] || '#999';
+  legendHTML += '<div class="legend-item"><div class="legend-dot" style="background:' + color + '"></div>' + t + '</div>';
+});
+legendEl.innerHTML = legendHTML;
+
+// Build occurrence index: normalized_text -> list of occurrences
+var occurrenceIndex = {};
+graphData.nodes.forEach(function(n) {
+  var key = n.label;
+  if (!occurrenceIndex[key]) occurrenceIndex[key] = [];
+  occurrenceIndex[key].push(n);
+});
+
+// Deduplicate nodes by label for cleaner visualization
+var uniqueNodes = {};
+graphData.nodes.forEach(function(n) {
+  if (!uniqueNodes[n.label] || n.confidence > uniqueNodes[n.label].confidence) {
+    var existing = uniqueNodes[n.label];
+    uniqueNodes[n.label] = {
+      id: n.id, label: n.label, type: n.type, confidence: n.confidence,
+      count: (existing ? (existing.count || 1) : 0) + 1
+    };
+  } else {
+    uniqueNodes[n.label].count = (uniqueNodes[n.label].count || 1) + 1;
+  }
+});
+var displayNodes = Object.keys(uniqueNodes).map(function(k) { return uniqueNodes[k]; });
+var nodeIdToLabel = {};
+graphData.nodes.forEach(function(n) { nodeIdToLabel[n.id] = n.label; });
+
+// Canvas setup
+var canvas = document.getElementById('graph');
+var ctx = canvas.getContext('2d');
+var W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+resize();
+window.addEventListener('resize', resize);
+
+// Physics simulation
+var SIM_NODES = displayNodes.map(function(n) {
+  return {
+    label: n.label, type: n.type, confidence: n.confidence, count: n.count || 1,
+    x: W / 2 + (Math.random() - 0.5) * W * 0.6,
+    y: H / 2 + (Math.random() - 0.5) * H * 0.6,
+    vx: 0, vy: 0,
+    radius: Math.min(8 + (n.count || 1) * 2, 24)
+  };
+});
+
+// Map edges to display nodes
+var labelToIdx = {};
+SIM_NODES.forEach(function(n, i) { labelToIdx[n.label] = i; });
+var SIM_EDGES = [];
+graphData.edges.forEach(function(e) {
+  var srcLabel = nodeIdToLabel[e.source];
+  var tgtLabel = nodeIdToLabel[e.target];
+  if (srcLabel && tgtLabel && labelToIdx[srcLabel] !== undefined && labelToIdx[tgtLabel] !== undefined) {
+    SIM_EDGES.push({ source: labelToIdx[srcLabel], target: labelToIdx[tgtLabel], type: e.type || '' });
+  }
+});
+
+// Force simulation constants
+var REPULSION = 3000;
+var ATTRACTION = 0.005;
+var DAMPING = 0.85;
+var CENTER_GRAVITY = 0.01;
+var LINK_DISTANCE = 120;
+
+function simulate() {
+  var i, j, dx, dy, dist, force, fx, fy, a, b;
+  // Repulsion
+  for (i = 0; i < SIM_NODES.length; i++) {
+    for (j = i + 1; j < SIM_NODES.length; j++) {
+      dx = SIM_NODES[j].x - SIM_NODES[i].x;
+      dy = SIM_NODES[j].y - SIM_NODES[i].y;
+      dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      force = REPULSION / (dist * dist);
+      fx = (dx / dist) * force; fy = (dy / dist) * force;
+      SIM_NODES[i].vx -= fx; SIM_NODES[i].vy -= fy;
+      SIM_NODES[j].vx += fx; SIM_NODES[j].vy += fy;
+    }
+  }
+  // Attraction along edges
+  for (i = 0; i < SIM_EDGES.length; i++) {
+    a = SIM_NODES[SIM_EDGES[i].source]; b = SIM_NODES[SIM_EDGES[i].target];
+    dx = b.x - a.x; dy = b.y - a.y;
+    dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    force = (dist - LINK_DISTANCE) * ATTRACTION;
+    fx = (dx / dist) * force; fy = (dy / dist) * force;
+    a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
+  }
+  // Center gravity
+  for (i = 0; i < SIM_NODES.length; i++) {
+    SIM_NODES[i].vx += (W / 2 - SIM_NODES[i].x) * CENTER_GRAVITY;
+    SIM_NODES[i].vy += (H / 2 - SIM_NODES[i].y) * CENTER_GRAVITY;
+  }
+  // Apply velocity
+  for (i = 0; i < SIM_NODES.length; i++) {
+    var n = SIM_NODES[i];
+    n.vx *= DAMPING; n.vy *= DAMPING;
+    n.x += n.vx; n.y += n.vy;
+    n.x = Math.max(n.radius, Math.min(W - n.radius, n.x));
+    n.y = Math.max(n.radius, Math.min(H - n.radius, n.y));
+  }
+}
+
+// Pan and zoom state
+var offsetX = 0, offsetY = 0, scale = 1;
+var isPanning = false, lastMX = 0, lastMY = 0;
+var dragNode = null;
+
+canvas.addEventListener('wheel', function(e) {
+  e.preventDefault();
+  var zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+  var mx = e.clientX, my = e.clientY;
+  offsetX = mx - (mx - offsetX) * zoomFactor;
+  offsetY = my - (my - offsetY) * zoomFactor;
+  scale *= zoomFactor;
+});
+
+function screenToWorld(sx, sy) {
+  return [(sx - offsetX) / scale, (sy - offsetY) / scale];
+}
+
+canvas.addEventListener('mousedown', function(e) {
+  var wc = screenToWorld(e.clientX, e.clientY);
+  var wx = wc[0], wy = wc[1];
+  for (var i = SIM_NODES.length - 1; i >= 0; i--) {
+    var n = SIM_NODES[i];
+    var ddx = wx - n.x, ddy = wy - n.y;
+    if (ddx * ddx + ddy * ddy < n.radius * n.radius * 1.5) {
+      dragNode = n;
+      return;
+    }
+  }
+  isPanning = true;
+  lastMX = e.clientX; lastMY = e.clientY;
+});
+
+canvas.addEventListener('mousemove', function(e) {
+  if (dragNode) {
+    var wc = screenToWorld(e.clientX, e.clientY);
+    dragNode.x = wc[0]; dragNode.y = wc[1];
+    dragNode.vx = 0; dragNode.vy = 0;
+  } else if (isPanning) {
+    offsetX += e.clientX - lastMX;
+    offsetY += e.clientY - lastMY;
+    lastMX = e.clientX; lastMY = e.clientY;
+  }
+});
+
+canvas.addEventListener('mouseup', function() {
+  isPanning = false; dragNode = null;
+});
+
+canvas.addEventListener('click', function(e) {
+  var wc = screenToWorld(e.clientX, e.clientY);
+  var wx = wc[0], wy = wc[1];
+  for (var i = SIM_NODES.length - 1; i >= 0; i--) {
+    var n = SIM_NODES[i];
+    var ddx = wx - n.x, ddy = wy - n.y;
+    if (ddx * ddx + ddy * ddy < n.radius * n.radius * 1.5) {
+      showNodeInfo(n);
+      return;
+    }
+  }
+});
+
+function escapeHtml(text) {
+  var div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function showNodeInfo(node) {
+  var panel = document.getElementById('info-panel');
+  var content = document.getElementById('info-content');
+  var color = TYPE_COLORS[node.type] || '#999';
+  var occurrences = occurrenceIndex[node.label] || [];
+
+  // Build info panel using DOM methods for safety
+  content.textContent = '';
+
+  var h2 = document.createElement('h2');
+  h2.style.color = color;
+  h2.textContent = node.label;
+  content.appendChild(h2);
+
+  var typeLabel = document.createElement('div');
+  typeLabel.className = 'label';
+  typeLabel.textContent = 'Type';
+  content.appendChild(typeLabel);
+  var typeValue = document.createElement('div');
+  typeValue.className = 'value';
+  typeValue.textContent = node.type;
+  content.appendChild(typeValue);
+
+  var confLabel = document.createElement('div');
+  confLabel.className = 'label';
+  confLabel.textContent = 'Confidence';
+  content.appendChild(confLabel);
+  var confValue = document.createElement('div');
+  confValue.className = 'value';
+  confValue.textContent = (node.confidence * 100).toFixed(0) + '%';
+  content.appendChild(confValue);
+
+  var occLabel = document.createElement('div');
+  occLabel.className = 'label';
+  occLabel.textContent = 'Occurrences (' + occurrences.length + ')';
+  content.appendChild(occLabel);
+
+  occurrences.forEach(function(occ) {
+    var occDiv = document.createElement('div');
+    occDiv.className = 'occurrence';
+
+    var docInfo = document.createElement('div');
+    docInfo.style.fontSize = '11px';
+    docInfo.style.color = '#888';
+    docInfo.textContent = 'Document: ' + occ.document_id.substring(0, 8) + '...';
+    occDiv.appendChild(docInfo);
+
+    if (occ.page_number) {
+      var pageInfo = document.createElement('div');
+      pageInfo.style.fontSize = '11px';
+      pageInfo.style.color = '#888';
+      pageInfo.textContent = 'Page: ' + occ.page_number;
+      occDiv.appendChild(pageInfo);
+    }
+
+    if (occ.context) {
+      var ctxInfo = document.createElement('div');
+      ctxInfo.style.marginTop = '4px';
+      ctxInfo.style.fontSize = '12px';
+      ctxInfo.style.color = '#ccc';
+      ctxInfo.textContent = '"' + occ.context.substring(0, 200) + '"';
+      occDiv.appendChild(ctxInfo);
+    }
+
+    content.appendChild(occDiv);
+  });
+
+  panel.style.display = 'block';
+}
+
+function draw() {
+  simulate();
+  ctx.clearRect(0, 0, W, H);
+  ctx.save();
+  ctx.translate(offsetX, offsetY);
+  ctx.scale(scale, scale);
+
+  // Draw edges
+  ctx.lineWidth = 1;
+  var i, e, a, b, mx, my, n, color;
+  for (i = 0; i < SIM_EDGES.length; i++) {
+    e = SIM_EDGES[i];
+    a = SIM_NODES[e.source]; b = SIM_NODES[e.target];
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    if (e.type) {
+      mx = (a.x + b.x) / 2; my = (a.y + b.y) / 2;
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.font = '9px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(e.type, mx, my - 3);
+    }
+  }
+
+  // Draw nodes
+  for (i = 0; i < SIM_NODES.length; i++) {
+    n = SIM_NODES[i];
+    color = TYPE_COLORS[n.type] || '#999';
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.85;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    var lbl = n.label.length > 20 ? n.label.substring(0, 18) + '...' : n.label;
+    ctx.fillText(lbl, n.x, n.y + n.radius + 14);
+  }
+
+  ctx.restore();
+  requestAnimationFrame(draw);
+}
+
+draw();
+})();
+</script>
+</body>
+</html>"""
 
 
 # === Deadline Commands ===

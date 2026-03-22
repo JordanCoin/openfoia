@@ -398,6 +398,49 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
                 "total": len(entities),
             }
 
+    @app.get("/api/deadlines")
+    async def deadlines(token: str = Depends(verify_token)):
+        """Get upcoming deadlines for pending requests."""
+        from .db import get_session
+        from .models import Request as FOIARequest, RequestStatus, Agency
+
+        with get_session() as session:
+            active_statuses = [
+                RequestStatus.SENT,
+                RequestStatus.ACKNOWLEDGED,
+                RequestStatus.PROCESSING,
+                RequestStatus.FEE_ESTIMATE,
+                RequestStatus.FEE_PAID,
+                RequestStatus.PARTIAL_RESPONSE,
+                RequestStatus.APPEALED,
+            ]
+            requests = (
+                session.query(FOIARequest)
+                .join(Agency)
+                .filter(FOIARequest.status.in_(active_statuses))
+                .order_by(FOIARequest.due_date.asc().nullslast(), FOIARequest.sent_at.asc())
+                .limit(20)
+                .all()
+            )
+
+            return {
+                "deadlines": [
+                    {
+                        "id": r.id,
+                        "request_number": r.request_number,
+                        "agency": r.agency.abbreviation or r.agency.name,
+                        "subject": r.subject,
+                        "status": r.status.value,
+                        "due_date": r.due_date.isoformat() if r.due_date else None,
+                        "sent_at": r.sent_at.isoformat() if r.sent_at else None,
+                        "days_pending": r.days_pending(),
+                        "is_overdue": r.is_overdue(),
+                    }
+                    for r in requests
+                ],
+                "total": len(requests),
+            }
+
     @app.get("/api/graph")
     async def get_graph(
         token: str = Depends(verify_token),
@@ -449,7 +492,13 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
 
 
 def get_index_html() -> str:
-    """Return the main HTML interface."""
+    """Return the main HTML interface.
+
+    All rendering uses safe DOM methods (textContent, createElement) for
+    user-supplied data.  Only static structural markup is built as strings.
+    This is a localhost-only tool with token auth; the data originates
+    entirely from the local SQLite database.
+    """
     return """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -461,6 +510,12 @@ def get_index_html() -> str:
     <style>
         .gradient-bg {
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        }
+        #agency-dropdown { max-height: 200px; overflow-y: auto; }
+        .agency-option:hover { background: rgba(59, 130, 246, 0.3); }
+        .toast {
+            position: fixed; bottom: 2rem; right: 2rem; padding: 1rem 1.5rem;
+            border-radius: 0.75rem; z-index: 50; transition: opacity 0.3s;
         }
     </style>
 </head>
@@ -507,10 +562,13 @@ def get_index_html() -> str:
                 <div class="bg-white/10 rounded-xl p-6 backdrop-blur">
                     <h2 class="text-xl font-semibold mb-4">New FOIA Request</h2>
                     <form id="new-request-form" class="space-y-4">
-                        <div>
+                        <div class="relative">
                             <label class="block text-sm text-gray-400 mb-1">Agency</label>
                             <input type="text" id="agency-search" placeholder="Search agencies..."
+                                   autocomplete="off"
                                    class="w-full bg-white/5 border border-white/20 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500">
+                            <input type="hidden" id="agency-id" value="">
+                            <div id="agency-dropdown" class="absolute z-10 w-full mt-1 bg-gray-800 border border-white/20 rounded-lg hidden"></div>
                         </div>
                         <div>
                             <label class="block text-sm text-gray-400 mb-1">Subject</label>
@@ -542,7 +600,8 @@ def get_index_html() -> str:
                                 <span class="text-sm">Request expedited processing</span>
                             </label>
                         </div>
-                        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 rounded-lg px-4 py-3 font-semibold transition">
+                        <div id="form-error" class="hidden text-red-400 text-sm"></div>
+                        <button type="submit" id="submit-btn" class="w-full bg-blue-600 hover:bg-blue-700 rounded-lg px-4 py-3 font-semibold transition">
                             Draft Request
                         </button>
                     </form>
@@ -554,18 +613,62 @@ def get_index_html() -> str:
                 <div class="bg-white/10 rounded-xl p-6 backdrop-blur">
                     <h2 class="text-xl font-semibold mb-4">Quick Actions</h2>
                     <div class="space-y-3">
-                        <button class="w-full bg-white/5 hover:bg-white/10 rounded-lg px-4 py-3 text-left transition">
+                        <button id="btn-import-docs" class="w-full bg-white/5 hover:bg-white/10 rounded-lg px-4 py-3 text-left transition">
                             Import Documents
                         </button>
-                        <button class="w-full bg-white/5 hover:bg-white/10 rounded-lg px-4 py-3 text-left transition">
+                        <button id="btn-search-entities" class="w-full bg-white/5 hover:bg-white/10 rounded-lg px-4 py-3 text-left transition">
                             Search Entities
                         </button>
-                        <button class="w-full bg-white/5 hover:bg-white/10 rounded-lg px-4 py-3 text-left transition">
+                        <button id="btn-view-graph" class="w-full bg-white/5 hover:bg-white/10 rounded-lg px-4 py-3 text-left transition">
                             View Entity Graph
                         </button>
-                        <button class="w-full bg-white/5 hover:bg-white/10 rounded-lg px-4 py-3 text-left transition">
-                            Generate Report
+                        <button class="w-full bg-white/5 hover:bg-white/10 rounded-lg px-4 py-3 text-left transition opacity-50 cursor-not-allowed" disabled>
+                            Generate Report (coming soon)
                         </button>
+                    </div>
+                </div>
+
+                <!-- Import Documents Panel (hidden by default) -->
+                <div id="import-panel" class="bg-white/10 rounded-xl p-6 backdrop-blur hidden">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-xl font-semibold">Import Documents</h2>
+                        <button onclick="document.getElementById('import-panel').classList.add('hidden')" class="text-gray-400 hover:text-white">&times;</button>
+                    </div>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-sm text-gray-400 mb-1">Request</label>
+                            <select id="upload-request-id" class="w-full bg-white/5 border border-white/20 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500">
+                                <option value="">Select a request...</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-400 mb-1">File</label>
+                            <input type="file" id="upload-file" class="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-600 file:text-white file:cursor-pointer">
+                        </div>
+                        <button id="upload-submit" class="w-full bg-green-600 hover:bg-green-700 rounded-lg px-4 py-3 font-semibold transition">
+                            Upload
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Entity Search Panel (hidden by default) -->
+                <div id="entity-panel" class="bg-white/10 rounded-xl p-6 backdrop-blur hidden">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-xl font-semibold">Search Entities</h2>
+                        <button onclick="document.getElementById('entity-panel').classList.add('hidden')" class="text-gray-400 hover:text-white">&times;</button>
+                    </div>
+                    <div class="space-y-3">
+                        <input type="text" id="entity-query" placeholder="Search people, orgs, locations..."
+                               class="w-full bg-white/5 border border-white/20 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500">
+                        <select id="entity-type-filter" class="w-full bg-white/5 border border-white/20 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500">
+                            <option value="">All types</option>
+                            <option value="person">People</option>
+                            <option value="organization">Organizations</option>
+                            <option value="location">Locations</option>
+                            <option value="date">Dates</option>
+                            <option value="money">Money</option>
+                        </select>
+                        <div id="entity-results" class="text-sm text-gray-400">Enter a search term above.</div>
                     </div>
                 </div>
 
@@ -584,8 +687,18 @@ def get_index_html() -> str:
             </div>
         </div>
 
-        <!-- Recent Requests -->
+        <!-- Deadlines -->
         <div class="mt-12">
+            <div class="bg-white/10 rounded-xl p-6 backdrop-blur">
+                <h2 class="text-xl font-semibold mb-4">Upcoming Deadlines</h2>
+                <div id="deadlines-list" class="text-gray-400 text-center py-8">
+                    Loading deadlines...
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Requests -->
+        <div class="mt-8">
             <div class="bg-white/10 rounded-xl p-6 backdrop-blur">
                 <h2 class="text-xl font-semibold mb-4">Recent Requests</h2>
                 <div id="requests-list" class="text-gray-400 text-center py-8">
@@ -601,15 +714,36 @@ def get_index_html() -> str:
         </footer>
     </div>
 
+    <!-- Toast notification -->
+    <div id="toast" class="toast hidden text-white"></div>
+
     <script>
         // Get token from URL
         const urlParams = new URLSearchParams(window.location.search);
         const token = urlParams.get('token');
 
-        // Fetch stats on load
+        // --- Helpers ---
+        function showToast(msg, isError) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'toast ' + (isError ? 'bg-red-600' : 'bg-green-600');
+            setTimeout(function() { t.classList.add('hidden'); }, 3000);
+        }
+
+        function apiUrl(path) {
+            return path + (path.includes('?') ? '&' : '?') + 'token=' + token;
+        }
+
+        function esc(s) {
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.textContent;
+        }
+
+        // --- Stats ---
         async function loadStats() {
             try {
-                const resp = await fetch(`/api/stats?token=${token}`);
+                const resp = await fetch(apiUrl('/api/stats'));
                 const data = await resp.json();
                 document.getElementById('stat-requests').textContent = data.requests.total;
                 document.getElementById('stat-documents').textContent = data.documents.total;
@@ -620,36 +754,340 @@ def get_index_html() -> str:
             }
         }
 
-        // Load recent requests
+        // --- Requests Table ---
+        function renderRequestsTable(container, requests, emptyMsg) {
+            container.replaceChildren();
+            if (requests.length === 0) {
+                var p = document.createElement('p');
+                p.className = 'text-gray-400 text-center py-8';
+                p.textContent = emptyMsg;
+                container.appendChild(p);
+                return;
+            }
+            var tbl = document.createElement('table');
+            tbl.className = 'w-full text-left';
+            var thead = document.createElement('thead');
+            var hrow = document.createElement('tr');
+            hrow.className = 'text-gray-400 text-sm';
+            ['Request #', 'Agency', 'Subject', 'Status', 'Days'].forEach(function(h) {
+                var th = document.createElement('th');
+                th.className = 'pb-2';
+                th.textContent = h;
+                hrow.appendChild(th);
+            });
+            thead.appendChild(hrow);
+            tbl.appendChild(thead);
+            var tbody = document.createElement('tbody');
+            requests.forEach(function(r) {
+                var tr = document.createElement('tr');
+                tr.className = 'border-t border-white/10';
+                var td1 = document.createElement('td'); td1.className = 'py-2 text-cyan-400'; td1.textContent = r.request_number;
+                var td2 = document.createElement('td'); td2.className = 'py-2'; td2.textContent = r.agency;
+                var td3 = document.createElement('td'); td3.className = 'py-2'; td3.textContent = r.subject;
+                var td4 = document.createElement('td');
+                td4.className = 'py-2 ' + (r.status === 'complete' ? 'text-green-400' : r.status === 'denied' ? 'text-red-400' : 'text-yellow-400');
+                td4.textContent = r.status;
+                var td5 = document.createElement('td'); td5.className = 'py-2'; td5.textContent = r.days_pending;
+                tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4); tr.appendChild(td5);
+                tbody.appendChild(tr);
+            });
+            tbl.appendChild(tbody);
+            container.appendChild(tbl);
+        }
+
         async function loadRequests() {
             try {
-                const resp = await fetch(`/api/requests?token=${token}&limit=10`);
+                const resp = await fetch(apiUrl('/api/requests?limit=10'));
                 const data = await resp.json();
-                const list = document.getElementById('requests-list');
-                if (data.requests.length === 0) {
-                    list.innerHTML = '<p class="text-gray-400 text-center py-8">No requests yet. Create your first FOIA request above.</p>';
-                    return;
-                }
-                let html = '<table class="w-full text-left"><thead><tr class="text-gray-400 text-sm">' +
-                    '<th class="pb-2">Request #</th><th class="pb-2">Agency</th><th class="pb-2">Subject</th>' +
-                    '<th class="pb-2">Status</th><th class="pb-2">Days</th></tr></thead><tbody>';
-                for (const r of data.requests) {
-                    const statusColor = r.status === 'complete' ? 'text-green-400' :
-                        r.status === 'denied' ? 'text-red-400' : 'text-yellow-400';
-                    html += `<tr class="border-t border-white/10"><td class="py-2 text-cyan-400">${r.request_number}</td>` +
-                        `<td class="py-2">${r.agency}</td><td class="py-2">${r.subject}</td>` +
-                        `<td class="py-2 ${statusColor}">${r.status}</td>` +
-                        `<td class="py-2">${r.days_pending}</td></tr>`;
-                }
-                html += '</tbody></table>';
-                list.innerHTML = html;
+                renderRequestsTable(
+                    document.getElementById('requests-list'),
+                    data.requests,
+                    'No requests yet. Create your first FOIA request above.'
+                );
             } catch (e) {
                 console.error('Failed to load requests:', e);
             }
         }
 
+        // --- Deadlines ---
+        async function loadDeadlines() {
+            try {
+                const resp = await fetch(apiUrl('/api/deadlines'));
+                const data = await resp.json();
+                var el = document.getElementById('deadlines-list');
+                el.replaceChildren();
+                if (data.deadlines.length === 0) {
+                    var p = document.createElement('p');
+                    p.className = 'text-gray-400 text-center py-4';
+                    p.textContent = 'No pending deadlines.';
+                    el.appendChild(p);
+                    return;
+                }
+                var tbl = document.createElement('table');
+                tbl.className = 'w-full text-left';
+                var thead = document.createElement('thead');
+                var hrow = document.createElement('tr');
+                hrow.className = 'text-gray-400 text-sm';
+                ['Request #', 'Agency', 'Subject', 'Status', 'Due Date', 'Days Pending'].forEach(function(h) {
+                    var th = document.createElement('th'); th.className = 'pb-2'; th.textContent = h; hrow.appendChild(th);
+                });
+                thead.appendChild(hrow);
+                tbl.appendChild(thead);
+                var tbody = document.createElement('tbody');
+                data.deadlines.forEach(function(d) {
+                    var tr = document.createElement('tr');
+                    tr.className = 'border-t border-white/10';
+                    var td1 = document.createElement('td'); td1.className = 'py-2 text-cyan-400'; td1.textContent = d.request_number;
+                    var td2 = document.createElement('td'); td2.className = 'py-2'; td2.textContent = d.agency;
+                    var td3 = document.createElement('td'); td3.className = 'py-2'; td3.textContent = d.subject;
+                    var td4 = document.createElement('td'); td4.className = 'py-2 text-yellow-400'; td4.textContent = d.status;
+                    var td5 = document.createElement('td');
+                    td5.className = 'py-2' + (d.is_overdue ? ' text-red-400 font-bold' : '');
+                    td5.textContent = (d.due_date ? new Date(d.due_date).toLocaleDateString() : 'Not set') + (d.is_overdue ? ' OVERDUE' : '');
+                    var td6 = document.createElement('td'); td6.className = 'py-2'; td6.textContent = d.days_pending;
+                    tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4); tr.appendChild(td5); tr.appendChild(td6);
+                    tbody.appendChild(tr);
+                });
+                tbl.appendChild(tbody);
+                el.appendChild(tbl);
+            } catch (e) {
+                console.error('Failed to load deadlines:', e);
+            }
+        }
+
+        // --- Agency Search / Autocomplete ---
+        var agencySearchTimeout = null;
+        var agencyInput = document.getElementById('agency-search');
+        var agencyDropdown = document.getElementById('agency-dropdown');
+        var agencyIdField = document.getElementById('agency-id');
+
+        agencyInput.addEventListener('input', function() {
+            clearTimeout(agencySearchTimeout);
+            var q = this.value.trim();
+            agencyIdField.value = '';
+            if (q.length < 2) { agencyDropdown.classList.add('hidden'); return; }
+            agencySearchTimeout = setTimeout(async function() {
+                try {
+                    var resp = await fetch(apiUrl('/api/agencies?query=' + encodeURIComponent(q)));
+                    var data = await resp.json();
+                    agencyDropdown.replaceChildren();
+                    if (data.agencies.length === 0) {
+                        var nf = document.createElement('div');
+                        nf.className = 'px-4 py-2 text-gray-500';
+                        nf.textContent = 'No agencies found';
+                        agencyDropdown.appendChild(nf);
+                    } else {
+                        data.agencies.forEach(function(a) {
+                            var opt = document.createElement('div');
+                            opt.className = 'agency-option px-4 py-2 cursor-pointer text-sm';
+                            opt.dataset.id = a.id;
+                            opt.dataset.name = (a.abbreviation ? a.abbreviation + ' - ' : '') + a.name;
+                            opt.textContent = opt.dataset.name + ' (' + a.level + ')';
+                            agencyDropdown.appendChild(opt);
+                        });
+                    }
+                    agencyDropdown.classList.remove('hidden');
+                } catch (e) { console.error('Agency search failed:', e); }
+            }, 250);
+        });
+
+        agencyDropdown.addEventListener('click', function(e) {
+            var opt = e.target.closest('.agency-option');
+            if (!opt) return;
+            agencyIdField.value = opt.dataset.id;
+            agencyInput.value = opt.dataset.name;
+            agencyDropdown.classList.add('hidden');
+        });
+
+        document.addEventListener('click', function(e) {
+            if (!agencyInput.contains(e.target) && !agencyDropdown.contains(e.target)) {
+                agencyDropdown.classList.add('hidden');
+            }
+        });
+
+        // --- New Request Form Submission ---
+        document.getElementById('new-request-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            var errorEl = document.getElementById('form-error');
+            errorEl.classList.add('hidden');
+
+            var agencyId = agencyIdField.value;
+            var subject = document.getElementById('request-subject').value.trim();
+            var body = document.getElementById('request-body').value.trim();
+            var feeWaiver = document.getElementById('fee-waiver').checked;
+            var expedited = document.getElementById('expedited').checked;
+
+            if (!agencyId) { errorEl.textContent = 'Please select an agency from the dropdown.'; errorEl.classList.remove('hidden'); return; }
+            if (!subject) { errorEl.textContent = 'Subject is required.'; errorEl.classList.remove('hidden'); return; }
+            if (!body) { errorEl.textContent = 'Request body is required.'; errorEl.classList.remove('hidden'); return; }
+
+            var btn = document.getElementById('submit-btn');
+            btn.disabled = true;
+            btn.textContent = 'Submitting...';
+
+            try {
+                var resp = await fetch(apiUrl('/api/requests'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        agency_id: agencyId,
+                        subject: subject,
+                        body: body,
+                        method: 'email',
+                        fee_waiver: feeWaiver,
+                        expedited: expedited,
+                    }),
+                });
+
+                if (!resp.ok) {
+                    var err = await resp.json();
+                    throw new Error(err.detail || 'Request failed');
+                }
+
+                var result = await resp.json();
+                showToast('Request ' + result.request_number + ' created!', false);
+
+                // Reset form
+                document.getElementById('new-request-form').reset();
+                agencyIdField.value = '';
+                document.getElementById('fee-waiver').checked = true;
+
+                // Reload data
+                loadRequests();
+                loadStats();
+                loadDeadlines();
+            } catch (err) {
+                errorEl.textContent = err.message;
+                errorEl.classList.remove('hidden');
+                showToast('Failed: ' + err.message, true);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Draft Request';
+            }
+        });
+
+        // --- Import Documents ---
+        document.getElementById('btn-import-docs').addEventListener('click', async function() {
+            var panel = document.getElementById('import-panel');
+            panel.classList.toggle('hidden');
+            if (!panel.classList.contains('hidden')) {
+                try {
+                    var resp = await fetch(apiUrl('/api/requests?limit=50'));
+                    var data = await resp.json();
+                    var sel = document.getElementById('upload-request-id');
+                    sel.replaceChildren();
+                    var defaultOpt = document.createElement('option');
+                    defaultOpt.value = '';
+                    defaultOpt.textContent = 'Select a request...';
+                    sel.appendChild(defaultOpt);
+                    data.requests.forEach(function(r) {
+                        var opt = document.createElement('option');
+                        opt.value = r.id;
+                        opt.textContent = r.request_number + ' - ' + r.subject;
+                        sel.appendChild(opt);
+                    });
+                } catch (e) { console.error('Failed to load requests for upload:', e); }
+            }
+        });
+
+        document.getElementById('upload-submit').addEventListener('click', async function() {
+            var requestId = document.getElementById('upload-request-id').value;
+            var fileInput = document.getElementById('upload-file');
+            if (!requestId) { showToast('Please select a request.', true); return; }
+            if (!fileInput.files.length) { showToast('Please select a file.', true); return; }
+
+            var formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            try {
+                var resp = await fetch(apiUrl('/api/documents/upload?request_id=' + requestId), {
+                    method: 'POST',
+                    body: formData,
+                });
+                if (!resp.ok) {
+                    var err = await resp.json();
+                    throw new Error(err.detail || 'Upload failed');
+                }
+                var result = await resp.json();
+                showToast('Uploaded: ' + result.filename, false);
+                fileInput.value = '';
+                loadStats();
+            } catch (err) {
+                showToast('Upload failed: ' + err.message, true);
+            }
+        });
+
+        // --- Entity Search ---
+        document.getElementById('btn-search-entities').addEventListener('click', function() {
+            document.getElementById('entity-panel').classList.toggle('hidden');
+        });
+
+        var entitySearchTimeout = null;
+        function doEntitySearch() {
+            clearTimeout(entitySearchTimeout);
+            entitySearchTimeout = setTimeout(async function() {
+                var q = document.getElementById('entity-query').value.trim();
+                var et = document.getElementById('entity-type-filter').value;
+                var resultsEl = document.getElementById('entity-results');
+
+                if (!q && !et) { resultsEl.textContent = 'Enter a search term above.'; return; }
+
+                var url = '/api/entities?';
+                if (q) url += 'query=' + encodeURIComponent(q) + '&';
+                if (et) url += 'entity_type=' + et + '&';
+
+                try {
+                    var resp = await fetch(apiUrl(url));
+                    var data = await resp.json();
+                    resultsEl.replaceChildren();
+                    if (data.entities.length === 0) {
+                        resultsEl.textContent = 'No entities found.';
+                        return;
+                    }
+                    var wrapper = document.createElement('div');
+                    wrapper.className = 'space-y-2 max-h-60 overflow-y-auto';
+                    data.entities.forEach(function(ent) {
+                        var row = document.createElement('div');
+                        row.className = 'flex items-center gap-2 py-1';
+                        var badge = document.createElement('span');
+                        var typeColor = ent.entity_type === 'person' ? 'bg-blue-600' :
+                            ent.entity_type === 'organization' ? 'bg-purple-600' :
+                            ent.entity_type === 'location' ? 'bg-green-600' : 'bg-gray-600';
+                        badge.className = typeColor + ' text-xs px-2 py-0.5 rounded';
+                        badge.textContent = ent.entity_type;
+                        var nameSpan = document.createElement('span');
+                        nameSpan.textContent = ent.normalized_text;
+                        var confSpan = document.createElement('span');
+                        confSpan.className = 'text-gray-500 text-xs ml-auto';
+                        confSpan.textContent = Math.round(ent.confidence * 100) + '%';
+                        row.appendChild(badge); row.appendChild(nameSpan); row.appendChild(confSpan);
+                        wrapper.appendChild(row);
+                    });
+                    resultsEl.appendChild(wrapper);
+                    var countP = document.createElement('p');
+                    countP.className = 'text-gray-500 text-xs mt-2';
+                    countP.textContent = data.total + ' result(s)';
+                    resultsEl.appendChild(countP);
+                } catch (e) { resultsEl.textContent = 'Search failed.'; }
+            }, 300);
+        }
+
+        document.getElementById('entity-query').addEventListener('input', doEntitySearch);
+        document.getElementById('entity-type-filter').addEventListener('change', doEntitySearch);
+
+        // --- View Entity Graph ---
+        document.getElementById('btn-view-graph').addEventListener('click', async function() {
+            try {
+                var resp = await fetch(apiUrl('/api/graph'));
+                var data = await resp.json();
+                showToast('Graph: ' + data.nodes.length + ' nodes, ' + data.edges.length + ' edges', false);
+            } catch (e) { showToast('Failed to load graph.', true); }
+        });
+
+        // --- Init ---
         loadStats();
         loadRequests();
+        loadDeadlines();
     </script>
 </body>
 </html>"""
