@@ -125,6 +125,86 @@ def init(
 
 
 @app.command()
+def guide():
+    """Interactive quickstart guide for new users.
+
+    Walks you through the basics: where to put files, how to file a request,
+    how to analyze documents, and how to stay safe.
+    """
+    rprint("""
+[bold cyan]OpenFOIA Quickstart Guide[/bold cyan]
+[dim]Everything runs locally. Your data never leaves this machine.[/dim]
+
+[bold]1. Your data lives here:[/bold]
+   [cyan]~/.openfoia/[/cyan]
+   ├── data.db       [dim]Database (requests, entities, graphs)[/dim]
+   ├── docs/         [dim]Ingested documents[/dim]
+   ├── graphs/       [dim]Saved investigation graphs[/dim]
+   ├── exports/      [dim]Reports[/dim]
+   └── config.json   [dim]Your settings[/dim]
+
+[bold]2. Start an investigation:[/bold]
+
+   [green]# File a FOIA request[/green]
+   openfoia request new --agency FBI --subject "Records on X" \\
+     --body "I request..." --name "Your Name" --email you@email.com
+
+   [green]# Or search existing completed requests (46k+ on MuckRock)[/green]
+   openfoia records search "EPA water contamination" --source muckrock
+   openfoia records download 68490 --ingest
+
+[bold]3. Analyze documents:[/bold]
+
+   [green]# Ingest your own files (PDFs, DOCX, TXT)[/green]
+   openfoia docs ingest ./my-documents/
+
+   [green]# Extract entities (people, orgs, money, dates)[/green]
+   openfoia analyze extract <document-id>
+
+   [green]# Build and view a relationship graph[/green]
+   openfoia analyze graph --name my-investigation --view
+
+[bold]4. Cross-reference against public databases:[/bold]
+
+   [green]# Check every entity against MuckRock, SEC, OpenSanctions, etc.[/green]
+   openfoia crossref
+
+[bold]5. Work with other tools:[/bold]
+
+   [green]# Export for Aleph/OpenAleph/OpenSanctions[/green]
+   openfoia analyze export -o data.ftm.json
+
+   [green]# Import from those tools[/green]
+   openfoia analyze import colleague-data.ftm.json
+
+[bold]6. Stay safe:[/bold]
+
+   [green]# Encrypt your database[/green]
+   openfoia db encrypt --password <secret>
+
+   [green]# When you're done — destroy everything[/green]
+   openfoia purge --secure --yes
+
+   [green]# For maximum safety: run from an encrypted USB or Tails OS[/green]
+   [dim]See docs/TAILS.md, docs/USB.md, docs/AIRGAP.md[/dim]
+
+[bold]7. Custom entity types for your investigation:[/bold]
+
+   [green]# Add patterns specific to what you're looking for[/green]
+   openfoia entities add -n CONTRACT_NUMBER -p '\\b[A-Z]{{2,4}}-\\d{{4,}}-\\d{{4,}}\\b' -d "Federal contracts"
+
+   [green]# Import from a spreadsheet (AI helps if columns are messy)[/green]
+   openfoia entities import patterns.csv
+
+[bold]Need help?[/bold]
+   openfoia --help              [dim]All commands[/dim]
+   openfoia request --help      [dim]Request commands[/dim]
+   openfoia analyze --help      [dim]Analysis commands[/dim]
+   [dim]https://github.com/JordanCoin/openfoia[/dim]
+""")
+
+
+@app.command()
 def serve(
     port: int = typer.Option(0, "--port", "-p", help="Port to run on (0 = random)"),
     host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host to bind to"),
@@ -1888,17 +1968,79 @@ def analyze_extract(
             rprint(f"\n[green]Entities saved to {output}[/green]")
 
 
+@analyze_app.command("graphs")
+def analyze_graphs_list():
+    """List saved investigation graphs.
+
+    Shows all named graphs saved in ~/.openfoia/graphs/.
+
+    Examples:
+        openfoia analyze graphs
+    """
+    from .db import get_data_dir
+
+    graphs_dir = get_data_dir() / "graphs"
+    if not graphs_dir.exists():
+        rprint("[dim]No saved graphs yet. Use 'openfoia analyze graph --name <name>' to create one.[/dim]")
+        return
+
+    html_files = sorted(graphs_dir.glob("*.html"))
+    json_files = sorted(graphs_dir.glob("*.json"))
+
+    if not html_files and not json_files:
+        rprint("[dim]No saved graphs yet.[/dim]")
+        return
+
+    table = Table(title="Saved Graphs")
+    table.add_column("Name", style="cyan")
+    table.add_column("Type")
+    table.add_column("Size")
+    table.add_column("Modified")
+
+    seen = set()
+    for f in html_files + json_files:
+        name = f.stem
+        if name in seen:
+            continue
+        seen.add(name)
+
+        html_exists = (graphs_dir / f"{name}.html").exists()
+        json_exists = (graphs_dir / f"{name}.json").exists()
+        types = []
+        if html_exists:
+            types.append("HTML")
+        if json_exists:
+            types.append("JSON")
+
+        size = f.stat().st_size
+        size_str = f"{size / 1024:.0f}KB" if size > 1024 else f"{size}B"
+        modified = datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+
+        table.add_row(name, " + ".join(types), size_str, modified)
+
+    console.print(table)
+    rprint(f"\n[dim]View a graph: openfoia analyze graph --name <name> --view[/dim]")
+    rprint(f"[dim]Graphs stored in: {graphs_dir}[/dim]")
+
+
 @analyze_app.command("graph")
 def analyze_graph(
     request_id: Optional[str] = typer.Option(None, "--request", "-r", help="Analyze single request"),
     campaign_id: Optional[str] = typer.Option(None, "--campaign", "-c", help="Analyze entire campaign"),
-    output: Path = typer.Option("graph.json", "--output", "-o", help="Output file for JSON"),
+    name: Optional[str] = typer.Option(None, "--name", "-n", help="Save as named graph (stored in ~/.openfoia/graphs/)"),
+    output: Path = typer.Option("graph.json", "--output", "-o", help="Output file for JSON (ignored if --name is set)"),
     view: bool = typer.Option(False, "--view", "-v", help="Open interactive HTML visualization in browser"),
 ):
     """Build entity relationship graph from extracted entities.
 
-    Exports graph data as JSON. Use --view to generate and open an interactive
-    HTML visualization with nodes colored by entity type.
+    Use --name to save graphs by investigation name. Each investigation
+    gets its own graph that you can revisit later.
+
+    Examples:
+        openfoia analyze graph --view                          # everything, open in browser
+        openfoia analyze graph --name defense-contracts --view # save + view
+        openfoia analyze graph --request REQ-001 --name epa    # filter + save
+        openfoia analyze graphs                                # list saved graphs
     """
     from .db import get_session, get_db_path
     from .models import Entity, Document, Request as RequestModel, entity_links
@@ -1959,16 +2101,30 @@ def analyze_graph(
         graph_data = {"nodes": nodes, "edges": edges}
 
         import json as json_mod
-        output.write_text(json_mod.dumps(graph_data, indent=2))
 
-        rprint(f"[green]Graph exported to {output}[/green]")
+        # Determine output paths
+        if name:
+            from .db import get_data_dir
+            graphs_dir = get_data_dir() / "graphs"
+            graphs_dir.mkdir(parents=True, exist_ok=True)
+            safe_name = name.lower().replace(" ", "-").replace("/", "-")
+            json_path = graphs_dir / f"{safe_name}.json"
+            html_path = graphs_dir / f"{safe_name}.html"
+        else:
+            json_path = output
+            html_path = output.with_suffix(".html")
+
+        json_path.write_text(json_mod.dumps(graph_data, indent=2))
+
+        rprint(f"[green]Graph exported to {json_path}[/green]")
         rprint(f"  Entities: {len(nodes)}")
         rprint(f"  Relationships: {len(edges)}")
+        if name:
+            rprint(f"  Saved as: [cyan]{name}[/cyan]")
 
         if view:
-            html_path = output.with_suffix(".html")
             _generate_graph_html(graph_data, html_path)
-            rprint(f"[green]Visualization exported to {html_path}[/green]")
+            rprint(f"[green]Visualization: {html_path}[/green]")
 
             import webbrowser
             webbrowser.open(f"file://{html_path.resolve()}")
