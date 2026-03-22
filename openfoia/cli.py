@@ -226,6 +226,7 @@ analyze_app = typer.Typer(help="Analyze documents")
 template_app = typer.Typer(help="Request templates")
 records_app = typer.Typer(help="Search public records")
 
+entities_app = typer.Typer(help="Manage custom entity types")
 deadline_app = typer.Typer(help="Track FOIA deadlines")
 db_app = typer.Typer(help="Database management")
 
@@ -236,6 +237,7 @@ app.add_typer(agency_app, name="agency")
 app.add_typer(analyze_app, name="analyze")
 app.add_typer(template_app, name="template")
 app.add_typer(records_app, name="records")
+app.add_typer(entities_app, name="entities")
 app.add_typer(deadline_app, name="deadlines")
 app.add_typer(db_app, name="db")
 
@@ -2370,6 +2372,280 @@ draw();
 </script>
 </body>
 </html>"""
+
+
+# === Entity Type Commands ===
+
+
+def _load_config_data() -> tuple[Path, dict]:
+    """Load config.json as raw dict."""
+    config_path = Path.home() / ".openfoia" / "config.json"
+    if config_path.exists():
+        data = json.loads(config_path.read_text())
+    else:
+        data = {}
+    return config_path, data
+
+
+def _save_config_data(config_path: Path, data: dict) -> None:
+    """Save config dict to config.json."""
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps(data, indent=2))
+
+
+@entities_app.command("list")
+def entities_list():
+    """List custom entity types."""
+    _, data = _load_config_data()
+    custom_types = data.get("entities", {}).get("custom_types", [])
+
+    if not custom_types:
+        rprint("[dim]No custom entity types configured.[/dim]")
+        rprint("[dim]Use 'openfoia entities add' or 'openfoia entities import' to add some.[/dim]")
+        return
+
+    table = Table(title=f"Custom Entity Types ({len(custom_types)})")
+    table.add_column("Name", style="cyan")
+    table.add_column("Pattern")
+    table.add_column("Description")
+
+    for ct in custom_types:
+        table.add_row(ct.get("name", ""), ct.get("pattern", ""), ct.get("description", ""))
+
+    console.print(table)
+
+
+@entities_app.command("add")
+def entities_add(
+    name: str = typer.Option(..., "--name", "-n", help="Entity type name (e.g., CONTRACT_NUMBER)"),
+    pattern: str = typer.Option(..., "--pattern", "-p", help="Regex pattern to match"),
+    description: str = typer.Option("", "--description", "-d", help="What this entity type represents"),
+):
+    """Add a custom entity type.
+
+    Examples:
+        openfoia entities add -n CONTRACT_NUMBER -p '\\b[A-Z]{2,4}-\\d{4,}-\\d{4,}\\b' -d "Federal contract numbers"
+        openfoia entities add -n CASE_NUMBER -p '\\b\\d{2}-cv-\\d{4,}\\b' -d "Federal court case numbers"
+    """
+    import re
+
+    # Validate the regex
+    try:
+        re.compile(pattern)
+    except re.error as e:
+        rprint(f"[red]Invalid regex pattern: {e}[/red]")
+        raise typer.Exit(1)
+
+    name = name.upper().replace(" ", "_")
+
+    config_path, data = _load_config_data()
+    entities_conf = data.setdefault("entities", {})
+    custom_types = entities_conf.setdefault("custom_types", [])
+
+    # Check for duplicate
+    existing = [ct for ct in custom_types if ct.get("name") == name]
+    if existing:
+        rprint(f"[yellow]Entity type '{name}' already exists. Use 'openfoia entities remove' first.[/yellow]")
+        raise typer.Exit(1)
+
+    custom_types.append({"name": name, "pattern": pattern, "description": description})
+    _save_config_data(config_path, data)
+
+    rprint(f"[green]Added entity type '{name}'[/green]")
+    rprint(f"  Pattern: {pattern}")
+    rprint(f"  Description: {description}")
+
+
+@entities_app.command("remove")
+def entities_remove(
+    name: str = typer.Argument(..., help="Entity type name to remove"),
+):
+    """Remove a custom entity type."""
+    name = name.upper().replace(" ", "_")
+
+    config_path, data = _load_config_data()
+    custom_types = data.get("entities", {}).get("custom_types", [])
+
+    original_len = len(custom_types)
+    custom_types = [ct for ct in custom_types if ct.get("name") != name]
+
+    if len(custom_types) == original_len:
+        rprint(f"[yellow]Entity type '{name}' not found.[/yellow]")
+        raise typer.Exit(1)
+
+    data["entities"]["custom_types"] = custom_types
+    _save_config_data(config_path, data)
+    rprint(f"[green]Removed entity type '{name}'[/green]")
+
+
+@entities_app.command("import")
+def entities_import(
+    file: Path = typer.Argument(..., help="CSV file with entity types (columns: name, pattern, description)"),
+):
+    """Import custom entity types from a CSV file.
+
+    The CSV should have columns: name, pattern, description
+    Header row is optional (auto-detected).
+
+    Examples:
+        openfoia entities import my_entities.csv
+        openfoia entities import --help
+    """
+    import csv
+    import re
+
+    if not file.exists():
+        rprint(f"[red]File not found: {file}[/red]")
+        raise typer.Exit(1)
+
+    config_path, data = _load_config_data()
+    entities_conf = data.setdefault("entities", {})
+    custom_types = entities_conf.setdefault("custom_types", [])
+    existing_names = {ct.get("name") for ct in custom_types}
+
+    added = 0
+    skipped = 0
+    errors = 0
+
+    with open(file, newline="", encoding="utf-8-sig") as f:
+        # Sniff for header
+        sample = f.read(2048)
+        f.seek(0)
+        sniffer = csv.Sniffer()
+        has_header = False
+        try:
+            has_header = sniffer.has_header(sample)
+        except csv.Error:
+            pass
+
+        reader = csv.reader(f)
+
+        if has_header:
+            header = next(reader)
+            # Normalize header names
+            header = [h.strip().lower().replace(" ", "_") for h in header]
+            name_idx = header.index("name") if "name" in header else 0
+            pattern_idx = header.index("pattern") if "pattern" in header else 1
+            desc_idx = header.index("description") if "description" in header else (2 if len(header) > 2 else -1)
+        else:
+            name_idx, pattern_idx, desc_idx = 0, 1, 2
+
+        for row_num, row in enumerate(reader, start=2 if has_header else 1):
+            if len(row) < 2:
+                continue
+
+            name_val = row[name_idx].strip().upper().replace(" ", "_") if len(row) > name_idx else ""
+            pattern_val = row[pattern_idx].strip() if len(row) > pattern_idx else ""
+            desc_val = row[desc_idx].strip() if desc_idx >= 0 and len(row) > desc_idx else ""
+
+            if not name_val or not pattern_val:
+                continue
+
+            # Validate regex
+            try:
+                re.compile(pattern_val)
+            except re.error as e:
+                rprint(f"[red]Row {row_num}: invalid regex for '{name_val}': {e}[/red]")
+                errors += 1
+                continue
+
+            if name_val in existing_names:
+                rprint(f"[dim]Skipped '{name_val}' (already exists)[/dim]")
+                skipped += 1
+                continue
+
+            custom_types.append({"name": name_val, "pattern": pattern_val, "description": desc_val})
+            existing_names.add(name_val)
+            added += 1
+
+    _save_config_data(config_path, data)
+
+    rprint(f"\n[green]Imported {added} entity type(s)[/green]")
+    if skipped:
+        rprint(f"[yellow]Skipped {skipped} (already existed)[/yellow]")
+    if errors:
+        rprint(f"[red]{errors} error(s) (invalid regex)[/red]")
+
+
+@entities_app.command("export")
+def entities_export(
+    output: Path = typer.Option("entity_types.csv", "--output", "-o", help="Output CSV file"),
+):
+    """Export custom entity types to a CSV file."""
+    import csv
+
+    _, data = _load_config_data()
+    custom_types = data.get("entities", {}).get("custom_types", [])
+
+    if not custom_types:
+        rprint("[dim]No custom entity types to export.[/dim]")
+        return
+
+    with open(output, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["name", "pattern", "description"])
+        for ct in custom_types:
+            writer.writerow([ct.get("name", ""), ct.get("pattern", ""), ct.get("description", "")])
+
+    rprint(f"[green]Exported {len(custom_types)} entity type(s) to {output}[/green]")
+
+
+@entities_app.command("test")
+def entities_test(
+    text: str = typer.Option(None, "--text", "-t", help="Test text (or reads from stdin)"),
+    file: Optional[Path] = typer.Option(None, "--file", "-f", help="Test against a file"),
+):
+    """Test your custom entity types against sample text.
+
+    Shows which entities each pattern finds.
+
+    Examples:
+        openfoia entities test -t "Contract FA8726-24-C-0012 awarded to Acme Corp"
+        echo "some text" | openfoia entities test
+        openfoia entities test -f document.txt
+    """
+    import re
+
+    if file:
+        text = file.read_text()
+    elif not text:
+        import sys
+        rprint("[dim]Reading from stdin (Ctrl+D when done)...[/dim]")
+        text = sys.stdin.read()
+
+    _, data = _load_config_data()
+    custom_types = data.get("entities", {}).get("custom_types", [])
+
+    if not custom_types:
+        rprint("[yellow]No custom entity types configured. Use 'openfoia entities add' first.[/yellow]")
+        raise typer.Exit(1)
+
+    table = Table(title="Entity Type Test Results")
+    table.add_column("Type", style="cyan")
+    table.add_column("Matches Found")
+    table.add_column("Examples")
+
+    total_matches = 0
+    for ct in custom_types:
+        name = ct.get("name", "")
+        pattern = ct.get("pattern", "")
+        try:
+            matches = re.findall(pattern, text)
+        except re.error:
+            table.add_row(name, "[red]INVALID REGEX[/red]", "")
+            continue
+
+        unique_matches = sorted(set(matches))
+        total_matches += len(unique_matches)
+        examples = ", ".join(unique_matches[:5])
+        if len(unique_matches) > 5:
+            examples += f" ... +{len(unique_matches) - 5} more"
+
+        count_str = f"[green]{len(unique_matches)}[/green]" if unique_matches else "[dim]0[/dim]"
+        table.add_row(name, count_str, examples or "[dim]none[/dim]")
+
+    console.print(table)
+    rprint(f"\n[cyan]{total_matches} total matches across {len(custom_types)} entity type(s)[/cyan]")
 
 
 # === Deadline Commands ===

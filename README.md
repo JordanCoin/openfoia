@@ -123,18 +123,22 @@ Only needed if you want to **send** requests (vs just tracking):
 
 Add domain-specific entities for your investigation:
 
-```json
-{
-  "entities": {
-    "custom_types": [
-      {
-        "name": "CONTRACT_NUMBER",
-        "pattern": "\\b[A-Z]{2,4}-\\d{4,}-\\d{4,}\\b",
-        "description": "Federal contract numbers"
-      }
-    ]
-  }
-}
+```bash
+# Add one at a time
+openfoia entities add -n CONTRACT_NUMBER -p '\b[A-Z]{2,4}-\d{4,}-\d{4,}\b' -d "Federal contract numbers"
+openfoia entities add -n CASE_NUMBER -p '\b\d{2}-cv-\d{4,}\b' -d "Federal court case numbers"
+
+# Import from a CSV (columns: name, pattern, description)
+openfoia entities import my_entities.csv
+
+# Test your patterns against a document
+openfoia entities test -f response.pdf.txt
+
+# List what you've configured
+openfoia entities list
+
+# Export to share with your team
+openfoia entities export -o our_entities.csv
 ```
 
 ## CLI Reference
