@@ -1,11 +1,12 @@
 [project]
 name = "openfoia"
-version = "1.0.0"
-description = "Crowdsourced FOIA automation with AI-powered document analysis"
+version = "3.0.0"
+description = "Local-first investigation toolkit for journalists, researchers, and citizens"
 readme = "README.md"
 license = "AGPL-3.0"
 requires-python = ">=3.11"
 dependencies = [
+    # Core — always needed, pure Python or lightweight
     "fastapi>=0.109.0",
     "uvicorn>=0.27.0",
     "sqlalchemy>=2.0.0",
@@ -17,35 +18,36 @@ dependencies = [
     "rich>=13.7.0",
     "python-multipart>=0.0.6",
     "jinja2>=3.1.0",
-    "pytesseract>=0.3.10",
-    "pdf2image>=1.16.0",
     "pypdf>=3.17.0",
     "python-docx>=1.1.0",
     "aiofiles>=23.2.0",
-    "apscheduler>=3.10.0",
-    "twilio>=8.10.0",       # Fax gateway (Twilio Programmable Fax)
-    "lob>=4.0.0",            # Physical mail gateway (Lob print-and-mail)
-    "reportlab>=4.0.0",    # PDF generation for fax documents
-    "anthropic>=0.18.0",
-    "openai>=1.10.0",
 ]
 
 [project.optional-dependencies]
-tor = [
-    "socksio>=1.0.0",
+# OCR — requires system packages: tesseract-ocr, poppler-utils
+ocr = [
+    "pytesseract>=0.3.10",
+    "pdf2image>=1.16.0",
 ]
-browser = [
-    "playwright>=1.40.0",
+# Delivery gateways
+fax = ["twilio>=8.10.0", "reportlab>=4.0.0"]
+mail = ["lob>=4.0.0"]
+# Cloud AI providers
+cloud-ai = ["anthropic>=0.18.0", "openai>=1.10.0"]
+# Local NER models
+ner = ["gliner>=0.2.0"]
+ner-spacy = ["spacy>=3.7.0"]
+# Tor routing
+tor = ["socksio>=1.0.0"]
+# Browser automation
+browser = ["playwright>=1.40.0"]
+# Encrypted database
+encryption = ["pysqlcipher3>=1.2.0"]
+# Everything
+all = [
+    "openfoia[ocr,fax,mail,cloud-ai,ner,tor,browser,encryption]",
 ]
-ner = [
-    "gliner>=0.2.0",
-]
-ner-spacy = [
-    "spacy>=3.7.0",
-]
-encryption = [
-    "pysqlcipher3>=1.2.0",
-]
+# Development
 dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.23.0",
