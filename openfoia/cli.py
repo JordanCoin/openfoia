@@ -3521,6 +3521,217 @@ def records_download(
         rprint(f"[dim]Run 'openfoia analyze extract --all' to extract entities.[/dim]")
 
 
+# === Cross-Reference Command ===
+
+
+@app.command()
+def crossref(
+    request_id: Optional[str] = typer.Option(None, "--request", "-r", help="Cross-ref entities from a specific request"),
+    document_id: Optional[str] = typer.Option(None, "--document", "-d", help="Cross-ref entities from a specific document"),
+    sources: Optional[str] = typer.Option(None, "--sources", help="Comma-separated sources (muckrock,opencorporates,sec,opensanctions)"),
+    icij_data: Optional[Path] = typer.Option(None, "--icij-data", help="Path to downloaded ICIJ CSV data"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Save report to file"),
+    ftm: Optional[Path] = typer.Option(None, "--ftm", help="Export results as FollowTheMoney JSON-lines"),
+):
+    """Cross-reference extracted entities against external databases.
+
+    Checks every person and organization from your documents against
+    MuckRock, OpenCorporates, SEC EDGAR, OpenSanctions, and ICIJ
+    Offshore Leaks. Flags entities that appear in multiple sources.
+
+    This is the free, local version of what Maltego charges $999/year for.
+
+    Examples:
+        openfoia crossref                           # all entities in database
+        openfoia crossref -r REQ-20260322-ABC123    # from one request
+        openfoia crossref --icij-data ./icij-csvs/  # include Offshore Leaks
+        openfoia crossref --ftm results.ftm.json    # export as FollowTheMoney
+    """
+    from .db import get_session, get_db_path
+    from .models import Entity, Document, Request as RequestModel
+    from .crossref import crossref_entities
+
+    db_path = get_db_path()
+    if not db_path.exists():
+        rprint("[yellow]Database not initialized. Run 'openfoia init' first.[/yellow]")
+        raise typer.Exit(1)
+
+    # Gather entities
+    with get_session() as session:
+        query = session.query(Entity)
+
+        if document_id:
+            query = query.filter(Entity.document_id == document_id)
+        elif request_id:
+            query = query.join(Document).filter(
+                (Document.request_id == request_id) |
+                (Document.request_id.in_(
+                    session.query(RequestModel.id).filter(RequestModel.request_number == request_id)
+                ))
+            )
+
+        db_entities = query.all()
+
+        if not db_entities:
+            rprint("[yellow]No entities found. Run 'openfoia analyze extract' first.[/yellow]")
+            raise typer.Exit(1)
+
+        # Convert to extraction format for crossref engine
+        from .pipeline.extract import ExtractedEntity
+        from .models import EntityType as ET
+
+        entities = []
+        for e in db_entities:
+            entities.append(ExtractedEntity(
+                entity_type=e.entity_type,
+                raw_text=e.raw_text,
+                normalized_text=e.normalized_text,
+                confidence=e.confidence,
+                context=e.context or "",
+            ))
+
+    source_list = sources.split(",") if sources else None
+
+    rprint(f"\n[bold]Cross-referencing {len(entities)} entities...[/bold]")
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Checking sources...", total=None)
+
+        report = asyncio.run(crossref_entities(
+            entities,
+            sources=source_list,
+            icij_data_dir=str(icij_data) if icij_data else None,
+        ))
+
+    # Display results
+    rprint(f"\n[bold]Cross-Reference Report[/bold]")
+    rprint(f"  Entities checked: {report.total_entities}")
+    rprint(f"  Sources used: {', '.join(report.sources_used)}")
+    rprint(f"  Total hits: {report.total_hits}")
+    rprint(f"  Entities flagged: {report.total_flagged}")
+    rprint("=" * 60)
+
+    for result in report.results:
+        if not result.hits:
+            continue
+
+        color = "red" if any(h.extra.get("is_sanctioned") or h.extra.get("is_pep") for h in result.hits) else "yellow"
+        rprint(f"\n  [{color}]FLAGGED: {result.entity_name}[/{color}] ({result.entity_type})")
+
+        for hit in result.hits:
+            source_color = {
+                "muckrock": "cyan",
+                "opencorporates": "blue",
+                "sec": "green",
+                "icij": "red",
+                "opensanctions": "magenta",
+            }.get(hit.source, "white")
+
+            rprint(f"    [{source_color}]{hit.source}[/{source_color}] [{hit.match_type}] {hit.details}")
+            if hit.url:
+                rprint(f"      {hit.url}")
+
+    if not report.total_flagged:
+        rprint("\n  [green]No cross-reference hits found.[/green]")
+
+    # Export as FollowTheMoney
+    if ftm:
+        from .ftm import export_ftm
+        count = export_ftm(entities, [], ftm)
+        rprint(f"\n[green]Exported {count} entities to {ftm} (FollowTheMoney format)[/green]")
+
+    # Save report
+    if output:
+        report_data = {
+            "total_entities": report.total_entities,
+            "total_hits": report.total_hits,
+            "total_flagged": report.total_flagged,
+            "sources": report.sources_used,
+            "results": [
+                {
+                    "entity": r.entity_name,
+                    "type": r.entity_type,
+                    "hits": [
+                        {"source": h.source, "match": h.match_type, "details": h.details, "url": h.url}
+                        for h in r.hits
+                    ],
+                }
+                for r in report.results if r.hits
+            ],
+        }
+        output.write_text(json.dumps(report_data, indent=2))
+        rprint(f"\n[green]Report saved to {output}[/green]")
+
+
+# === Export Command ===
+
+
+@analyze_app.command("export")
+def analyze_export(
+    output: Path = typer.Option("entities.ftm.json", "--output", "-o", help="Output file path"),
+    request_id: Optional[str] = typer.Option(None, "--request", "-r", help="Export from specific request"),
+):
+    """Export entities as FollowTheMoney JSON-lines.
+
+    Produces a .ftm.json file compatible with Aleph, OpenAleph,
+    OpenSanctions, and other investigative journalism tools.
+
+    Examples:
+        openfoia analyze export
+        openfoia analyze export -o investigation.ftm.json -r REQ-20260322-ABC
+    """
+    from .db import get_session, get_db_path
+    from .models import Entity, Document, Request as RequestModel, entity_links
+    from .pipeline.extract import ExtractedEntity
+    from .ftm import export_ftm
+
+    db_path = get_db_path()
+    if not db_path.exists():
+        rprint("[yellow]Database not initialized.[/yellow]")
+        raise typer.Exit(1)
+
+    with get_session() as session:
+        query = session.query(Entity)
+        if request_id:
+            query = query.join(Document).filter(
+                (Document.request_id == request_id) |
+                (Document.request_id.in_(
+                    session.query(RequestModel.id).filter(RequestModel.request_number == request_id)
+                ))
+            )
+
+        db_entities = query.all()
+        if not db_entities:
+            rprint("[yellow]No entities to export.[/yellow]")
+            return
+
+        entities = [
+            ExtractedEntity(
+                entity_type=e.entity_type,
+                raw_text=e.raw_text,
+                normalized_text=e.normalized_text,
+                confidence=e.confidence,
+                context=e.context or "",
+            )
+            for e in db_entities
+        ]
+
+        # Get relationships
+        links = session.query(entity_links).all()
+        relationships = [
+            {"source": l.source_id, "target": l.target_id, "relation": l.link_type or "related_to"}
+            for l in links
+        ]
+
+    count = export_ftm(entities, relationships, output)
+    rprint(f"[green]Exported {count} entities to {output} (FollowTheMoney format)[/green]")
+    rprint(f"[dim]Compatible with Aleph, OpenAleph, OpenSanctions, and ICIJ tools.[/dim]")
+
+
 # === Main Entry Point ===
 
 
