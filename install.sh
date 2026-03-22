@@ -17,7 +17,14 @@ die()   { printf '\033[0;31m%s\033[0m\n' "$*" >&2; exit 1; }
 
 # --- Detect portable mode ---
 PORTABLE=false
-if [ "${1:-}" = "--portable" ] || [ -f ".openfoia-portable" ] || [ -n "${OPENFOIA_DATA_DIR:-}" ]; then
+MINIMAL=false
+for arg in "$@"; do
+    case "$arg" in
+        --portable) PORTABLE=true ;;
+        --minimal)  MINIMAL=true ;;
+    esac
+done
+if [ -f ".openfoia-portable" ] || [ -n "${OPENFOIA_DATA_DIR:-}" ]; then
     PORTABLE=true
 fi
 
@@ -111,9 +118,21 @@ install_python() {
 
     info "Using $python ($($python --version))"
 
+    # Determine extras — default includes NER for real entity extraction
+    local extras=""
+    if [ "$MINIMAL" = true ]; then
+        extras=""
+        info "Minimal install (regex-only entity extraction)"
+    else
+        extras="[ner]"
+        info "Standard install (includes GLiNER for entity extraction)"
+    fi
+
+    local pkg="git+https://github.com/${REPO}.git"
+
     # For non-portable: try pipx first
     if [ "$PORTABLE" = false ] && command -v pipx &>/dev/null; then
-        pipx install "git+https://github.com/${REPO}.git"
+        pipx install "${pkg}${extras}"
         ok "Installed via pipx"
         return
     fi
@@ -122,7 +141,7 @@ install_python() {
     info "Creating isolated environment at ${VENV_DIR}..."
     "$python" -m venv "$VENV_DIR"
     "${VENV_DIR}/bin/pip" install --upgrade pip -q
-    "${VENV_DIR}/bin/pip" install "git+https://github.com/${REPO}.git"
+    "${VENV_DIR}/bin/pip" install "${pkg}${extras}"
 
     # Symlink the openfoia command
     mkdir -p "$INSTALL_DIR"
