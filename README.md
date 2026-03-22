@@ -91,8 +91,14 @@ Search and pull from external databases — all analysis happens locally.
 | **[SEC EDGAR](https://www.sec.gov/edgar/)** | US corporate filings, 10-K, 10-Q, proxy statements | Free |
 
 ```bash
-# Search MuckRock's FOIA archive
+# Search MuckRock's 46k+ completed FOIA requests
 openfoia records search "EPA water contamination" --source muckrock
+
+# Download all response documents from a request
+openfoia records download 68490 --source muckrock
+
+# Download AND auto-ingest into the analysis pipeline
+openfoia records download 68490 --ingest
 
 # Search company ownership
 openfoia records search "Meridian Defense Systems" --source opencorporates
