@@ -77,8 +77,9 @@ async def browse(
         from playwright.async_api import async_playwright
     except ImportError:
         rprint(
-            "[red]playwright is not installed.[/red]\n"
-            "[yellow]Install with: pip install 'openfoia[browser]' && playwright install chromium[/yellow]"
+            "[red]Browser automation not installed.[/red]\n"
+            "[yellow]Run: openfoia install-extras browser[/yellow]\n"
+            "[dim]Then: playwright install chromium[/dim]"
         )
         raise SystemExit(1)
 

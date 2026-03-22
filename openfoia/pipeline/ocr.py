@@ -82,14 +82,23 @@ class OCREngine:
             )
 
         # Scanned PDF or no extraction binary — fall back to OCR
-        if self.backend == "tesseract":
-            return await self._process_tesseract(pdf_path)
-        elif self.backend == "google":
-            return await self._process_google_vision(pdf_path)
-        elif self.backend == "aws":
-            return await self._process_aws_textract(pdf_path)
-        else:
-            raise ValueError(f"Unknown OCR backend: {self.backend}")
+        try:
+            if self.backend == "tesseract":
+                return await self._process_tesseract(pdf_path)
+            elif self.backend == "google":
+                return await self._process_google_vision(pdf_path)
+            elif self.backend == "aws":
+                return await self._process_aws_textract(pdf_path)
+            else:
+                raise ValueError(f"Unknown OCR backend: {self.backend}")
+        except ImportError as e:
+            raise ImportError(
+                f"OCR dependencies not installed ({e}). "
+                f"Run: openfoia install-extras ocr\n"
+                f"Then install system packages:\n"
+                f"  Linux: apt install tesseract-ocr poppler-utils\n"
+                f"  macOS: brew install tesseract poppler"
+            ) from e
 
     async def _process_tesseract(self, pdf_path: Path) -> OCRResult:
         """Process using Tesseract OCR."""

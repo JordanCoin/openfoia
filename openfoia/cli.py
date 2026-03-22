@@ -2015,6 +2015,16 @@ def analyze_extract(
         from .pipeline.extract import EntityExtractor
 
         extractor = EntityExtractor()
+        backend = extractor._resolve_backend()
+
+        if backend == "regex":
+            rprint("[yellow]Using regex-only extraction (dates, money, emails, phones).[/yellow]")
+            rprint("[yellow]For people and organizations, install a NER model:[/yellow]")
+            rprint("[cyan]  openfoia install-extras ner        [/cyan] [dim]GLiNER (~2GB, best accuracy)[/dim]")
+            rprint("[cyan]  openfoia install-extras ner-spacy  [/cyan] [dim]spaCy (~100MB, good accuracy)[/dim]")
+            rprint("[dim]Or run a local LLM: ollama pull llama3.2:3b[/dim]")
+            rprint("")
+
         try:
             result = asyncio.run(extractor.extract(doc.extracted_text))
         except Exception as e:

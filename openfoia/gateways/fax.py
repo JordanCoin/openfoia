@@ -123,7 +123,7 @@ class TwilioFaxGateway(DeliveryGateway):
             return DeliveryResult(
                 status=DeliveryStatus.FAILED,
                 reference_id="",
-                error_message="twilio package not installed. Run: pip install 'twilio>=8.10.0'",
+                error_message="Fax gateway not installed. Run: openfoia install-extras fax",
             )
         except Exception as e:
             logger.error("Fax send failed: %s", e)

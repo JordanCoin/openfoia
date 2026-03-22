@@ -145,7 +145,7 @@ class LobMailGateway(DeliveryGateway):
             return DeliveryResult(
                 status=DeliveryStatus.FAILED,
                 reference_id="",
-                error_message="lob package not installed. Run: pip install 'lob>=4.0.0'",
+                error_message="Mail gateway not installed. Run: openfoia install-extras mail",
             )
         except Exception as e:
             logger.error("Letter send failed: %s", e)
