@@ -2478,18 +2478,119 @@ def entities_remove(
     rprint(f"[green]Removed entity type '{name}'[/green]")
 
 
+def _fuzzy_match_column(header: str) -> str | None:
+    """Fuzzy-match a CSV column header to one of: name, pattern, description."""
+    h = header.strip().lower().replace(" ", "_").replace("-", "_")
+    name_words = {"name", "type", "entity", "entity_name", "entity_type", "label", "category", "kind"}
+    pattern_words = {"pattern", "regex", "regexp", "match", "expression", "rule", "format", "match_pattern"}
+    desc_words = {"description", "desc", "notes", "note", "comment", "info", "detail", "details", "what", "meaning"}
+    if h in name_words:
+        return "name"
+    if h in pattern_words:
+        return "pattern"
+    if h in desc_words:
+        return "description"
+    return None
+
+
+def _llm_map_columns(headers: list[str], sample_rows: list[list[str]]) -> dict[str, int] | None:
+    """Use the configured LLM to figure out which columns map to name/pattern/description."""
+    from .pipeline.extract import _llm_available, _call_ollama
+    from .config import load_config
+
+    cfg = load_config()
+    if not _llm_available(cfg.ai.provider, cfg.ai.api_key, cfg.ai.base_url):
+        return None
+
+    # Build a preview of the data
+    preview = "Headers: " + " | ".join(headers) + "\n"
+    for row in sample_rows[:5]:
+        preview += " | ".join(row) + "\n"
+
+    prompt = f"""I have a CSV file with entity type definitions. The columns might be named anything.
+I need to map them to three fields: name (the entity type name), pattern (a regex pattern), description (what it means).
+
+Some columns might contain plain English descriptions of patterns instead of actual regex.
+If a column has descriptions like "looks like XX-1234" or "format: ABC-123-456", that's the pattern column
+(and I'll need to generate regex from those descriptions later).
+
+Here's the file:
+
+{preview}
+
+Return ONLY valid JSON mapping column indices (0-based) to fields:
+{{"name": <index>, "pattern": <index>, "description": <index>}}
+
+If a field doesn't exist, use -1. If you're unsure, make your best guess."""
+
+    try:
+        if cfg.ai.provider == "ollama":
+            resp = _call_ollama(prompt, cfg.ai.model, cfg.ai.base_url, 0.1, 200)
+        else:
+            return None  # only use local LLM for this
+
+        import re as _re
+        match = _re.search(r'\{[^}]+\}', resp)
+        if match:
+            mapping = json.loads(match.group())
+            return {k: int(v) for k, v in mapping.items() if int(v) >= 0}
+    except Exception:
+        pass
+    return None
+
+
+def _llm_generate_regex(description: str) -> str | None:
+    """Use LLM to generate a regex from a plain English pattern description."""
+    from .pipeline.extract import _llm_available, _call_ollama
+    from .config import load_config
+
+    cfg = load_config()
+    if not _llm_available(cfg.ai.provider, cfg.ai.api_key, cfg.ai.base_url):
+        return None
+
+    prompt = f"""Convert this pattern description to a Python regex pattern.
+The regex should match the described format in text.
+
+Description: {description}
+
+Return ONLY the regex pattern string, nothing else. No explanation, no quotes, no markdown.
+Example input: "Federal contract numbers like FA8726-24-C-0012"
+Example output: \\bFA\\d{{4}}-\\d{{2}}-[A-Z]-\\d{{4}}\\b"""
+
+    try:
+        if cfg.ai.provider == "ollama":
+            resp = _call_ollama(prompt, cfg.ai.model, cfg.ai.base_url, 0.1, 200)
+        else:
+            return None
+
+        # Clean up the response — strip quotes, backticks, whitespace
+        pattern = resp.strip().strip('`"\'').strip()
+        if pattern:
+            import re as _re
+            _re.compile(pattern)  # validate
+            return pattern
+    except Exception:
+        pass
+    return None
+
+
 @entities_app.command("import")
 def entities_import(
-    file: Path = typer.Argument(..., help="CSV file with entity types (columns: name, pattern, description)"),
+    file: Path = typer.Argument(..., help="CSV or Excel file with entity types"),
+    smart: bool = typer.Option(True, "--smart/--no-smart", help="Use AI to map columns and generate regex"),
 ):
     """Import custom entity types from a CSV file.
 
-    The CSV should have columns: name, pattern, description
-    Header row is optional (auto-detected).
+    Columns can be named anything — the tool will figure out which is which.
+    If a local LLM is running (ollama), it will:
+    - Auto-detect which columns contain names, patterns, and descriptions
+    - Generate regex patterns from plain English descriptions
+
+    Without an LLM, falls back to fuzzy column name matching.
 
     Examples:
         openfoia entities import my_entities.csv
-        openfoia entities import --help
+        openfoia entities import spreadsheet.csv --no-smart
     """
     import csv
     import re
@@ -2506,11 +2607,12 @@ def entities_import(
     added = 0
     skipped = 0
     errors = 0
+    ai_generated = 0
 
     with open(file, newline="", encoding="utf-8-sig") as f:
-        # Sniff for header
-        sample = f.read(2048)
+        sample = f.read(8192)
         f.seek(0)
+
         sniffer = csv.Sniffer()
         has_header = False
         try:
@@ -2519,52 +2621,117 @@ def entities_import(
             pass
 
         reader = csv.reader(f)
+        all_rows = list(reader)
 
-        if has_header:
-            header = next(reader)
-            # Normalize header names
-            header = [h.strip().lower().replace(" ", "_") for h in header]
-            name_idx = header.index("name") if "name" in header else 0
-            pattern_idx = header.index("pattern") if "pattern" in header else 1
-            desc_idx = header.index("description") if "description" in header else (2 if len(header) > 2 else -1)
-        else:
-            name_idx, pattern_idx, desc_idx = 0, 1, 2
+    if not all_rows:
+        rprint("[yellow]File is empty.[/yellow]")
+        return
 
-        for row_num, row in enumerate(reader, start=2 if has_header else 1):
-            if len(row) < 2:
-                continue
+    # --- Column mapping ---
+    header = []
+    data_rows = all_rows
+    name_idx, pattern_idx, desc_idx = 0, 1, 2
 
-            name_val = row[name_idx].strip().upper().replace(" ", "_") if len(row) > name_idx else ""
-            pattern_val = row[pattern_idx].strip() if len(row) > pattern_idx else ""
-            desc_val = row[desc_idx].strip() if desc_idx >= 0 and len(row) > desc_idx else ""
+    if has_header:
+        header = [h.strip() for h in all_rows[0]]
+        data_rows = all_rows[1:]
 
-            if not name_val or not pattern_val:
-                continue
+        rprint(f"[cyan]Columns found: {', '.join(header)}[/cyan]")
 
-            # Validate regex
-            try:
+        # Try fuzzy matching first
+        col_map: dict[str, int] = {}
+        for i, h in enumerate(header):
+            match = _fuzzy_match_column(h)
+            if match and match not in col_map:
+                col_map[match] = i
+
+        # If fuzzy didn't get all 3, try LLM
+        if smart and len(col_map) < 2:
+            rprint("[cyan]Columns don't match expected names. Asking AI to figure it out...[/cyan]")
+            llm_map = _llm_map_columns(header, data_rows[:5])
+            if llm_map:
+                col_map = llm_map
+                rprint(f"[green]AI mapped columns:[/green]")
+                for field, idx in col_map.items():
+                    rprint(f"  {field} → column '{header[idx]}' (index {idx})")
+            else:
+                rprint("[yellow]No AI available. Using first 3 columns as name, pattern, description.[/yellow]")
+        elif len(col_map) >= 2:
+            rprint(f"[green]Auto-mapped columns:[/green]")
+            for field, idx in col_map.items():
+                rprint(f"  {field} → column '{header[idx]}'")
+
+        name_idx = col_map.get("name", 0)
+        pattern_idx = col_map.get("pattern", 1)
+        desc_idx = col_map.get("description", 2 if len(header) > 2 else -1)
+    else:
+        rprint("[dim]No header row detected. Using columns: 1=name, 2=pattern, 3=description[/dim]")
+
+    # --- Process rows ---
+    for row_num, row in enumerate(data_rows, start=2 if has_header else 1):
+        if len(row) < 2:
+            continue
+
+        name_val = row[name_idx].strip().upper().replace(" ", "_") if len(row) > name_idx else ""
+        pattern_val = row[pattern_idx].strip() if len(row) > pattern_idx else ""
+        desc_val = row[desc_idx].strip() if desc_idx >= 0 and len(row) > desc_idx else ""
+
+        if not name_val:
+            continue
+
+        # If pattern_val isn't valid regex, try to use it as a description to generate regex
+        is_valid_regex = True
+        try:
+            if pattern_val:
                 re.compile(pattern_val)
-            except re.error as e:
-                rprint(f"[red]Row {row_num}: invalid regex for '{name_val}': {e}[/red]")
+        except re.error:
+            is_valid_regex = False
+
+        if not is_valid_regex and smart and pattern_val:
+            rprint(f"[cyan]  '{name_val}': pattern looks like English, generating regex...[/cyan]")
+            generated = _llm_generate_regex(pattern_val)
+            if generated:
+                rprint(f"[green]    Generated: {generated}[/green]")
+                # Use the original text as description if no description exists
+                if not desc_val:
+                    desc_val = pattern_val
+                pattern_val = generated
+                ai_generated += 1
+            else:
+                rprint(f"[red]  Row {row_num}: '{pattern_val}' is not valid regex and AI couldn't generate one[/red]")
                 errors += 1
                 continue
+        elif not pattern_val:
+            rprint(f"[red]  Row {row_num}: no pattern for '{name_val}'[/red]")
+            errors += 1
+            continue
 
-            if name_val in existing_names:
-                rprint(f"[dim]Skipped '{name_val}' (already exists)[/dim]")
-                skipped += 1
-                continue
+        # Final validation
+        try:
+            re.compile(pattern_val)
+        except re.error as e:
+            rprint(f"[red]  Row {row_num}: invalid regex for '{name_val}': {e}[/red]")
+            errors += 1
+            continue
 
-            custom_types.append({"name": name_val, "pattern": pattern_val, "description": desc_val})
-            existing_names.add(name_val)
-            added += 1
+        if name_val in existing_names:
+            rprint(f"[dim]  Skipped '{name_val}' (already exists)[/dim]")
+            skipped += 1
+            continue
+
+        custom_types.append({"name": name_val, "pattern": pattern_val, "description": desc_val})
+        existing_names.add(name_val)
+        added += 1
 
     _save_config_data(config_path, data)
 
     rprint(f"\n[green]Imported {added} entity type(s)[/green]")
+    if ai_generated:
+        rprint(f"[cyan]{ai_generated} regex pattern(s) generated by AI from plain English[/cyan]")
     if skipped:
         rprint(f"[yellow]Skipped {skipped} (already existed)[/yellow]")
     if errors:
-        rprint(f"[red]{errors} error(s) (invalid regex)[/red]")
+        rprint(f"[red]{errors} error(s)[/red]")
 
 
 @entities_app.command("export")
