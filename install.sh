@@ -3,15 +3,41 @@ set -euo pipefail
 
 # OpenFOIA installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/JordanCoin/openfoia/main/install.sh | bash
+#
+# Portable USB install:
+#   cd /Volumes/MY_USB
+#   curl -fsSL https://raw.githubusercontent.com/JordanCoin/openfoia/main/install.sh | bash --portable
 
 REPO="JordanCoin/openfoia"
-INSTALL_DIR="${OPENFOIA_INSTALL_DIR:-$HOME/.local/bin}"
-DATA_DIR="$HOME/.openfoia"
 
 info()  { printf '\033[0;34m%s\033[0m\n' "$*"; }
 ok()    { printf '\033[0;32m%s\033[0m\n' "$*"; }
 warn()  { printf '\033[0;33m%s\033[0m\n' "$*"; }
 die()   { printf '\033[0;31m%s\033[0m\n' "$*" >&2; exit 1; }
+
+# --- Detect portable mode ---
+PORTABLE=false
+if [ "${1:-}" = "--portable" ] || [ -f ".openfoia-portable" ] || [ -n "${OPENFOIA_DATA_DIR:-}" ]; then
+    PORTABLE=true
+fi
+
+# --- Set paths based on mode ---
+if [ "$PORTABLE" = true ]; then
+    # Everything on the USB / current directory
+    BASE_DIR="$(pwd)"
+    INSTALL_DIR="${BASE_DIR}/bin"
+    VENV_DIR="${BASE_DIR}/.openfoia-venv"
+    DATA_DIR="${BASE_DIR}/openfoia-data"
+
+    # Create portable marker
+    touch "${BASE_DIR}/.openfoia-portable"
+else
+    # Standard install — home directory
+    BASE_DIR="$HOME"
+    INSTALL_DIR="${OPENFOIA_INSTALL_DIR:-$HOME/.local/bin}"
+    VENV_DIR="${OPENFOIA_VENV_DIR:-$HOME/.openfoia-venv}"
+    DATA_DIR="$HOME/.openfoia"
+fi
 
 # --- Detect platform ---
 detect_platform() {
@@ -62,8 +88,6 @@ download_binary() {
 }
 
 # --- Install Python package ---
-VENV_DIR="${OPENFOIA_VENV_DIR:-$HOME/.openfoia-venv}"
-
 install_python() {
     info "Installing openfoia..."
 
@@ -87,20 +111,20 @@ install_python() {
 
     info "Using $python ($($python --version))"
 
-    # pipx is the cleanest option — isolated by default
-    if command -v pipx &>/dev/null; then
+    # For non-portable: try pipx first
+    if [ "$PORTABLE" = false ] && command -v pipx &>/dev/null; then
         pipx install "git+https://github.com/${REPO}.git"
         ok "Installed via pipx"
         return
     fi
 
-    # Otherwise, create our own venv — no system pollution
+    # Create isolated venv
     info "Creating isolated environment at ${VENV_DIR}..."
     "$python" -m venv "$VENV_DIR"
     "${VENV_DIR}/bin/pip" install --upgrade pip -q
     "${VENV_DIR}/bin/pip" install "git+https://github.com/${REPO}.git"
 
-    # Symlink the openfoia command to the install dir
+    # Symlink the openfoia command
     mkdir -p "$INSTALL_DIR"
     ln -sf "${VENV_DIR}/bin/openfoia" "${INSTALL_DIR}/openfoia"
 
@@ -112,6 +136,12 @@ ensure_path() {
     case ":$PATH:" in
         *":${INSTALL_DIR}:"*) return ;;
     esac
+
+    if [ "$PORTABLE" = true ]; then
+        warn "Add to your PATH for this session:"
+        warn "  export PATH=\"${INSTALL_DIR}:\$PATH\""
+        return
+    fi
 
     local shell_rc=""
     if [ -n "${ZSH_VERSION:-}" ] || [ "$(basename "$SHELL")" = "zsh" ]; then
@@ -130,7 +160,12 @@ ensure_path() {
 # --- Main ---
 main() {
     info ""
-    info "  OpenFOIA — your data never leaves your machine"
+    if [ "$PORTABLE" = true ]; then
+        info "  OpenFOIA — PORTABLE install (everything stays here)"
+        info "  Location: $(pwd)"
+    else
+        info "  OpenFOIA — your data never leaves your machine"
+    fi
     info ""
 
     platform=$(detect_platform)
@@ -142,18 +177,34 @@ main() {
 
     # Initialize database
     mkdir -p "$DATA_DIR"
-    if command -v openfoia &>/dev/null; then
+    if [ "$PORTABLE" = true ]; then
+        export OPENFOIA_DATA_DIR="$DATA_DIR"
+    fi
+    if command -v "${INSTALL_DIR}/openfoia" &>/dev/null; then
+        "${INSTALL_DIR}/openfoia" init 2>/dev/null || true
+    elif command -v openfoia &>/dev/null; then
         openfoia init 2>/dev/null || true
     fi
 
     echo ""
     ok "OpenFOIA installed."
     info ""
-    info "  openfoia serve          Start the local web UI"
-    info "  openfoia request new    File a FOIA request"
-    info "  openfoia --help         See all commands"
+    if [ "$PORTABLE" = true ]; then
+        info "  PORTABLE MODE — everything is in $(pwd)"
+        info ""
+        info "  To use:  export PATH=\"${INSTALL_DIR}:\$PATH\""
+        info "           openfoia guide"
+        info ""
+        info "  Unplug the USB and nothing remains on the host."
+    else
+        info "  openfoia guide          Quickstart walkthrough"
+        info "  openfoia serve          Start the local web UI"
+        info "  openfoia request new    File a FOIA request"
+        info "  openfoia --help         See all commands"
+        info ""
+        info "  All data stored in ${DATA_DIR}"
+    fi
     info ""
-    info "  All data stored in ~/.openfoia/"
     info "  To uninstall: curl -fsSL https://raw.githubusercontent.com/${REPO}/main/uninstall.sh | bash"
     info ""
 }
