@@ -29,6 +29,7 @@ def init(
     force: bool = typer.Option(False, "--force", "-f", help="Re-initialize even if database exists"),
     no_seed: bool = typer.Option(False, "--no-seed", help="Don't seed agency data"),
     password: Optional[str] = typer.Option(None, "--password", help="Encrypt database with this password (AES-256 via SQLCipher)"),
+    duress_password: Optional[str] = typer.Option(None, "--duress-password", help="Create a decoy database that opens when this password is used"),
 ):
     """Initialize the OpenFOIA database.
 
@@ -38,11 +39,16 @@ def init(
     Pass --password to encrypt the database at rest with AES-256 (requires
     the sqlcipher C library and pysqlcipher3: pip install 'openfoia[encryption]').
 
+    Pass --duress-password to set up a decoy database. When this password is
+    supplied (via OPENFOIA_DB_PASSWORD or direct input), OpenFOIA transparently
+    opens a decoy DB with innocent-looking data instead of the real one.
+
     Examples:
         openfoia init                        # Initialize with agency data
         openfoia init --no-seed              # Initialize without seed data
         openfoia init --force                # Re-initialize (WARNING: loses data)
         openfoia init --password SECRET      # Initialize with encryption
+        openfoia init --duress-password DURESS  # Set up duress/decoy database
     """
     from .db import get_data_dir, get_db_path, init_db, seed_agencies, get_engine, has_sqlcipher
 
@@ -97,6 +103,19 @@ def init(
         with get_session(password=password) as session:
             count = session.query(Agency).count()
         rprint(f"[green]✓ Seeded {count} federal agencies[/green]")
+
+    # Duress mode setup
+    if duress_password:
+        from .security import setup_duress_mode
+
+        if duress_password == password:
+            rprint("[bold red]Error: duress password must differ from the real password.[/bold red]")
+            raise typer.Exit(1)
+
+        decoy_path = setup_duress_mode(duress_password)
+        rprint(f"[green]✓ Duress mode configured[/green]")
+        rprint(f"[dim]  Decoy database: {decoy_path}[/dim]")
+        rprint(f"[dim]  When the duress password is used, the decoy DB is opened transparently.[/dim]")
 
     rprint("\n[bold green]✓ Initialization complete![/bold green]")
     rprint("[dim]Run 'openfoia serve' to start the web interface.[/dim]\n")
@@ -205,6 +224,7 @@ campaign_app = typer.Typer(help="Manage campaigns")
 agency_app = typer.Typer(help="Manage agencies")
 analyze_app = typer.Typer(help="Analyze documents")
 template_app = typer.Typer(help="Request templates")
+records_app = typer.Typer(help="Search public records")
 
 deadline_app = typer.Typer(help="Track FOIA deadlines")
 db_app = typer.Typer(help="Database management")
@@ -215,6 +235,7 @@ app.add_typer(campaign_app, name="campaign")
 app.add_typer(agency_app, name="agency")
 app.add_typer(analyze_app, name="analyze")
 app.add_typer(template_app, name="template")
+app.add_typer(records_app, name="records")
 app.add_typer(deadline_app, name="deadlines")
 app.add_typer(db_app, name="db")
 
@@ -2510,6 +2531,54 @@ def deadline_check():
             raise typer.Exit(1)
 
 
+# === Browse Command ===
+
+
+@app.command()
+def browse(
+    url: str = typer.Argument(..., help="URL to navigate to"),
+    tor: bool = typer.Option(False, "--tor", help="Route traffic through Tor (SOCKS5 localhost:9050)"),
+    headless: bool = typer.Option(False, "--headless", help="Run browser without visible window"),
+    save: bool = typer.Option(False, "--save", help="Extract page content and save to data directory"),
+):
+    """Browse a URL with optional Tor routing and fingerprint hardening.
+
+    Uses Playwright to launch a hardened Chromium instance. When --tor is
+    specified, traffic is routed through the Tor SOCKS5 proxy at localhost:9050
+    (the Tor daemon must be running).
+
+    Fingerprint hardening is always applied: WebGL disabled, WebRTC disabled,
+    timezone set to UTC, and a common user-agent is used.
+
+    \b
+    Examples:
+        openfoia browse https://example.com                 # Normal browsing
+        openfoia browse https://example.onion --tor         # Tor browsing
+        openfoia browse https://example.com --save          # Save page content
+        openfoia browse https://example.com --tor --headless --save  # Headless Tor
+    """
+    import asyncio
+    from .tor_browse import browse as _browse
+
+    try:
+        result = asyncio.run(_browse(
+            url,
+            use_tor=tor,
+            headless=headless,
+            save=save,
+        ))
+    except SystemExit:
+        raise typer.Exit(1)
+    except Exception as e:
+        rprint(f"[red]Browse failed:[/red] {e}")
+        raise typer.Exit(1)
+
+    rprint(f"\n[cyan]Title:[/cyan] {result.get('title', 'N/A')}")
+    rprint(f"[cyan]URL:[/cyan]   {result.get('url', url)}")
+    if result.get("saved_to"):
+        rprint(f"[cyan]Saved:[/cyan] {result['saved_to']}")
+
+
 # === Purge Command ===
 
 
@@ -2537,11 +2606,13 @@ def purge(
     from openfoia.security import (
         clear_shell_history,
         fill_free_space,
+        get_decoy_db_path,
         print_ssd_warning,
         secure_delete_dir,
     )
+    from .db import get_data_dir as _get_data_dir
 
-    data_dir = Path.home() / ".openfoia"
+    data_dir = _get_data_dir()
 
     if not data_dir.exists():
         rprint("[dim]Nothing to purge. No data directory found.[/dim]")
@@ -2551,9 +2622,14 @@ def purge(
         rprint("[red]--fill requires --secure.[/red]")
         raise typer.Exit(1)
 
+    decoy_path = get_decoy_db_path()
+    has_decoy = decoy_path.exists()
+
     if not confirm:
         rprint("\n[bold red]This will permanently destroy:[/bold red]")
         rprint(f"  [red]{data_dir}/data.db[/red]     — all requests, entities, tracking")
+        if has_decoy:
+            rprint(f"  [red]{data_dir}/decoy.db[/red]   — duress/decoy database")
         rprint(f"  [red]{data_dir}/docs/[/red]       — all ingested documents")
         rprint(f"  [red]{data_dir}/exports/[/red]    — all generated reports")
         rprint(f"  [red]{data_dir}/config.json[/red] — your configuration")
@@ -2595,6 +2671,217 @@ def purge(
 
     rprint(f"\n[green]{data_dir} destroyed.[/green]")
     rprint("[dim]All OpenFOIA data has been removed from this machine.[/dim]\n")
+
+
+# === Web Ingest Command ===
+
+
+@app.command("ingest")
+def ingest_url(
+    url: str = typer.Option(..., "--url", "-u", help="URL to fetch and ingest"),
+    tor: bool = typer.Option(False, "--tor", help="Route through Tor SOCKS5 proxy"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Save extracted text to file"),
+):
+    """Ingest a web page into the document pipeline.
+
+    Fetches the URL, strips tracking scripts, extracts main content,
+    and archives the HTML + text locally.
+
+    Use --tor to route the request through the Tor network (requires
+    Tor running on localhost:9050).
+
+    Examples:
+        openfoia ingest --url https://example.gov/report.html
+        openfoia ingest --url https://example.onion/docs --tor
+    """
+    import asyncio
+    from .db import get_data_dir
+    from .pipeline.web import archive_url
+
+    storage_path = get_data_dir() / "web"
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        mode = " via Tor" if tor else ""
+        task = progress.add_task(f"Fetching{mode}: {url}", total=None)
+
+        try:
+            result = asyncio.run(archive_url(url, storage_path, use_tor=tor))
+        except Exception as e:
+            rprint(f"[red]Failed to fetch URL: {e}[/red]")
+            if tor:
+                rprint("[dim]Make sure Tor is running: brew install tor && tor[/dim]")
+            raise typer.Exit(1)
+
+    rprint(f"\n[bold green]Archived web page[/bold green]")
+    rprint("=" * 50)
+
+    table = Table(show_header=False, box=None)
+    table.add_column("Field", style="cyan", width=16)
+    table.add_column("Value")
+
+    table.add_row("Title", result.title)
+    table.add_row("URL", result.url)
+    table.add_row("Document ID", result.document_id[:12] + "...")
+    table.add_row("Size", f"{result.file_size / 1024:.1f} KB")
+    table.add_row("Text length", f"{len(result.text):,} chars")
+    table.add_row("HTML saved", result.html_path)
+    table.add_row("Text saved", result.text_path)
+    table.add_row("Checksum", result.checksum[:16] + "...")
+    if tor:
+        table.add_row("Tor", "Yes")
+
+    console.print(table)
+
+    if output:
+        output.write_text(result.text)
+        rprint(f"\n[green]Text saved to {output}[/green]")
+
+    rprint(f"\n[dim]Content stored in {storage_path}[/dim]")
+
+
+# === Public Records Commands ===
+
+
+@records_app.command("search")
+def records_search(
+    query: str = typer.Argument(..., help="Search term (company name, keyword, etc.)"),
+    source: str = typer.Option(
+        "opencorporates",
+        "--source",
+        "-s",
+        help="Data source (opencorporates, sec)",
+    ),
+    jurisdiction: Optional[str] = typer.Option(
+        None, "--jurisdiction", "-j", help="Jurisdiction filter (e.g. us_ca, gb)"
+    ),
+    filing_type: Optional[str] = typer.Option(
+        None, "--type", "-t", help="Filing type filter for SEC (e.g. 10-K, 8-K)"
+    ),
+    limit: int = typer.Option(10, "--limit", "-n", help="Maximum results to display"),
+    raw: bool = typer.Option(False, "--raw", help="Print raw JSON output"),
+):
+    """Search public records databases.
+
+    Searches external public records APIs and returns normalized entities.
+    No API keys needed for basic searches.
+
+    Sources:
+      opencorporates  - Company registrations worldwide
+      sec             - SEC EDGAR filings (US public companies)
+
+    Examples:
+        openfoia records search "Acme Corp" --source opencorporates
+        openfoia records search "Acme Corp" --source sec
+        openfoia records search "Palantir" --source sec --type 10-K
+        openfoia records search "Shell" --source opencorporates -j gb
+    """
+    import asyncio
+    from .records import get_adapter, list_sources
+
+    # Validate source
+    available = list_sources()
+    if source not in available:
+        rprint(f"[red]Unknown source '{source}'. Available: {', '.join(available)}[/red]")
+        raise typer.Exit(1)
+
+    adapter = get_adapter(source)
+
+    kwargs: dict[str, Any] = {}
+    if jurisdiction:
+        kwargs["jurisdiction"] = jurisdiction
+    if filing_type:
+        kwargs["filing_type"] = filing_type
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task(f"Searching {source} for '{query}'...", total=None)
+
+        try:
+            result = asyncio.run(adapter.search(query, **kwargs))
+        except Exception as e:
+            rprint(f"[red]Search failed: {e}[/red]")
+            raise typer.Exit(1)
+
+    if raw:
+        rprint(json.dumps(
+            [e.to_dict() for e in result.entities[:limit]],
+            indent=2,
+            default=str,
+        ))
+        return
+
+    if not result.entities:
+        rprint(f"[yellow]No results found for '{query}' on {source}.[/yellow]")
+        return
+
+    rprint(f"\n[bold]{source}[/bold]: {result.total_results} total results for '{query}'")
+    rprint("=" * 60)
+
+    entities = result.entities[:limit]
+
+    if source == "opencorporates":
+        table = Table()
+        table.add_column("Name", style="cyan", max_width=30)
+        table.add_column("Jurisdiction", width=12)
+        table.add_column("Company #", width=14)
+        table.add_column("Status", width=12)
+        table.add_column("Type", width=14)
+        table.add_column("Officers", max_width=30)
+
+        for e in entities:
+            officers = e.extra_data.get("officers", [])
+            officer_str = ", ".join(o["name"] for o in officers[:3]) if officers else "-"
+            if len(officers) > 3:
+                officer_str += f" (+{len(officers) - 3} more)"
+
+            table.add_row(
+                e.name,
+                e.jurisdiction or "-",
+                e.identifiers.get("company_number", "-"),
+                e.status or "-",
+                e.extra_data.get("company_type", "-"),
+                officer_str,
+            )
+        console.print(table)
+
+    elif source == "sec":
+        table = Table()
+        table.add_column("Company", style="cyan", max_width=30)
+        table.add_column("Filing", width=10)
+        table.add_column("Date", width=12)
+        table.add_column("CIK", width=12)
+        table.add_column("URL", max_width=50)
+
+        for e in entities:
+            table.add_row(
+                e.name,
+                e.extra_data.get("filing_type", "-"),
+                e.extra_data.get("filing_date", "-"),
+                e.identifiers.get("cik", "-"),
+                e.source_url or "-",
+            )
+        console.print(table)
+
+    else:
+        # Generic table for any future adapter
+        table = Table()
+        table.add_column("Name", style="cyan")
+        table.add_column("Type")
+        table.add_column("Source")
+        table.add_column("Jurisdiction")
+
+        for e in entities:
+            table.add_row(e.name, e.entity_type, e.source, e.jurisdiction or "-")
+        console.print(table)
+
+    rprint(f"\n[dim]Showing {len(entities)} of {result.total_results} results.[/dim]")
 
 
 # === Main Entry Point ===

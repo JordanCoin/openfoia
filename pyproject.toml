@@ -34,6 +34,9 @@ dependencies = [
 tor = [
     "socksio>=1.0.0",
 ]
+browser = [
+    "playwright>=1.40.0",
+]
 encryption = [
     "pysqlcipher3>=1.2.0",
 ]
