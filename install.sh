@@ -118,14 +118,21 @@ install_python() {
 
     info "Using $python ($($python --version))"
 
-    # Determine extras — default includes NER for real entity extraction
+    # Determine extras
+    # Default: core only (~30MB). GLiNER adds ~2.3GB (PyTorch + model).
+    # Let the user opt in — don't surprise them with a 2GB download.
     local extras=""
-    if [ "$MINIMAL" = true ]; then
-        extras=""
-        info "Minimal install (regex-only entity extraction)"
-    else
-        extras="[ner]"
-        info "Standard install (includes GLiNER for entity extraction)"
+    if [ "$MINIMAL" = false ]; then
+        # Check if user explicitly wants NER
+        for arg in "$@"; do
+            case "$arg" in
+                --ner) extras="[ner]"; info "Including GLiNER entity extraction (~2GB download)" ;;
+                --all) extras="[all]"; info "Full install (all optional features)" ;;
+            esac
+        done
+    fi
+    if [ -z "$extras" ]; then
+        info "Core install (~30MB). For entity extraction: openfoia install-extras ner"
     fi
 
     local pkg="git+https://github.com/${REPO}.git"

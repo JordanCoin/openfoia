@@ -124,6 +124,64 @@ def init(
 # === Server Command ===
 
 
+@app.command("install-extras")
+def install_extras(
+    extra: str = typer.Argument(..., help="Extra to install: ner, ocr, fax, mail, cloud-ai, tor, browser, encryption, all"),
+):
+    """Install optional features after the initial setup.
+
+    The base install is lightweight (~30MB). Add features as you need them.
+
+    Examples:
+        openfoia install-extras ner          # GLiNER entity extraction (~2GB)
+        openfoia install-extras ocr          # Tesseract OCR support
+        openfoia install-extras cloud-ai     # Anthropic + OpenAI
+        openfoia install-extras encryption   # SQLCipher encrypted database
+        openfoia install-extras all          # everything
+    """
+    import subprocess
+    import sys
+
+    valid = {"ner", "ner-spacy", "ocr", "fax", "mail", "cloud-ai", "tor", "browser", "encryption", "all"}
+    if extra not in valid:
+        rprint(f"[red]Unknown extra '{extra}'. Choose from: {', '.join(sorted(valid))}[/red]")
+        raise typer.Exit(1)
+
+    size_hints = {
+        "ner": "~2GB (PyTorch + GLiNER model)",
+        "ner-spacy": "~100MB (+ download a model after)",
+        "ocr": "~5MB (also needs system tesseract-ocr + poppler-utils)",
+        "fax": "~20MB",
+        "mail": "~5MB",
+        "cloud-ai": "~30MB",
+        "tor": "~1MB",
+        "browser": "~50MB (+ playwright install after)",
+        "encryption": "~5MB (also needs system libsqlcipher-dev)",
+        "all": "~2.5GB total",
+    }
+
+    rprint(f"[cyan]Installing: openfoia[{extra}] — {size_hints.get(extra, '')}[/cyan]")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "pip", "install", f"openfoia[{extra}]"],
+        capture_output=False,
+    )
+
+    if result.returncode == 0:
+        rprint(f"\n[green]Installed openfoia[{extra}][/green]")
+        if extra == "ocr":
+            rprint("[dim]Also install system packages: apt install tesseract-ocr poppler-utils (Linux) or brew install tesseract poppler (macOS)[/dim]")
+        elif extra == "ner-spacy":
+            rprint("[dim]Also download a model: python -m spacy download en_core_web_sm[/dim]")
+        elif extra == "browser":
+            rprint("[dim]Also run: playwright install chromium[/dim]")
+        elif extra == "encryption":
+            rprint("[dim]Also install system package: apt install libsqlcipher-dev (Linux) or brew install sqlcipher (macOS)[/dim]")
+    else:
+        rprint(f"[red]Install failed. Try manually: pip install 'openfoia[{extra}]'[/red]")
+        raise typer.Exit(1)
+
+
 @app.command()
 def portable(
     enable: bool = typer.Option(True, "--enable/--disable", help="Enable or disable portable mode"),
