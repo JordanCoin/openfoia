@@ -2613,19 +2613,31 @@ def entities_import(
         sample = f.read(8192)
         f.seek(0)
 
-        sniffer = csv.Sniffer()
-        has_header = False
-        try:
-            has_header = sniffer.has_header(sample)
-        except csv.Error:
-            pass
-
         reader = csv.reader(f)
         all_rows = list(reader)
 
     if not all_rows:
         rprint("[yellow]File is empty.[/yellow]")
         return
+
+    # Detect header: if the first row has values that look like column names
+    has_header = False
+    if all_rows:
+        first_row = all_rows[0]
+        looks_like_header = all(
+            not val.strip().replace(".", "").replace("-", "").isdigit()
+            and len(val.strip()) < 50
+            and not val.strip().startswith("\\")
+            for val in first_row if val.strip()
+        )
+        # Also check: does first row have any common header-like words?
+        header_words = {"name", "type", "pattern", "regex", "description", "desc", "notes",
+                        "label", "category", "format", "rule", "entity", "match", "comment"}
+        has_header_word = any(
+            val.strip().lower().replace(" ", "_") in header_words
+            for val in first_row
+        )
+        has_header = looks_like_header and (has_header_word or len(first_row) >= 2)
 
     # --- Column mapping ---
     header = []
