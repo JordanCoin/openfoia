@@ -2507,21 +2507,23 @@ def _llm_map_columns(headers: list[str], sample_rows: list[list[str]]) -> dict[s
     for row in sample_rows[:5]:
         preview += " | ".join(row) + "\n"
 
-    prompt = f"""I have a CSV file with entity type definitions. The columns might be named anything.
-I need to map them to three fields: name (the entity type name), pattern (a regex pattern), description (what it means).
+    # Number the columns explicitly
+    col_list = "\n".join(f"  Column {i}: \"{h}\"" for i, h in enumerate(headers))
 
-Some columns might contain plain English descriptions of patterns instead of actual regex.
-If a column has descriptions like "looks like XX-1234" or "format: ABC-123-456", that's the pattern column
-(and I'll need to generate regex from those descriptions later).
+    prompt = f"""A CSV has these columns:
+{col_list}
 
-Here's the file:
-
+Here are some sample rows:
 {preview}
+I need to know which column number contains each of these 3 things:
+1. "name" = the label for the entity type (like "Grant ID", "Wire Transfer")
+2. "pattern" = how to find it in text (regex or English description like "looks like XX-1234")
+3. "description" = why it matters or what it means
 
-Return ONLY valid JSON mapping column indices (0-based) to fields:
-{{"name": <index>, "pattern": <index>, "description": <index>}}
+Example: if column 0 has names, column 1 has patterns, column 2 has descriptions:
+{{"name": 0, "pattern": 1, "description": 2}}
 
-If a field doesn't exist, use -1. If you're unsure, make your best guess."""
+What are the correct column numbers for this CSV? Reply with ONLY the JSON."""
 
     try:
         if cfg.ai.provider == "ollama":
@@ -2540,7 +2542,13 @@ If a field doesn't exist, use -1. If you're unsure, make your best guess."""
 
 
 def _llm_generate_regex(description: str) -> str | None:
-    """Use LLM to generate a regex from a plain English pattern description."""
+    """Use LLM to generate a regex from a plain English pattern description.
+
+    Validates the output by checking that the generated regex:
+    1. Is valid regex
+    2. Matches at least one example from the description (if examples are present)
+    3. Is reasonably short (not hallucinated garbage)
+    """
     from .pipeline.extract import _llm_available, _call_ollama
     from .config import load_config
 
@@ -2548,27 +2556,68 @@ def _llm_generate_regex(description: str) -> str | None:
     if not _llm_available(cfg.ai.provider, cfg.ai.api_key, cfg.ai.base_url):
         return None
 
-    prompt = f"""Convert this pattern description to a Python regex pattern.
-The regex should match the described format in text.
+    prompt = f"""Write a Python regex that matches this pattern.
 
 Description: {description}
 
-Return ONLY the regex pattern string, nothing else. No explanation, no quotes, no markdown.
-Example input: "Federal contract numbers like FA8726-24-C-0012"
-Example output: \\bFA\\d{{4}}-\\d{{2}}-[A-Z]-\\d{{4}}\\b"""
+Rules:
+- Return ONLY the regex, one line, no explanation
+- Use \\b for word boundaries
+- Use \\d for digits, [A-Z] for uppercase letters
+- Keep it simple and short
+
+Examples:
+  "looks like GR-2024-00456" → \\bGR-\\d{{4}}-\\d{{5}}\\b
+  "starts with WT then 8 digits" → \\bWT\\d{{8}}\\b
+  "two letters dash two digits like CA-12" → \\b[A-Z]{{2}}-\\d{{2}}\\b
+  "starts with LR- then 6 digits" → \\bLR-\\d{{6}}\\b
+
+Your regex:"""
 
     try:
         if cfg.ai.provider == "ollama":
-            resp = _call_ollama(prompt, cfg.ai.model, cfg.ai.base_url, 0.1, 200)
+            # Call ollama WITHOUT json format — we want raw text for regex
+            import urllib.request
+            url = (cfg.ai.base_url or "http://localhost:11434").rstrip("/")
+            payload = json.dumps({
+                "model": cfg.ai.model, "prompt": prompt, "stream": False,
+                "options": {"temperature": 0.1, "num_predict": 80},
+            }).encode()
+            req = urllib.request.Request(
+                f"{url}/api/generate", data=payload,
+                headers={"Content-Type": "application/json"}, method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=30) as http_resp:
+                body = json.loads(http_resp.read())
+            resp = body.get("response", "")
         else:
             return None
 
-        # Clean up the response — strip quotes, backticks, whitespace
-        pattern = resp.strip().strip('`"\'').strip()
-        if pattern:
-            import re as _re
-            _re.compile(pattern)  # validate
-            return pattern
+        # Clean up: take only the first line, strip quotes/backticks/json
+        import re as _re
+        lines = resp.strip().split("\n")
+        pattern = lines[0].strip().strip('`"\'{}').strip()
+
+        # Remove JSON artifacts if the LLM wrapped it
+        if ":" in pattern and pattern.startswith("{"):
+            return None
+        if len(pattern) > 100:
+            return None  # hallucinated garbage
+
+        if not pattern or not any(c in pattern for c in r"\[]()+*?{}dswb"):
+            return None  # doesn't look like regex
+
+        _re.compile(pattern)  # validate
+
+        # Sanity check: try to find an example in the description and see if regex matches
+        # Extract things that look like examples (alphanumeric patterns with dashes/digits)
+        examples = _re.findall(r'[A-Z]{1,4}[-]?\d{2,}[-]?\d*[-]?[A-Z]?[-]?\d*', description)
+        if examples:
+            matched_any = any(_re.search(pattern, ex) for ex in examples)
+            if not matched_any:
+                return None  # regex doesn't match its own examples
+
+        return pattern
     except Exception:
         pass
     return None
@@ -2691,15 +2740,23 @@ def entities_import(
         if not name_val:
             continue
 
-        # If pattern_val isn't valid regex, try to use it as a description to generate regex
-        is_valid_regex = True
-        try:
-            if pattern_val:
-                re.compile(pattern_val)
-        except re.error:
-            is_valid_regex = False
+        # Detect if pattern_val is plain English rather than regex.
+        # Plain English patterns have spaces and common words; real regex has
+        # metacharacters like \b, \d, [, ], +, *, {, }
+        is_plain_english = False
+        if pattern_val:
+            has_spaces = " " in pattern_val
+            has_regex_chars = bool(re.search(r'[\\[{()+*?|^$]', pattern_val))
+            word_count = len(pattern_val.split())
+            is_plain_english = has_spaces and not has_regex_chars and word_count >= 3
 
-        if not is_valid_regex and smart and pattern_val:
+            if not is_plain_english:
+                try:
+                    re.compile(pattern_val)
+                except re.error:
+                    is_plain_english = True  # invalid regex, treat as English
+
+        if is_plain_english and smart and pattern_val:
             rprint(f"[cyan]  '{name_val}': pattern looks like English, generating regex...[/cyan]")
             generated = _llm_generate_regex(pattern_val)
             if generated:

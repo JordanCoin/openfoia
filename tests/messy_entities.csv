@@ -1,0 +1,6 @@
+What We're Looking For,How To Spot It,Why It Matters
+Government Grant IDs,looks like GR-2024-00456 or GR-2025-12345,Tracks federal grant disbursements
+Shell Company Names,company names ending in LLC or Ltd registered in Delaware or Nevada,Used to hide beneficial ownership
+Wire Transfer References,format like WT followed by 8 digits such as WT12345678,Bank wire identifiers in financial docs
+Congressional District Codes,two letter state code dash two digit number like CA-12 or NY-03,Identifies which congressional district
+Lobbyist Registration Numbers,starts with LR then a dash then 6 digits like LR-123456,From lobbying disclosure filings
