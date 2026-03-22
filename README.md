@@ -126,20 +126,22 @@ Add domain-specific entities for your investigation:
 ```bash
 # Add one at a time
 openfoia entities add -n CONTRACT_NUMBER -p '\b[A-Z]{2,4}-\d{4,}-\d{4,}\b' -d "Federal contract numbers"
-openfoia entities add -n CASE_NUMBER -p '\b\d{2}-cv-\d{4,}\b' -d "Federal court case numbers"
 
-# Import from a CSV (columns: name, pattern, description)
-openfoia entities import my_entities.csv
+# Import from any CSV — columns can be named anything
+openfoia entities import investigation_patterns.csv
+
+# If your CSV has plain English instead of regex ("looks like XX-1234"),
+# a local LLM will generate the regex patterns for you automatically.
 
 # Test your patterns against a document
 openfoia entities test -f response.pdf.txt
 
-# List what you've configured
+# List, export, share with your team
 openfoia entities list
-
-# Export to share with your team
 openfoia entities export -o our_entities.csv
 ```
+
+The import is smart — if your spreadsheet has columns like "Entity Type", "What It Looks Like", "Notes" instead of "name", "pattern", "description", it figures out the mapping. If ollama is running, it'll even generate regex from plain English descriptions like "format: ABC-1234-5678".
 
 ## CLI Reference
 
