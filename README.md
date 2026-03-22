@@ -68,13 +68,38 @@ openfoia analyze graph --view
 | **Mail gateway** | Lob — formats as certified letter with return envelope |
 | **PDF text extraction** | Compiled binary, ~3ms/page, lossless on born-digital PDFs |
 | **OCR fallback** | Tesseract (local), Google Cloud Vision, or AWS Textract for scanned docs |
-| **Entity extraction** | Local LLM (Ollama), Anthropic, or OpenAI — falls back to regex with zero config |
+| **Entity extraction** | 4-tier: LLM → GLiNER → spaCy → Regex. 100% recall with local 2GB model. |
+| **Relationship graphs** | Force-directed HTML visualization, colored by type, clickable nodes |
 | **Deadline tracking** | Auto-calculates due dates, CLI checker for cron/bashrc |
 | **Campaign coordination** | Create campaigns, distribute requests to participants, track progress |
-| **Entity graph** | Force-directed HTML visualization, colored by type, clickable nodes |
 | **Web UI** | Local htmx interface with agency search, form submission, document upload |
 | **Alembic migrations** | Schema versioning for safe upgrades |
+| **Encrypted storage** | SQLCipher AES-256 database encryption at rest |
+| **Forensic purge** | `openfoia purge --secure` — 3-pass overwrite, history scrub |
+| **Metadata stripping** | Auto-strips EXIF, PDF author, DOCX revision history on ingest |
+| **Duress mode** | Second password opens a decoy database with harmless data |
 | **Purge command** | `openfoia purge --yes` — everything gone, instantly |
+
+### Data Sources
+
+Search and pull from external databases — all analysis happens locally.
+
+| Source | What | Auth |
+|--------|------|------|
+| **[MuckRock](https://www.muckrock.com/)** | 46k+ completed FOIA requests with downloadable response documents | Free, no key needed |
+| **[OpenCorporates](https://opencorporates.com/)** | Global company ownership, directors, filings | Free tier |
+| **[SEC EDGAR](https://www.sec.gov/edgar/)** | US corporate filings, 10-K, 10-Q, proxy statements | Free |
+
+```bash
+# Search MuckRock's FOIA archive
+openfoia records search "EPA water contamination" --source muckrock
+
+# Search company ownership
+openfoia records search "Meridian Defense Systems" --source opencorporates
+
+# Search SEC filings
+openfoia records search "Acme Corp" --source sec
+```
 
 ## Configuration
 
