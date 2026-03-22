@@ -3732,6 +3732,60 @@ def analyze_export(
     rprint(f"[dim]Compatible with Aleph, OpenAleph, OpenSanctions, and ICIJ tools.[/dim]")
 
 
+@analyze_app.command("import")
+def analyze_import(
+    file: Path = typer.Argument(..., help="FtM JSON-lines file to import"),
+    tag: Optional[str] = typer.Option(None, "--tag", "-t", help="Tag for this import batch"),
+):
+    """Import entities from a FollowTheMoney JSON-lines file.
+
+    Reads .ftm.json files produced by Aleph, OpenAleph, OpenSanctions,
+    or any FtM-compatible tool and imports them into your local database.
+
+    Imported entities are deduplicated against existing data and can be
+    cross-referenced, graphed, and purged like any other entity.
+
+    Use cases:
+    - Export from Aleph → import → work offline
+    - Download OpenSanctions dump → import → crossref locally
+    - Colleague sends you FtM data → import → analyze → purge when done
+
+    Examples:
+        openfoia analyze import investigation.ftm.json
+        openfoia analyze import sanctions.ftm.json --tag opensanctions
+    """
+    from .ftm_import import import_ftm_to_db, parse_ftm_file
+
+    if not file.exists():
+        rprint(f"[red]File not found: {file}[/red]")
+        raise typer.Exit(1)
+
+    # Preview first
+    entities, relationships = parse_ftm_file(file)
+    rprint(f"\n[cyan]File: {file}[/cyan]")
+    rprint(f"  Entities: {len(entities)}")
+    rprint(f"  Relationships: {len(relationships)}")
+
+    if not entities:
+        rprint("[yellow]No entities found in file.[/yellow]")
+        return
+
+    # Show schema breakdown
+    from collections import Counter
+    schemas = Counter(e["schema"] for e in entities)
+    for schema, count in schemas.most_common(10):
+        rprint(f"  {schema}: {count}")
+
+    rprint(f"\n[cyan]Importing...[/cyan]")
+    ent_count, rel_count = import_ftm_to_db(file, tag=tag)
+
+    rprint(f"\n[green]Imported {ent_count} entities, {rel_count} relationships[/green]")
+    if tag:
+        rprint(f"[dim]Tagged as: {tag}[/dim]")
+    rprint(f"[dim]Run 'openfoia crossref' to cross-reference imported entities.[/dim]")
+    rprint(f"[dim]Run 'openfoia analyze graph --view' to visualize.[/dim]")
+
+
 # === Main Entry Point ===
 
 
