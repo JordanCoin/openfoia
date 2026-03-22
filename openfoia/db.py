@@ -55,15 +55,41 @@ def get_db_password() -> str | None:
 def get_data_dir() -> Path:
     """Get the OpenFOIA data directory, creating if needed.
 
-    Checks OPENFOIA_DATA_DIR env var first, then falls back to ~/.openfoia/.
-    This is essential for air-gapped / Tails OS / portable USB deployments
-    where the data directory must live on an encrypted persistent volume.
+    Resolution order:
+    1. OPENFOIA_DATA_DIR env var (explicit override)
+    2. Portable mode: if a .openfoia-portable file exists next to the
+       installed package (or in the current directory), use a data/
+       directory there — keeps everything on the USB stick
+    3. Default: ~/.openfoia/
+
+    For USB deployments: create a .openfoia-portable file on the USB
+    and all data stays on the drive, never touching the host machine.
     """
+    # 1. Explicit env var
     env_dir = os.environ.get("OPENFOIA_DATA_DIR")
     if env_dir:
         data_dir = Path(env_dir)
-    else:
-        data_dir = Path.home() / ".openfoia"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return data_dir
+
+    # 2. Portable mode — check for marker file
+    # Check next to this package
+    package_dir = Path(__file__).parent.parent
+    portable_marker = package_dir / ".openfoia-portable"
+    if portable_marker.exists():
+        data_dir = package_dir / "openfoia-data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return data_dir
+
+    # Also check current working directory
+    cwd_marker = Path.cwd() / ".openfoia-portable"
+    if cwd_marker.exists():
+        data_dir = Path.cwd() / "openfoia-data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return data_dir
+
+    # 3. Default
+    data_dir = Path.home() / ".openfoia"
     data_dir.mkdir(parents=True, exist_ok=True)
     return data_dir
 

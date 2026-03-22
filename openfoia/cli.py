@@ -125,6 +125,48 @@ def init(
 
 
 @app.command()
+def portable(
+    enable: bool = typer.Option(True, "--enable/--disable", help="Enable or disable portable mode"),
+):
+    """Enable portable mode — keep all data next to the program.
+
+    Creates a .openfoia-portable marker file in the current directory.
+    When this file exists, all data (database, documents, graphs, config)
+    is stored in ./openfoia-data/ instead of ~/.openfoia/.
+
+    Use this when running from a USB stick or portable install so nothing
+    touches the host machine's disk.
+
+    Examples:
+        cd /Volumes/MY_USB
+        openfoia portable                # enable — data stays on USB
+        openfoia init                    # database created on USB
+        openfoia serve                   # everything runs from USB
+
+        openfoia portable --disable      # go back to ~/.openfoia/
+    """
+    marker = Path.cwd() / ".openfoia-portable"
+
+    if enable:
+        marker.touch()
+        data_dir = Path.cwd() / "openfoia-data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        rprint(f"[green]Portable mode enabled.[/green]")
+        rprint(f"  Marker: {marker}")
+        rprint(f"  Data directory: {data_dir}")
+        rprint(f"\n[dim]All data will be stored in {data_dir}[/dim]")
+        rprint(f"[dim]Nothing will be written to ~/.openfoia/[/dim]")
+        rprint(f"[dim]To undo: openfoia portable --disable[/dim]")
+    else:
+        if marker.exists():
+            marker.unlink()
+            rprint(f"[green]Portable mode disabled.[/green]")
+            rprint(f"[dim]Data will now be stored in ~/.openfoia/[/dim]")
+        else:
+            rprint(f"[dim]Portable mode is not active in this directory.[/dim]")
+
+
+@app.command()
 def guide():
     """Interactive quickstart guide for new users.
 
