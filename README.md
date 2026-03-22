@@ -224,6 +224,27 @@ Inspired by [MuckRock](https://www.muckrock.com/), [DocumentCloud](https://www.d
 
 *Free as in freedom, free as in beer.*
 
+## Legal Context for Contributors
+
+If you're contributing to this project, you should know the legal landscape. We did the research so you don't have to.
+
+**Writing this code is legal.** In August 2025, the US DOJ explicitly stated: ["Merely writing code, without ill intent, is not a crime."](https://www.crowdfundinsider.com/2025/08/248043-us-department-of-justice-signals-shift-in-crypto-enforcement-writing-code-is-not-a-crime/) Open-source developers aren't criminally liable for how others use their tools, absent specific intent to facilitate crime.
+
+**Open source encryption is export-legal.** Published open-source encryption code is [generally exempt from US Export Administration Regulations](https://www.eff.org/deeplinks/2019/08/us-export-controls-and-published-encryption-source-code-explained). Standard encryption (AES, TLS) requires no notification. The [Linux Foundation's guide](https://www.linuxfoundation.org/resources/publications/understanding-us-export-controls-with-open-source-projects) covers this in detail.
+
+**Precedent exists.** The Tor Project, Signal, SecureDrop, and Tails have operated for years building privacy tools for journalists. They're legal, they're US-based, and they're still shipping. [Amnesty International considers Tor a human rights tool.](https://www.amnesty.org/en/latest/campaigns/2024/02/what-is-tor-and-how-does-it-advance-human-rights/)
+
+**What to be aware of:**
+- [OFAC sanctions](https://www.linuxfoundation.org/blog/navigating-global-regulations-and-open-source-us-ofac-sanctions) generally exempt open source as "informational materials," but don't provide targeted support to sanctioned entities
+- [Some countries block privacy tools](https://ooni.org/post/2021-how-signal-private-messenger-blocked-around-the-world/) — China, Egypt, Cuba, Iran, and others have banned Signal; Turkey and Venezuela have blocked Tor
+- [GitHub restricts accounts](https://docs.github.com/en/site-policy/other-site-policies/github-and-trade-controls) in sanctioned regions under US trade controls
+
+**Further reading on journalist safety:**
+- [Freedom of the Press Foundation — 2026 Digital Security Checklist](https://freedom.press/digisec/blog/journalists-digital-security-checklist/)
+- [UNESCO — Safety of Journalists](https://www.unesco.org/en/safety-journalists)
+- [2025 Journalist Safety Outlook](https://www.riskpal.com/2025-journalist-safety-outlook/)
+- [BIS — Encryption and Export Administration Regulations](https://www.bis.doc.gov/index.php/policy-guidance/encryption)
+
 ## License
 
 AGPL-3.0 — Keep it open.
