@@ -194,6 +194,7 @@ analyze_app = typer.Typer(help="Analyze documents")
 template_app = typer.Typer(help="Request templates")
 
 deadline_app = typer.Typer(help="Track FOIA deadlines")
+db_app = typer.Typer(help="Database management")
 
 app.add_typer(request_app, name="request")
 app.add_typer(docs_app, name="docs")
@@ -202,6 +203,38 @@ app.add_typer(agency_app, name="agency")
 app.add_typer(analyze_app, name="analyze")
 app.add_typer(template_app, name="template")
 app.add_typer(deadline_app, name="deadlines")
+app.add_typer(db_app, name="db")
+
+
+@db_app.command()
+def upgrade(
+    revision: str = typer.Argument("head", help="Revision to upgrade to (default: head)"),
+):
+    """Run database migrations.
+
+    Applies pending alembic migrations to bring the schema up to date.
+
+    Examples:
+        openfoia db upgrade          # Upgrade to latest
+        openfoia db upgrade head     # Same as above
+    """
+    from .db import get_db_path, run_migrations
+
+    db_path = get_db_path()
+    rprint(f"\n[cyan]Database:[/cyan] {db_path}")
+    rprint(f"[cyan]Upgrading to:[/cyan] {revision}")
+
+    from alembic import command
+    from alembic.config import Config
+
+    alembic_cfg = Config()
+    alembic_cfg.set_main_option(
+        "script_location", str(Path(__file__).parent / "migrations")
+    )
+    alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    command.upgrade(alembic_cfg, revision)
+
+    rprint("[bold green]Database upgraded successfully.[/bold green]\n")
 
 
 # === Configuration ===

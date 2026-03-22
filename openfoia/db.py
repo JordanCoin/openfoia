@@ -70,12 +70,27 @@ def get_session() -> Generator[Session, None, None]:
         session.close()
 
 
+def run_migrations() -> None:
+    """Run alembic migrations to bring the database schema up to date."""
+    from alembic import command
+    from alembic.config import Config
+
+    alembic_cfg = Config()
+    alembic_cfg.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
+    alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{get_db_path()}")
+    command.upgrade(alembic_cfg, "head")
+
+
 def init_db(seed: bool = True) -> None:
-    """Initialize the database, creating tables and optionally seeding data."""
-    engine = get_engine()
-    Base.metadata.create_all(engine)
-    
+    """Initialize the database, running migrations and optionally seeding data."""
+    # Ensure data directory exists
+    get_data_dir()
+
+    # Run alembic migrations (creates/updates tables)
+    run_migrations()
+
     if seed:
+        engine = get_engine()
         seed_agencies(engine)
 
 
