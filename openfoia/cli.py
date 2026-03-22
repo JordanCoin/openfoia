@@ -818,16 +818,20 @@ def docs_ingest(
     request_id: Optional[str] = typer.Option(None, "--request", "-r", help="Associate with request"),
     recursive: bool = typer.Option(True, "--recursive/--no-recursive", help="Recurse into directories"),
     ocr: bool = typer.Option(False, "--ocr", help="Run OCR after ingestion"),
+    keep_metadata: bool = typer.Option(False, "--keep-metadata", help="Skip automatic metadata stripping"),
 ):
     """Ingest documents into the system.
-    
+
     Copies documents to ~/.openfoia/docs/ and tracks them in the database.
+    Automatically strips sensitive metadata (EXIF, author info, etc.)
+    unless --keep-metadata is specified.
     Supports PDF, DOCX, TXT, and image files.
-    
+
     Examples:
         openfoia docs ingest ./response.pdf
         openfoia docs ingest ./foia-docs/ --ocr
         openfoia docs ingest ./evidence/ -r REQ-2026-001
+        openfoia docs ingest ./doc.pdf --keep-metadata
     """
     import asyncio
     from .db import get_data_dir, get_db_path, init_db
@@ -852,9 +856,15 @@ def docs_ingest(
         if path.is_file():
             task = progress.add_task(f"Ingesting {path.name}...", total=None)
             try:
-                result = asyncio.run(ingester.ingest_file(path, request_id=request_id))
+                result = asyncio.run(ingester.ingest_file(
+                    path, request_id=request_id, strip_metadata=not keep_metadata,
+                ))
                 results.append(result)
-                rprint(f"[green]✓[/green] {path.name} → {result.document_id[:8]}...")
+                stripped = result.metadata.get("metadata_stripped") or {}
+                if stripped.get("stripped"):
+                    rprint(f"[green]✓[/green] {path.name} → {result.document_id[:8]}... (stripped {len(stripped['stripped'])} metadata fields)")
+                else:
+                    rprint(f"[green]✓[/green] {path.name} → {result.document_id[:8]}...")
             except Exception as e:
                 rprint(f"[red]✗[/red] {path.name}: {e}")
         else:
@@ -876,7 +886,9 @@ def docs_ingest(
             for file in files:
                 progress.update(task, description=f"Ingesting {file.name}...")
                 try:
-                    result = asyncio.run(ingester.ingest_file(file, request_id=request_id))
+                    result = asyncio.run(ingester.ingest_file(
+                        file, request_id=request_id, strip_metadata=not keep_metadata,
+                    ))
                     results.append(result)
                 except Exception as e:
                     rprint(f"[red]✗[/red] {file.name}: {e}")
@@ -2440,6 +2452,8 @@ def deadline_check():
 @app.command()
 def purge(
     confirm: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    secure: bool = typer.Option(False, "--secure", "-s", help="Overwrite files 3x with random data before deletion (forensic)"),
+    fill: bool = typer.Option(False, "--fill", help="Fill free disk space with random data after purge (slow)"),
 ):
     """Destroy all OpenFOIA data. Everything. Gone.
 
@@ -2447,14 +2461,31 @@ def purge(
     and the entire ~/.openfoia/ directory. This cannot be undone.
 
     For situations where you need everything off this machine, now.
+
+    \b
+    Modes:
+      openfoia purge --yes          Fast delete (rm -rf). Not forensic.
+      openfoia purge --secure       Overwrite all files 3x, scrub shell history.
+      openfoia purge --secure --fill  Also fill free space with random data.
     """
     import shutil
+
+    from openfoia.security import (
+        clear_shell_history,
+        fill_free_space,
+        print_ssd_warning,
+        secure_delete_dir,
+    )
 
     data_dir = Path.home() / ".openfoia"
 
     if not data_dir.exists():
         rprint("[dim]Nothing to purge. No data directory found.[/dim]")
         return
+
+    if fill and not secure:
+        rprint("[red]--fill requires --secure.[/red]")
+        raise typer.Exit(1)
 
     if not confirm:
         rprint("\n[bold red]This will permanently destroy:[/bold red]")
@@ -2463,6 +2494,13 @@ def purge(
         rprint(f"  [red]{data_dir}/exports/[/red]    — all generated reports")
         rprint(f"  [red]{data_dir}/config.json[/red] — your configuration")
         rprint(f"\n  [bold red]Everything in {data_dir}[/bold red]")
+
+        if secure:
+            rprint("\n[yellow]Secure mode: files will be overwritten 3x with random data.[/yellow]")
+            print_ssd_warning()
+        if fill:
+            rprint("[yellow]Fill mode: free disk space will be overwritten. This may take a long time.[/yellow]")
+
         rprint("\n[dim]This cannot be undone.[/dim]\n")
 
         answer = typer.prompt("Type PURGE to confirm", default="")
@@ -2470,7 +2508,27 @@ def purge(
             rprint("[dim]Aborted.[/dim]")
             raise typer.Exit(0)
 
-    shutil.rmtree(data_dir)
+    if secure:
+        print_ssd_warning()
+        rprint("[bold]Secure-deleting all files (3-pass overwrite)...[/bold]")
+        count = secure_delete_dir(data_dir)
+        rprint(f"[green]{count} file(s) securely destroyed.[/green]")
+
+        rprint("[bold]Scrubbing shell history...[/bold]")
+        modified = clear_shell_history()
+        if modified:
+            rprint(f"[green]Cleaned {len(modified)} history file(s): {', '.join(modified)}[/green]")
+        else:
+            rprint("[dim]No shell history entries found.[/dim]")
+
+        if fill:
+            rprint("[bold]Filling free disk space with random data (this will take a while)...[/bold]")
+            fill_dir = data_dir.parent / ".openfoia_fill"
+            fill_free_space(fill_dir)
+            rprint("[green]Free space filled and cleaned up.[/green]")
+    else:
+        shutil.rmtree(data_dir)
+
     rprint(f"\n[green]{data_dir} destroyed.[/green]")
     rprint("[dim]All OpenFOIA data has been removed from this machine.[/dim]\n")
 
