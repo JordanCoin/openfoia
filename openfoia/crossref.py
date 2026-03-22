@@ -168,8 +168,9 @@ async def _check_muckrock(name: str, entity_type: EntityType) -> list[CrossRefHi
                 extra={"muckrock_id": req.identifiers.get("muckrock_id")},
             ))
 
-    # Also check if there are any results at all (name in broader search)
-    if not hits and result.total_results > 0:
+    # Only report fuzzy matches if the result count is meaningfully small
+    # (a broad search returning 46k results is not useful)
+    if not hits and 0 < result.total_results <= 100:
         hits.append(CrossRefHit(
             source="muckrock",
             entity_name=name,
@@ -231,17 +232,23 @@ async def _check_sec(name: str, entity_type: EntityType) -> list[CrossRefHit]:
         return []
 
     hits = []
+    seen_ciks: set[str] = set()
     for ent in result.entities:
+        cik = ent.identifiers.get("cik", "")
+        # One hit per company (CIK), not per filing
+        if cik in seen_ciks:
+            continue
+        seen_ciks.add(cik)
         hits.append(CrossRefHit(
             source="sec",
             entity_name=name,
             match_type="partial",
-            details=f"{ent.name} — {ent.extra_data.get('filing_type', '?')} ({ent.extra_data.get('filing_date', '?')})",
+            details=f"{ent.name} (CIK {cik}) — {ent.extra_data.get('filing_type', '?')} ({ent.extra_data.get('filing_date', '?')})",
             url=ent.source_url,
-            extra={"cik": ent.identifiers.get("cik")},
+            extra={"cik": cik},
         ))
 
-    return hits
+    return hits[:5]  # cap at 5 most relevant
 
 
 async def _check_icij(name: str, entity_type: EntityType, data_dir: str) -> list[CrossRefHit]:
