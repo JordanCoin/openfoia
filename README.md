@@ -1,71 +1,84 @@
-# 🔒 OpenFOIA
+# OpenFOIA
 
-**Crowdsourced FOIA automation with AI-powered document analysis.**
+**Local-first FOIA automation for journalists, researchers, and citizens.**
 
-Your data never leaves your machine. Transparency is patriotic. 🇺🇸
-
-> ⚠️ **v0.1.0 — Early Development**
-> 
-> This is a working scaffold. The CLI structure exists, the web UI renders, but most features are stubs. PRs welcome!
+Your data never leaves your machine. Works offline. Works everywhere.
 
 ---
 
-## What Is This?
+## Install
 
-OpenFOIA is a **local-first, privacy-focused** toolkit for filing and tracking Freedom of Information Act requests. It's designed for journalists, researchers, and citizens who want to hold government accountable—without trusting a third-party service with their sensitive investigations.
+```bash
+curl -fsSL https://raw.githubusercontent.com/JordanCoin/openfoia/main/install.sh | bash
+```
 
-**The problem:** FOIA is powerful but painful. Agencies delay, deny, and obfuscate. Existing tools are either proprietary SaaS (your requests go through them) or manual spreadsheets.
+That's it. Works on Linux, macOS, and Windows (WSL). Installs the CLI and a fast PDF text extraction engine.
 
-**The solution:** A self-hosted tool that will:
-- File requests via fax, mail, or email
-- Track deadlines and auto-remind you to follow up
-- OCR scanned response PDFs
-- Extract entities (people, orgs, money, dates) using AI
-- Build relationship graphs across documents
-- Coordinate crowdsourced campaigns (100 people FOIA the same thing)
+## What It Does
 
-## Current Status
+OpenFOIA is a self-hosted toolkit for filing and tracking Freedom of Information Act requests. No accounts, no cloud, no third parties touching your investigation.
 
-| Feature | Status | Issue |
-|---------|--------|-------|
-| CLI structure | ✅ Working | — |
-| Web UI shell | ✅ Working | [#9](https://github.com/JordanCoin/openfoia/issues/9) |
-| Agency database | ✅ **53 federal agencies** | [#1](https://github.com/JordanCoin/openfoia/issues/1) ✓ |
-| Request templates | ✅ **Standard, appeal, self** | [#2](https://github.com/JordanCoin/openfoia/issues/2) ✓ |
-| Email sending | ✅ **SMTP + SendGrid** | [#6](https://github.com/JordanCoin/openfoia/issues/6) ✓ |
-| OCR pipeline | ✅ **Tesseract + cloud** | [#3](https://github.com/JordanCoin/openfoia/issues/3) ✓ |
-| SQLite database | ✅ **Working** | [#5](https://github.com/JordanCoin/openfoia/issues/5) ✓ |
-| Fax sending | 🚧 Scaffold | [#7](https://github.com/JordanCoin/openfoia/issues/7) |
-| Mail sending | 🚧 Scaffold | [#8](https://github.com/JordanCoin/openfoia/issues/8) |
-| Entity extraction | 🚧 Scaffold | [#4](https://github.com/JordanCoin/openfoia/issues/4) |
-| Deadline tracking | 🚧 Scaffold | [#10](https://github.com/JordanCoin/openfoia/issues/10) |
-| Campaign coordination | 🚧 Scaffold | [#11](https://github.com/JordanCoin/openfoia/issues/11) |
-| Entity graph | 🚧 Scaffold | [#12](https://github.com/JordanCoin/openfoia/issues/12) |
+- **File requests** via email, fax, or physical mail
+- **Track deadlines** with auto-calculated due dates (20 business days per statute)
+- **Extract text** from response PDFs (direct extraction + OCR fallback)
+- **Find entities** — people, organizations, money, dates — using AI or regex
+- **Build relationship graphs** across documents
+- **Coordinate campaigns** — 100 people FOIA the same thing
+
+A human can type a CLI command. An AI agent can call the same tool interface. It runs on Linux, Mac, Windows, or the web. Completely local, completely offline.
 
 ## Quick Start
 
 ```bash
-# Clone the repo
-git clone https://github.com/JordanCoin/openfoia.git
-cd openfoia
+# Initialize database (53 federal agencies pre-loaded)
+openfoia init
 
-# Install in development mode
-pip install -e .
-
-# Start local server
+# Start the web interface (opens in your browser, private mode)
 openfoia serve
 
-# Opens in your browser (private mode by default)
-# All data stays in ~/.openfoia/
+# File a request
+openfoia request new --agency FBI --subject "Records on X" \
+  --body "I request all records..." --name "Jane Doe" --email jane@example.com
+
+# Send it
+openfoia request send --agency FBI --subject "Records on X" \
+  --name "Jane Doe" --email jane@example.com
+
+# Check deadlines
+openfoia deadlines list
+
+# Ingest a response PDF and extract entities
+openfoia docs ingest ./response.pdf --request REQ-20260322-A1B2C3
+openfoia analyze extract <document-id>
+
+# Build a relationship graph and view it
+openfoia analyze graph --view
 ```
 
-> **Note:** Not on PyPI yet. Install from source for now.
+## Features
+
+| Feature | How |
+|---------|-----|
+| **53 federal agencies** | Pre-loaded with FOIA emails, fax numbers, addresses, portals |
+| **Request templates** | Standard, appeal, and records-about-self templates with proven legal language |
+| **Email gateway** | SMTP or SendGrid |
+| **Fax gateway** | Twilio — auto-generates PDF, sends to agency fax number |
+| **Mail gateway** | Lob — formats as certified letter with return envelope |
+| **PDF text extraction** | Compiled binary, ~3ms/page, lossless on born-digital PDFs |
+| **OCR fallback** | Tesseract (local), Google Cloud Vision, or AWS Textract for scanned docs |
+| **Entity extraction** | Local LLM (Ollama), Anthropic, or OpenAI — falls back to regex with zero config |
+| **Deadline tracking** | Auto-calculates due dates, CLI checker for cron/bashrc |
+| **Campaign coordination** | Create campaigns, distribute requests to participants, track progress |
+| **Entity graph** | Force-directed HTML visualization, colored by type, clickable nodes |
+| **Web UI** | Local htmx interface with agency search, form submission, document upload |
+| **Alembic migrations** | Schema versioning for safe upgrades |
+| **Purge command** | `openfoia purge --yes` — everything gone, instantly |
 
 ## Configuration
 
-Copy the example config and customize:
-
 ```bash
+openfoia config --init    # Interactive setup
+# Or copy the example:
 cp config.example.json ~/.openfoia/config.json
 ```
 
@@ -85,22 +98,24 @@ cp config.example.json ~/.openfoia/config.json
 }
 ```
 
-Or use cloud APIs:
+No AI configured? Entity extraction falls back to regex — catches dates, money, emails, phone numbers, FOIA tracking numbers out of the box.
+
+Cloud APIs if you want them:
 
 ```bash
 export OPENFOIA_ANTHROPIC_API_KEY="sk-ant-..."
 export OPENFOIA_OPENAI_API_KEY="sk-..."
 ```
 
-### Gateway Adapters (Optional)
+### Delivery Gateways
 
 Only needed if you want to **send** requests (vs just tracking):
 
-| Gateway | Provider | Cost | Config Key |
-|---------|----------|------|------------|
-| **Fax** | Twilio | $0.07/page | `OPENFOIA_TWILIO_ACCOUNT_SID` |
+| Gateway | Provider | Cost | Config |
+|---------|----------|------|--------|
+| **Email** | SMTP | Free | `openfoia config --init` |
+| **Fax** | Twilio | $0.07/page | `OPENFOIA_TWILIO_ACCOUNT_SID` + `OPENFOIA_TWILIO_AUTH_TOKEN` |
 | **Mail** | Lob | ~$1/letter | `OPENFOIA_LOB_API_KEY` |
-| **Email** | SMTP | Free | `gateways.email` in config |
 
 ### Custom Entity Types
 
@@ -114,57 +129,13 @@ Add domain-specific entities for your investigation:
         "name": "CONTRACT_NUMBER",
         "pattern": "\\b[A-Z]{2,4}-\\d{4,}-\\d{4,}\\b",
         "description": "Federal contract numbers"
-      },
-      {
-        "name": "CASE_NUMBER",
-        "pattern": "\\b\\d{2}-cv-\\d{4,}\\b",
-        "description": "Federal court case numbers"
       }
     ]
   }
 }
 ```
 
-## Privacy First
-
-| Feature | OpenFOIA | Cloud Services |
-|---------|----------|----------------|
-| Data storage | Your machine | Their servers |
-| Who sees your requests | Only you | The service provider |
-| Works offline | Yes | No |
-| Open source | Yes (AGPL) | Rarely |
-| Cost | Free | Paid tiers |
-
-**For sensitive investigations:** Use `openfoia serve --tor` to open in Tor Browser or Brave with Tor.
-
-## Planned Features
-
-### 📝 Request Management
-- Pre-loaded agency database (federal + state FOIA contacts)
-- Smart request templates that actually work
-- Automatic deadline tracking
-- Fee waiver request generation
-- Appeal templates for denials
-
-### 📄 Document Processing
-- Drag-and-drop PDF ingestion
-- OCR for scanned documents (Tesseract, or cloud APIs)
-- Automatic redaction detection
-- FOIA exemption identification (b(6), b(7)(A), etc.)
-
-### 🔍 Entity Extraction
-- AI-powered entity recognition (people, orgs, dates, money)
-- Cross-document linking
-- Relationship graph visualization
-- Evidence chain building with source citations
-
-### 👥 Crowdsourced Campaigns
-- Coordinate multiple requesters
-- Template distribution with variations
-- Staggered sending to avoid pattern detection
-- Aggregate response tracking
-
-## CLI Commands
+## CLI Reference
 
 ```bash
 # Server
@@ -172,91 +143,86 @@ openfoia serve                    # Start web interface
 openfoia serve --tor              # Open in Tor Browser
 openfoia serve --no-browser       # Just print URL
 
-# Requests (scaffold)
-openfoia request new --agency "FBI" --subject "Records on X"
-openfoia request list
-openfoia request status REQ-001
+# Requests
+openfoia request new              # Draft a FOIA request
+openfoia request send             # Send via email/fax/mail
+openfoia request list             # List all requests
+openfoia request status REQ-001   # Check status
 
-# Documents (scaffold)
-openfoia docs ingest ./folder/
-openfoia docs ocr DOC-001
+# Deadlines
+openfoia deadlines list           # Show overdue + upcoming
+openfoia deadlines check          # One-liner for cron (exits 1 if overdue)
 
-# Analysis (scaffold)
-openfoia analyze extract DOC-001
-openfoia analyze graph
+# Documents
+openfoia docs ingest ./folder/    # Import documents
+openfoia docs ocr DOC-001         # Run OCR on a document
 
-# Campaigns (scaffold)
-openfoia campaign create --name "Project X" --template ./req.txt
-openfoia campaign join ABC123
-openfoia campaign status ABC123
+# Analysis
+openfoia analyze extract DOC-001  # Extract entities
+openfoia analyze graph            # Build relationship graph
+openfoia analyze graph --view     # Open interactive visualization
 
-# Configuration
-openfoia config --init            # Interactive setup
-openfoia config --show            # Show current config
+# Campaigns
+openfoia campaign create          # Create a crowdsourced campaign
+openfoia campaign join <id>       # Join as participant
+openfoia campaign distribute <id> # Generate requests for all participants
+openfoia campaign progress <id>   # View per-participant status grid
+
+# Database
+openfoia db upgrade               # Run migrations
+
+# Danger zone
+openfoia purge                    # Destroy all data (asks for confirmation)
+openfoia purge --yes              # No confirmation. Everything gone.
 ```
 
-## Browser Support
+## Privacy
 
-OpenFOIA auto-detects installed browsers and prefers privacy-focused options:
+| | OpenFOIA | Cloud Services |
+|--|----------|----------------|
+| Data storage | Your machine | Their servers |
+| Who sees your requests | Only you | The service provider |
+| Works offline | Yes | No |
+| Open source | Yes (AGPL) | Rarely |
+| Cost | Free | Paid tiers |
 
-1. **Brave** (recommended - has built-in Tor)
-2. **Firefox** (private window)
-3. **Safari** (private window, no extension risk)
-4. **Tor Browser** (maximum privacy)
-5. **Chrome** (incognito, if nothing else)
+Everything runs locally. The server binds to `127.0.0.1` only. A random session token prevents other local apps from accessing your data.
 
-```bash
-openfoia serve --browser firefox  # Force specific browser
-openfoia serve --private          # Incognito mode (default)
-openfoia serve --tor              # Tor mode
-```
+**For sensitive investigations:** `openfoia serve --tor`
 
 ## Architecture
 
 ```
 ~/.openfoia/
-├── data.db          # SQLite database (requests, entities, etc.)
+├── data.db          # SQLite (requests, entities, campaigns, timeline)
 ├── docs/            # Ingested documents
-├── exports/         # Generated reports
+├── exports/         # Reports, graph exports
 └── config.json      # Your settings
 ```
 
-Everything runs locally. The server binds to `127.0.0.1` only. A random session token prevents other local apps from accessing your data.
+The CLI and the AI agent interface share the same tool layer. A human types `openfoia request new`. An agent calls `execute_tool("draft_request", {...})`. Same database, same logic, same privacy guarantees.
+
+## Uninstall
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/JordanCoin/openfoia/main/uninstall.sh | bash
+```
+
+Or just: `openfoia purge --yes && pip uninstall openfoia`
 
 ## Why Open Source?
 
 FOIA exists to make government transparent. The tools we use to exercise that right should be transparent too.
 
-This is licensed under **AGPL-3.0** — if you modify and deploy it, you must share your changes. Transparency all the way down.
-
-## Contributing
-
-PRs welcome! Here's what's left to build:
-
-| Issue | What | Difficulty |
-|-------|------|------------|
-| ~~#1~~ | ~~Agency Database~~ | ✅ Done |
-| ~~#2~~ | ~~Request Templates~~ | ✅ Done |
-| ~~#3~~ | ~~OCR Pipeline~~ | ✅ Done |
-| [#4](https://github.com/JordanCoin/openfoia/issues/4) | Entity Extraction (local LLM NER) | 🟡 Medium |
-| ~~#5~~ | ~~SQLite Database~~ | ✅ Done |
-| ~~#6~~ | ~~Email Gateway~~ | ✅ Done |
-| [#7](https://github.com/JordanCoin/openfoia/issues/7) | Fax Gateway (Twilio integration) | 🟡 Medium |
-| [#8](https://github.com/JordanCoin/openfoia/issues/8) | Mail Gateway (Lob integration) | 🟡 Medium |
-| [#9](https://github.com/JordanCoin/openfoia/issues/9) | Web UI (wire up htmx interface) | 🟡 Medium |
-| [#10](https://github.com/JordanCoin/openfoia/issues/10) | Deadline Tracking (auto-reminders) | 🟡 Medium |
-| [#11](https://github.com/JordanCoin/openfoia/issues/11) | Campaign Coordination (crowdsourced FOIA) | 🔴 Hard |
-| [#12](https://github.com/JordanCoin/openfoia/issues/12) | Entity Graph (relationship visualization) | 🔴 Hard |
-
-**5/12 issues closed** — core features work, scaffolds ready for the rest.
+Licensed under **AGPL-3.0** — if you modify and deploy it, you must share your changes. Transparency all the way down.
 
 ## Credits
 
-Built by people who love journalists and believe in freedom of information — not journalists ourselves, just folks who want to support them with free tech.
+Built by people who believe in freedom of information — not journalists ourselves, just folks who want to support them with free tools.
 
-Inspired by the work of [MuckRock](https://www.muckrock.com/), [DocumentCloud](https://www.documentcloud.org/), and the [Reporters Committee for Freedom of the Press](https://www.rcfp.org/).
+Inspired by [MuckRock](https://www.muckrock.com/), [DocumentCloud](https://www.documentcloud.org/), and the [Reporters Committee for Freedom of the Press](https://www.rcfp.org/).
 
-*Free as in freedom, free as in beer.* 🍺
+*Free as in freedom, free as in beer.*
 
 ## License
 
