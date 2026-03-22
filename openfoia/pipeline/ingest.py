@@ -47,6 +47,7 @@ class DocumentIngester:
         doc_type: DocumentType = DocumentType.FULL_RESPONSE,
         request_id: str | None = None,
         metadata: dict[str, Any] | None = None,
+        strip_metadata: bool = True,
     ) -> IngestResult:
         """Ingest a file from the filesystem."""
         file_path = Path(file_path)
@@ -74,7 +75,13 @@ class DocumentIngester:
         dest_path = dest_dir / f"{doc_id}{file_path.suffix}"
         
         await asyncio.to_thread(shutil.copy2, file_path, dest_path)
-        
+
+        # Strip metadata from the stored copy
+        stripped_info: dict[str, Any] = {}
+        if strip_metadata:
+            from .metadata import strip_metadata as _strip_metadata
+            stripped_info = await asyncio.to_thread(_strip_metadata, dest_path)
+
         # Get page count for PDFs
         page_count = None
         if mime_type == 'application/pdf':
@@ -93,6 +100,7 @@ class DocumentIngester:
                 'ingested_at': datetime.utcnow().isoformat(),
                 'doc_type': doc_type.value,
                 'request_id': request_id,
+                'metadata_stripped': stripped_info if stripped_info else None,
                 **(metadata or {}),
             },
         )

@@ -902,6 +902,14 @@ def docs_ingest(
     rprint(f"  Total pages: {total_pages}")
     rprint(f"  Total size: {total_size / 1024 / 1024:.1f} MB")
     rprint(f"  Storage: {storage_path}")
+
+    if not keep_metadata:
+        stripped_count = sum(
+            1 for r in results
+            if (r.metadata.get("metadata_stripped") or {}).get("stripped")
+        )
+        if stripped_count:
+            rprint(f"  Metadata stripped: {stripped_count} files")
     
     # Run OCR if requested
     if ocr and results:
