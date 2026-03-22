@@ -301,40 +301,58 @@ class OpenFOIAAgent:
 
     async def _search_agencies(self, params: dict[str, Any]) -> dict[str, Any]:
         """Search for agencies."""
-        # TODO: Implement with database query
+        query_str = params.get("query", "")
+        level = params.get("level")
+        search = f"%{query_str}%"
+
+        agencies = self.db.query(Agency).filter(
+            (Agency.name.ilike(search)) | (Agency.abbreviation.ilike(search))
+        )
+
+        if level and level != "all":
+            from .models import AgencyLevel
+            try:
+                agencies = agencies.filter(Agency.level == AgencyLevel(level))
+            except ValueError:
+                pass
+
+        results = agencies.limit(20).all()
         return {
             "agencies": [
                 {
-                    "id": "fbi-001",
-                    "name": "Federal Bureau of Investigation",
-                    "abbreviation": "FBI",
-                    "level": "federal",
-                    "preferred_method": "email",
-                    "avg_response_days": 45,
-                },
-                {
-                    "id": "doj-001",
-                    "name": "Department of Justice",
-                    "abbreviation": "DOJ",
-                    "level": "federal",
-                    "preferred_method": "email",
-                    "avg_response_days": 60,
-                },
+                    "id": a.id,
+                    "name": a.name,
+                    "abbreviation": a.abbreviation,
+                    "level": a.level.value,
+                    "preferred_method": a.preferred_method.value,
+                    "avg_response_days": a.typical_response_days,
+                }
+                for a in results
             ],
-            "total": 2,
+            "total": len(results),
         }
 
     async def _get_agency_info(self, params: dict[str, Any]) -> dict[str, Any]:
         """Get agency details."""
-        # TODO: Implement
+        agency_id = params.get("agency_id")
+        agency = self.db.query(Agency).filter(
+            (Agency.id == agency_id) | (Agency.abbreviation.ilike(agency_id))
+        ).first()
+
+        if not agency:
+            return {"error": f"Agency not found: {agency_id}"}
+
         return {
-            "id": params.get("agency_id"),
-            "name": "Federal Bureau of Investigation",
-            "foia_email": "foiparequest@fbi.gov",
-            "foia_address": "FBI FOIA/PA Request\\nRecord Management Division\\n170 Marcel Drive\\nWinchester, VA 22602",
-            "foia_portal": "https://vault.fbi.gov/",
-            "typical_response_days": 45,
-            "fee_waiver_criteria": "News media, educational institutions, scientific research",
+            "id": agency.id,
+            "name": agency.name,
+            "abbreviation": agency.abbreviation,
+            "foia_email": agency.foia_email,
+            "foia_fax": agency.foia_fax,
+            "foia_address": agency.foia_address,
+            "foia_portal": agency.foia_portal_url,
+            "preferred_method": agency.preferred_method.value,
+            "typical_response_days": agency.typical_response_days,
+            "fee_waiver_criteria": agency.fee_waiver_criteria,
         }
 
     async def _draft_request(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -371,119 +389,228 @@ Please contact me if you have questions about this request.
 
     async def _send_request(self, params: dict[str, Any]) -> dict[str, Any]:
         """Send a FOIA request."""
-        # TODO: Implement with gateway
+        request_id = params.get("request_id")
+        request = self.db.query(Request).filter(Request.id == request_id).first()
+        if not request:
+            return {"error": f"Request not found: {request_id}"}
+
+        request.status = RequestStatus.SENT
+        request.sent_at = datetime.utcnow()
+        self.db.commit()
+
         return {
-            "request_id": params.get("request_id"),
+            "request_id": request.id,
             "status": "sent",
-            "method": params.get("method", "email"),
-            "sent_at": datetime.utcnow().isoformat(),
-            "tracking_id": "EMAIL-2026-0001",
-            "message": "Request sent successfully.",
+            "method": request.delivery_method.value,
+            "sent_at": request.sent_at.isoformat(),
+            "message": "Request marked as sent.",
         }
 
     async def _check_request_status(self, params: dict[str, Any]) -> dict[str, Any]:
         """Check request status."""
-        # TODO: Implement
+        request_id = params.get("request_id")
+        request = self.db.query(Request).filter(
+            (Request.id == request_id) | (Request.request_number == request_id)
+        ).first()
+
+        if not request:
+            return {"error": f"Request not found: {request_id}"}
+
+        from .models import TimelineEvent
+        events = self.db.query(TimelineEvent).filter(
+            TimelineEvent.request_id == request.id
+        ).order_by(TimelineEvent.occurred_at).all()
+
         return {
-            "request_id": params.get("request_id"),
-            "status": "processing",
-            "agency_tracking_number": "FOI-2026-12345",
-            "sent_at": "2026-01-15T10:00:00Z",
-            "acknowledged_at": "2026-01-17T14:22:00Z",
-            "days_pending": 35,
-            "is_overdue": False,
+            "request_id": request.id,
+            "request_number": request.request_number,
+            "status": request.status.value,
+            "agency_tracking_number": request.agency_tracking_number,
+            "sent_at": request.sent_at.isoformat() if request.sent_at else None,
+            "acknowledged_at": request.acknowledged_at.isoformat() if request.acknowledged_at else None,
+            "days_pending": request.days_pending(),
+            "is_overdue": request.is_overdue(),
             "timeline": [
-                {"event": "sent", "date": "2026-01-15"},
-                {"event": "acknowledged", "date": "2026-01-17"},
-                {"event": "processing", "date": "2026-01-18"},
+                {"event": e.event_type, "date": e.occurred_at.isoformat(), "description": e.description}
+                for e in events
             ],
         }
 
     async def _list_requests(self, params: dict[str, Any]) -> dict[str, Any]:
         """List requests."""
-        # TODO: Implement with database query
+        query = self.db.query(Request)
+
+        status_filter = params.get("status")
+        if status_filter and status_filter != "all":
+            try:
+                query = query.filter(Request.status == RequestStatus(status_filter))
+            except ValueError:
+                pass
+
+        agency_id = params.get("agency_id")
+        if agency_id:
+            query = query.filter(Request.agency_id == agency_id)
+
+        requests = query.order_by(Request.created_at.desc()).limit(50).all()
+
         return {
             "requests": [
                 {
-                    "request_id": "req-001",
-                    "agency": "FBI",
-                    "subject": "Records on Project X",
-                    "status": "processing",
-                    "days_pending": 35,
-                },
+                    "request_id": r.id,
+                    "request_number": r.request_number,
+                    "agency": r.agency.abbreviation or r.agency.name if r.agency else "Unknown",
+                    "subject": r.subject,
+                    "status": r.status.value,
+                    "days_pending": r.days_pending(),
+                }
+                for r in requests
             ],
-            "total": 1,
+            "total": len(requests),
         }
 
     async def _process_document(self, params: dict[str, Any]) -> dict[str, Any]:
         """Process a document."""
-        # TODO: Implement with pipeline
+        from pathlib import Path
+        doc_path = params.get("document_path", "")
+
+        if not Path(doc_path).exists():
+            return {"error": f"File not found: {doc_path}"}
+
+        from .pipeline.ingest import DocumentIngester
+        ingester = DocumentIngester()
+        result = await ingester.ingest_file(Path(doc_path), request_id=params.get("request_id"))
+
         return {
-            "document_id": "doc-001",
-            "filename": params.get("document_path", "").split("/")[-1],
-            "pages": 15,
-            "ocr_confidence": 0.94,
-            "text_extracted": True,
+            "document_id": result.document_id,
+            "filename": result.filename,
+            "pages": result.page_count,
+            "text_extracted": bool(result.extracted_text),
             "message": "Document processed. Use extract_entities to analyze.",
         }
 
     async def _extract_entities(self, params: dict[str, Any]) -> dict[str, Any]:
         """Extract entities from a document."""
-        # TODO: Implement with extractor
+        from .models import Document
+        doc_id = params.get("document_id")
+        doc = self.db.query(Document).filter(Document.id == doc_id).first()
+
+        if not doc:
+            return {"error": f"Document not found: {doc_id}"}
+
+        if not doc.extracted_text:
+            return {"error": "Document has no extracted text. Run OCR first."}
+
+        from .pipeline.extract import EntityExtractor
+        extractor = EntityExtractor()
+        result = await extractor.extract(doc.extracted_text)
+
         return {
-            "document_id": params.get("document_id"),
+            "document_id": doc_id,
             "entities": [
-                {"type": "PERSON", "text": "John Smith", "confidence": 0.98},
-                {"type": "ORGANIZATION", "text": "Acme Corp", "confidence": 0.95},
-                {"type": "MONEY", "text": "$1,500,000", "confidence": 0.99},
+                {"type": e.entity_type.value, "text": e.normalized_text, "confidence": e.confidence}
+                for e in result.entities
             ],
-            "relationships": [
-                {"source": "John Smith", "relation": "works_for", "target": "Acme Corp"},
-            ],
-            "total_entities": 3,
+            "relationships": result.relationships,
+            "total_entities": len(result.entities),
         }
 
     async def _build_entity_graph(self, params: dict[str, Any]) -> dict[str, Any]:
         """Build entity graph."""
-        # TODO: Implement
+        from .models import Entity, Document, entity_links
+
+        query = self.db.query(Entity)
+        request_ids = params.get("request_ids")
+        if request_ids:
+            query = query.join(Document).filter(Document.request_id.in_(request_ids))
+
+        entities = query.all()
+        entity_ids = {e.id for e in entities}
+
+        links_q = self.db.query(entity_links)
+        if entity_ids:
+            links_q = links_q.filter(
+                entity_links.c.source_id.in_(entity_ids),
+                entity_links.c.target_id.in_(entity_ids),
+            )
+        links = links_q.all()
+
         return {
-            "entities": 234,
-            "relationships": 567,
-            "connected_components": 12,
-            "graph_file": "graph.json",
+            "entities": len(entities),
+            "relationships": len(links),
         }
 
     async def _search_entities(self, params: dict[str, Any]) -> dict[str, Any]:
         """Search entities."""
-        # TODO: Implement
+        from .models import Entity
+        search = f"%{params.get('query', '')}%"
+
+        query = self.db.query(Entity).filter(Entity.normalized_text.ilike(search))
+
+        entity_type = params.get("entity_type")
+        if entity_type and entity_type != "all":
+            from .models import EntityType
+            try:
+                query = query.filter(Entity.entity_type == EntityType(entity_type))
+            except ValueError:
+                pass
+
+        results = query.limit(50).all()
+
         return {
             "query": params.get("query"),
             "results": [
                 {
-                    "id": "ent-001",
-                    "type": "PERSON",
-                    "name": params.get("query"),
-                    "occurrences": 12,
-                    "documents": ["doc-001", "doc-003"],
-                    "linked_entities": ["Acme Corp", "DOJ"],
-                },
+                    "id": e.id,
+                    "type": e.entity_type.value,
+                    "name": e.normalized_text,
+                    "confidence": e.confidence,
+                    "document_id": e.document_id,
+                }
+                for e in results
             ],
         }
 
     async def _generate_report(self, params: dict[str, Any]) -> dict[str, Any]:
         """Generate a report."""
-        # TODO: Implement
+        request_ids = params.get("request_ids", [])
+        report_format = params.get("format", "markdown")
+
+        requests = self.db.query(Request).filter(Request.id.in_(request_ids)).all()
+        if not requests:
+            return {"error": "No requests found with the given IDs."}
+
+        # Gather data
+        all_entities = []
+        for req in requests:
+            for doc in req.documents:
+                all_entities.extend(doc.entities)
+
+        report = f"# FOIA Analysis Report\n\n"
+        report += f"## Requests Analyzed: {len(requests)}\n\n"
+        for req in requests:
+            report += f"- **{req.request_number}**: {req.subject} ({req.status.value})\n"
+        report += f"\n## Entities Found: {len(all_entities)}\n\n"
+
+        # Group by type
+        by_type: dict[str, list[str]] = {}
+        for e in all_entities:
+            by_type.setdefault(e.entity_type.value, []).append(e.normalized_text)
+
+        for etype, names in by_type.items():
+            report += f"### {etype.title()}\n"
+            for name in sorted(set(names)):
+                count = names.count(name)
+                report += f"- {name} ({count}x)\n"
+            report += "\n"
+
+        report_file = f"report.{report_format if report_format != 'markdown' else 'md'}"
+
         return {
-            "format": params.get("format", "markdown"),
-            "report_file": "report.md",
-            "sections": [
-                "Executive Summary",
-                "Key Findings",
-                "Entity Analysis",
-                "Evidence Chain",
-                "Appendix: Source Documents",
-            ],
-            "message": "Report generated.",
+            "format": report_format,
+            "report_content": report,
+            "report_file": report_file,
+            "requests_analyzed": len(requests),
+            "entities_found": len(all_entities),
         }
 
 
