@@ -89,7 +89,7 @@ _REGEX_PATTERNS: dict[EntityType, list[re.Pattern[str]]] = {
     ],
     EntityType.DOCUMENT_ID: [
         re.compile(r'\b(\d{4}-[A-Z]-\d{3,6})\b'),
-        re.compile(r'\b((?:FOIA|FOI|ATF|DOJ|FBI|CIA|DHS|DOD|DOS|EPA|HHS|USDA)-\d{4}-\d{3,8})\b', re.IGNORECASE),
+        re.compile(r'\b((?:FOIA|FOI|ATF|DOJ|FBI|CIA|DHS|DOD|DOS|EPA|HHS|USDA|OIG|SEC|FTC|FCC|IRS|DEA|ICE|CBP|TSA|NARA)-\d{4}-\d{3,8})\b', re.IGNORECASE),
         re.compile(r'\b(Case\s+(?:No\.?|Number|#)\s*:?\s*[\w-]{4,20})\b', re.IGNORECASE),
     ],
     EntityType.ADDRESS: [
