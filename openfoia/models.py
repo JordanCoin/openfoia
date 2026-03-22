@@ -219,7 +219,7 @@ class Request(Base):
     
     # Metadata
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    extra_data: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSON, nullable=True)
     
     # Relationships
     requester: Mapped["User"] = relationship(back_populates="requests")
@@ -295,7 +295,7 @@ class Entity(Base):
     context: Mapped[str | None] = mapped_column(Text, nullable=True)  # Surrounding text
     
     # Metadata
-    metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    extra_data: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSON, nullable=True)
     
     # Relationships
     source_document: Mapped["Document"] = relationship(back_populates="entities")
@@ -357,7 +357,7 @@ class TimelineEvent(Base):
     event_type: Mapped[str] = mapped_column(String(50))  # sent, acknowledged, response, appeal, etc.
     description: Mapped[str] = mapped_column(Text)
     occurred_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    extra_data: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSON, nullable=True)
     
     # Relationships
     request: Mapped["Request"] = relationship(back_populates="timeline")

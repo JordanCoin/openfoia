@@ -66,17 +66,12 @@ class LobMailGateway(DeliveryGateway):
         self._letters_api: Any = None
         self._api_client: Any = None
 
-    def _get_letters_api(self) -> Any:
-        """Lazily initialize Lob Letters API client (v6+)."""
+    def _get_lob(self) -> Any:
+        """Lazily initialize Lob client."""
         if self._letters_api is None:
-            import lob_python
-            from lob_python.api import letters_api
-
-            configuration = lob_python.Configuration(
-                username=self.api_key,
-            )
-            self._api_client = lob_python.ApiClient(configuration)
-            self._letters_api = letters_api.LettersApi(self._api_client)
+            import lob
+            lob.api_key = self.api_key
+            self._letters_api = lob
         return self._letters_api
 
     async def send(self, payload: DeliveryPayload) -> DeliveryResult:
@@ -86,9 +81,9 @@ class LobMailGateway(DeliveryGateway):
         sends it via Lob's print-and-mail API, and returns tracking info.
         """
         try:
-            import lob_python
+            import lob
 
-            api = self._get_letters_api()
+            lob_client = self._get_lob()
 
             # Parse recipient address into Lob format
             to_address = self._parse_address(payload.recipient_address)
@@ -104,22 +99,17 @@ class LobMailGateway(DeliveryGateway):
                 self.use_certified,
             )
 
-            # Build the letter creation request
-            letter_editable = lob_python.LetterEditable(
+            # Send via Lob API (v4)
+            letter = await asyncio.to_thread(
+                lob_client.Letter.create,
                 description=f"FOIA Request: {payload.subject[:50]}",
-                to=lob_python.AddressEditable(**to_address),
-                from_address=lob_python.AddressEditable(**self.return_address),
+                to_address=to_address,
+                from_address=self.return_address,
                 file=letter_html,
                 color=False,
                 mail_type="usps_first_class",
                 extra_service="certified" if self.use_certified else None,
                 return_envelope=True,
-            )
-
-            # Send via Lob API
-            letter = await asyncio.to_thread(
-                api.create,
-                letter_editable,
             )
 
             # Extract tracking info
@@ -155,7 +145,7 @@ class LobMailGateway(DeliveryGateway):
             return DeliveryResult(
                 status=DeliveryStatus.FAILED,
                 reference_id="",
-                error_message="lob-python package not installed. Run: pip install 'lob-python>=6.0.0'",
+                error_message="lob package not installed. Run: pip install 'lob>=4.0.0'",
             )
         except Exception as e:
             logger.error("Letter send failed: %s", e)
@@ -172,9 +162,9 @@ class LobMailGateway(DeliveryGateway):
         Processed for Delivery, Delivered, Re-Routed, Returned to Sender.
         """
         try:
-            api = self._get_letters_api()
+            lob_client = self._get_lob()
             letter = await asyncio.to_thread(
-                api.get,
+                lob_client.Letter.retrieve,
                 reference_id,
             )
 
@@ -230,9 +220,9 @@ class LobMailGateway(DeliveryGateway):
         longer possible. Typically there is a ~1 hour window.
         """
         try:
-            api = self._get_letters_api()
+            lob_client = self._get_lob()
             await asyncio.to_thread(
-                api.cancel,
+                lob_client.Letter.delete,
                 reference_id,
             )
             logger.info("Letter %s canceled", reference_id)
