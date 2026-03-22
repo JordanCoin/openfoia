@@ -68,8 +68,20 @@ def get_data_dir() -> Path:
     return data_dir
 
 
-def get_db_path() -> Path:
-    """Get the database file path."""
+def get_db_path(password: str | None = None) -> Path:
+    """Get the database file path.
+
+    If *password* matches the stored duress password, returns the decoy
+    database path instead of the real one — transparently.
+    """
+    if password is None:
+        password = get_db_password()
+
+    if password:
+        from .security import is_duress_password, get_decoy_db_path
+        if is_duress_password(password):
+            return get_decoy_db_path()
+
     return get_data_dir() / "data.db"
 
 

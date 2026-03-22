@@ -200,3 +200,287 @@ encryption (FileVault on macOS, LUKS on Linux).[/yellow]
 def print_ssd_warning() -> None:
     """Print a warning about SSD TRIM limitations."""
     rprint(_SSD_WARNING)
+
+
+# ---------------------------------------------------------------------------
+# Duress mode — decoy database
+# ---------------------------------------------------------------------------
+
+_DURESS_CONFIG_KEY = "duress_password_hash"
+
+
+def _hash_password(password: str) -> str:
+    """Hash a password with SHA-256 for comparison (not for encryption)."""
+    import hashlib
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+
+def get_decoy_db_path() -> Path:
+    """Return the path to the decoy database."""
+    from .db import get_data_dir
+    return get_data_dir() / "decoy.db"
+
+
+def setup_duress_mode(duress_password: str) -> Path:
+    """Create and seed a decoy database, store the hashed duress password in config.
+
+    Returns the path to the decoy database.
+    """
+    import json
+
+    from .db import get_data_dir
+
+    data_dir = get_data_dir()
+    config_path = data_dir / "config.json"
+
+    # Store hashed duress password in config
+    config_data: dict = {}
+    if config_path.exists():
+        try:
+            config_data = json.loads(config_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    config_data[_DURESS_CONFIG_KEY] = _hash_password(duress_password)
+    config_path.write_text(json.dumps(config_data, indent=2))
+
+    # Create and seed the decoy DB
+    decoy_path = get_decoy_db_path()
+    seed_decoy_db(decoy_path)
+
+    return decoy_path
+
+
+def is_duress_password(password: str) -> bool:
+    """Check if the given password matches the stored duress password hash."""
+    import json
+
+    from .db import get_data_dir
+
+    config_path = get_data_dir() / "config.json"
+    if not config_path.exists():
+        return False
+
+    try:
+        config_data = json.loads(config_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return False
+
+    stored_hash = config_data.get(_DURESS_CONFIG_KEY)
+    if not stored_hash:
+        return False
+
+    return _hash_password(password) == stored_hash
+
+
+def resolve_db_path(password: str | None = None) -> Path:
+    """Return the appropriate database path based on the password.
+
+    If the password matches the duress password, return the decoy DB path.
+    Otherwise, return the real DB path.  This is the single entry point
+    that all commands should call to decide which database to open.
+    """
+    from .db import get_db_path
+
+    if password and is_duress_password(password):
+        return get_decoy_db_path()
+    return get_db_path()
+
+
+def seed_decoy_db(db_path: Path) -> None:
+    """Populate a decoy database with innocent-looking FOIA data.
+
+    The decoy contains a handful of bland requests (weather data, public
+    meeting minutes, park usage statistics) — nothing that would raise
+    suspicion if examined.  Entities and documents are similarly mundane.
+    """
+    from datetime import datetime, timedelta
+    from uuid import uuid4
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from .models import (
+        Agency,
+        AgencyLevel,
+        Base,
+        DeliveryMethod,
+        Document,
+        DocumentType,
+        Entity,
+        EntityType,
+        Request,
+        RequestStatus,
+        User,
+    )
+
+    # Remove existing decoy if present
+    if db_path.exists():
+        db_path.unlink()
+
+    engine = create_engine(f"sqlite:///{db_path}", echo=False)
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    # --- Users ---
+    user = User(
+        id=str(uuid4()),
+        email="alex.researcher@gmail.com",
+        name="Alex Researcher",
+        organization="Local Civic Association",
+        is_journalist=False,
+    )
+    session.add(user)
+    session.flush()
+
+    # --- Agencies (a small subset of common, benign agencies) ---
+    agencies = [
+        Agency(
+            id=str(uuid4()),
+            name="National Oceanic and Atmospheric Administration",
+            abbreviation="NOAA",
+            level=AgencyLevel.FEDERAL,
+            foia_email="foia@noaa.gov",
+            preferred_method=DeliveryMethod.EMAIL,
+            typical_response_days=20,
+        ),
+        Agency(
+            id=str(uuid4()),
+            name="National Park Service",
+            abbreviation="NPS",
+            level=AgencyLevel.FEDERAL,
+            foia_email="npsfoia@nps.gov",
+            preferred_method=DeliveryMethod.EMAIL,
+            typical_response_days=20,
+        ),
+        Agency(
+            id=str(uuid4()),
+            name="General Services Administration",
+            abbreviation="GSA",
+            level=AgencyLevel.FEDERAL,
+            foia_email="gsa.foia@gsa.gov",
+            preferred_method=DeliveryMethod.EMAIL,
+            typical_response_days=20,
+        ),
+    ]
+    for a in agencies:
+        session.add(a)
+    session.flush()
+
+    # --- Requests (bland, non-sensitive) ---
+    now = datetime.utcnow()
+    requests_data = [
+        {
+            "subject": "Monthly weather data summaries for Portland, OR (2024)",
+            "body": (
+                "I am requesting copies of monthly weather data summary reports "
+                "for the Portland, Oregon metropolitan area for the calendar year 2024. "
+                "I am a hobbyist climate researcher and would appreciate any publicly "
+                "available datasets in CSV or PDF format."
+            ),
+            "agency_idx": 0,
+            "status": RequestStatus.COMPLETE,
+            "sent_at": now - timedelta(days=45),
+            "response_at": now - timedelta(days=12),
+        },
+        {
+            "subject": "Public meeting minutes — GSA regional office, Q3 2024",
+            "body": (
+                "Under the Freedom of Information Act, I request copies of all "
+                "publicly recorded meeting minutes from the GSA Pacific Rim Region "
+                "office for July through September 2024."
+            ),
+            "agency_idx": 2,
+            "status": RequestStatus.PROCESSING,
+            "sent_at": now - timedelta(days=18),
+            "response_at": None,
+        },
+        {
+            "subject": "Visitor statistics for Crater Lake National Park (2023-2024)",
+            "body": (
+                "I request visitor count statistics and any available demographic "
+                "breakdowns for Crater Lake National Park covering the period "
+                "January 2023 through December 2024. This data is for a community "
+                "blog post about park accessibility."
+            ),
+            "agency_idx": 1,
+            "status": RequestStatus.SENT,
+            "sent_at": now - timedelta(days=5),
+            "response_at": None,
+        },
+    ]
+
+    created_requests = []
+    for i, rd in enumerate(requests_data):
+        req = Request(
+            id=str(uuid4()),
+            request_number=f"REQ-{(now - timedelta(days=60-i*15)).strftime('%Y%m%d')}-{uuid4().hex[:6].upper()}",
+            requester_id=user.id,
+            agency_id=agencies[rd["agency_idx"]].id,
+            subject=rd["subject"],
+            body=rd["body"],
+            delivery_method=DeliveryMethod.EMAIL,
+            status=rd["status"],
+            fee_waiver_requested=True,
+            sent_at=rd["sent_at"],
+        )
+        session.add(req)
+        created_requests.append(req)
+    session.flush()
+
+    # --- Documents (one response for the completed request) ---
+    weather_text = (
+        "Monthly Climate Summary — Portland, OR\n"
+        "National Weather Service\n\n"
+        "January 2024: Average high 47F, average low 37F, total precip 5.2 in.\n"
+        "February 2024: Average high 51F, average low 39F, total precip 3.8 in.\n"
+    )
+    doc = Document(
+        id=str(uuid4()),
+        request_id=created_requests[0].id,
+        filename="noaa_portland_weather_2024.pdf",
+        file_path="docs/noaa_portland_weather_2024.pdf",
+        file_size=245_000,
+        mime_type="application/pdf",
+        doc_type=DocumentType.FULL_RESPONSE,
+        page_count=12,
+        extracted_text=weather_text,
+        received_at=now - timedelta(days=12),
+    )
+    session.add(doc)
+    session.flush()
+
+    # --- Entities (innocuous) ---
+    entities = [
+        Entity(
+            id=str(uuid4()),
+            document_id=doc.id,
+            entity_type=EntityType.ORGANIZATION,
+            raw_text="National Weather Service",
+            normalized_text="national weather service",
+            context="Monthly Climate Summary — Portland, OR\nNational Weather Service",
+        ),
+        Entity(
+            id=str(uuid4()),
+            document_id=doc.id,
+            entity_type=EntityType.LOCATION,
+            raw_text="Portland, Oregon",
+            normalized_text="portland, oregon",
+            context="weather data summary reports for the Portland, Oregon metropolitan area",
+        ),
+        Entity(
+            id=str(uuid4()),
+            document_id=doc.id,
+            entity_type=EntityType.DATE,
+            raw_text="January 2024",
+            normalized_text="january 2024",
+            context="January 2024: Average high 47F, average low 37F",
+        ),
+    ]
+    for e in entities:
+        session.add(e)
+
+    session.commit()
+    session.close()
+    engine.dispose()
