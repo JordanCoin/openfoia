@@ -77,7 +77,9 @@ download_binary() {
     info "Downloading pdf-extract for ${platform}..."
 
     local url
-    url=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
+    # Check all releases for binaries (they live on whichever release the
+    # glyph-api CI pushed them to — not necessarily the latest release)
+    url=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases" \
         | grep "browser_download_url.*${name}" \
         | head -1 \
         | cut -d '"' -f 4) || true
