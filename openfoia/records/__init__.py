@@ -41,9 +41,11 @@ def _auto_register() -> None:
     """Auto-register built-in adapters."""
     from .opencorporates import OpenCorporatesAdapter
     from .sec_edgar import SECEdgarAdapter
+    from .muckrock import MuckRockAdapter
 
     register("opencorporates", OpenCorporatesAdapter)
     register("sec", SECEdgarAdapter)
+    register("muckrock", MuckRockAdapter)
 
 
 _auto_register()
