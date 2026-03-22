@@ -9,11 +9,10 @@ from __future__ import annotations
 import secrets
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 from uuid import uuid4
 
 from fastapi import FastAPI, Request, HTTPException, Depends, Query, UploadFile, File
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import func
@@ -57,7 +56,7 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
     # Token verification dependency
     async def verify_token(
         request: Request,
-        token: str = Query(None, alias="token"),
+        token: str | None = Query(None, alias="token"),
     ):
         # Check query param first, then cookie
         auth_token = token or request.cookies.get("openfoia_token")
@@ -107,7 +106,7 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
 
             total_docs = session.query(func.count(Document.id)).scalar() or 0
             processed_docs = session.query(func.count(Document.id)).filter(
-                Document.ocr_completed == True  # noqa: E712
+                Document.ocr_completed.is_(True)
             ).scalar() or 0
             total_pages = session.query(func.coalesce(func.sum(Document.page_count), 0)).scalar()
 
@@ -157,7 +156,10 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
                     status_enum = RequestStatus(status.lower())
                     query = query.filter(FOIARequest.status == status_enum)
                 except ValueError:
-                    pass
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid status '{status}'. Valid: {', '.join(s.value for s in RequestStatus)}",
+                    )
 
             requests = query.order_by(FOIARequest.created_at.desc()).limit(limit).all()
 
@@ -322,11 +324,16 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
         """Upload a document for processing."""
         import shutil
 
+        if not request_id:
+            raise HTTPException(status_code=400, detail="request_id is required for document uploads")
+
         docs_dir = app.state.data_dir / "docs"
         docs_dir.mkdir(exist_ok=True)
 
-        # Save file
-        dest = docs_dir / file.filename
+        # Sanitize filename to prevent path traversal
+        safe_name = Path(file.filename).name if file.filename else "upload"
+        stored_name = f"{uuid4().hex[:12]}_{safe_name}"
+        dest = docs_dir / stored_name
         with open(dest, "wb") as f:
             shutil.copyfileobj(file.file, f)
 
@@ -339,16 +346,16 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
         with get_session() as session:
             doc = Document(
                 id=doc_id,
-                request_id=request_id or "",
+                request_id=request_id,
                 doc_type=DocumentType.CORRESPONDENCE,
-                filename=file.filename,
+                filename=safe_name,
                 file_path=str(dest),
                 file_size=file_size,
                 mime_type=file.content_type or "application/octet-stream",
             )
             session.add(doc)
 
-        return {"id": doc_id, "filename": file.filename, "status": "uploaded"}
+        return {"id": doc_id, "filename": safe_name, "status": "uploaded"}
 
     @app.get("/api/entities")
     async def list_entities(
@@ -408,6 +415,7 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
                 q = q.join(Document).filter(Document.request_id.in_(ids))
 
             entities = q.all()
+            entity_ids = {e.id for e in entities}
 
             nodes = [
                 {
@@ -418,8 +426,14 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
                 for e in entities
             ]
 
-            # Get links
-            links = session.query(entity_links).all()
+            # Get links filtered to selected entities
+            links_q = session.query(entity_links)
+            if entity_ids:
+                links_q = links_q.filter(
+                    entity_links.c.source_id.in_(entity_ids),
+                    entity_links.c.target_id.in_(entity_ids),
+                )
+            links = links_q.all()
             edges = [
                 {
                     "source": link.source_id,

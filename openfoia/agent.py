@@ -490,7 +490,7 @@ Please contact me if you have questions about this request.
 
     async def _extract_entities(self, params: dict[str, Any]) -> dict[str, Any]:
         """Extract entities from a document."""
-        from .models import Document, Entity
+        from .models import Document
         doc_id = params.get("document_id")
         doc = self.db.query(Document).filter(Document.id == doc_id).first()
 
@@ -524,7 +524,15 @@ Please contact me if you have questions about this request.
             query = query.join(Document).filter(Document.request_id.in_(request_ids))
 
         entities = query.all()
-        links = self.db.query(entity_links).all()
+        entity_ids = {e.id for e in entities}
+
+        links_q = self.db.query(entity_links)
+        if entity_ids:
+            links_q = links_q.filter(
+                entity_links.c.source_id.in_(entity_ids),
+                entity_links.c.target_id.in_(entity_ids),
+            )
+        links = links_q.all()
 
         return {
             "entities": len(entities),
@@ -564,7 +572,6 @@ Please contact me if you have questions about this request.
 
     async def _generate_report(self, params: dict[str, Any]) -> dict[str, Any]:
         """Generate a report."""
-        from .models import Entity, Document
         request_ids = params.get("request_ids", [])
         report_format = params.get("format", "markdown")
 
@@ -585,7 +592,7 @@ Please contact me if you have questions about this request.
         report += f"\n## Entities Found: {len(all_entities)}\n\n"
 
         # Group by type
-        by_type: dict[str, list] = {}
+        by_type: dict[str, list[str]] = {}
         for e in all_entities:
             by_type.setdefault(e.entity_type.value, []).append(e.normalized_text)
 

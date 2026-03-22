@@ -288,7 +288,6 @@ def request_new(
     method: str = typer.Option("email", "--method", "-m", help="Delivery method (email/fax/mail)"),
     name: str = typer.Option(..., "--name", "-n", help="Your full name"),
     email_addr: str = typer.Option(..., "--email", "-e", help="Your email address"),
-    send: bool = typer.Option(False, "--send", help="Send immediately"),
 ):
     """Create a new FOIA request."""
     from uuid import uuid4
@@ -333,6 +332,9 @@ def request_new(
         except ValueError:
             delivery = DeliveryMethod.EMAIL
 
+        # Capture values before session closes (avoid detached ORM access)
+        agency_name = found.name
+
         request = RequestModel(
             id=str(uuid4()),
             request_number=req_num,
@@ -350,7 +352,7 @@ def request_new(
     table.add_column("Field", style="cyan")
     table.add_column("Value")
     table.add_row("Request #", req_num)
-    table.add_row("Agency", found.name)
+    table.add_row("Agency", agency_name)
     table.add_row("Subject", subject)
     table.add_row("Method", method)
     table.add_row("Body", body[:100] + "..." if len(body) > 100 else body)
@@ -1243,13 +1245,18 @@ def campaign_status(
         raise typer.Exit(1)
 
     with get_session() as session:
-        campaign = session.query(Campaign).filter(
+        matches = session.query(Campaign).filter(
             Campaign.id.like(f"{campaign_id}%")
-        ).first()
+        ).all()
 
-        if not campaign:
+        if len(matches) == 0:
             rprint(f"[red]Campaign '{campaign_id}' not found.[/red]")
             raise typer.Exit(1)
+        if len(matches) > 1:
+            rprint(f"[red]Ambiguous campaign ID '{campaign_id}' matches {len(matches)} campaigns. Use full ID.[/red]")
+            raise typer.Exit(1)
+
+        campaign = matches[0]
 
         requests = campaign.requests
         total = len(requests)
@@ -1286,6 +1293,7 @@ def campaign_status(
 def analyze_extract(
     document_id: str = typer.Argument(..., help="Document ID to analyze"),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file"),
+    force: bool = typer.Option(False, "--force", help="Re-extract even if already done"),
 ):
     """Extract entities from a document."""
     from .db import get_session, get_db_path
@@ -1309,6 +1317,14 @@ def analyze_extract(
             rprint("[yellow]Document has no extracted text. Run OCR first:[/yellow]")
             rprint(f"[dim]openfoia docs ocr {doc.file_path}[/dim]")
             raise typer.Exit(1)
+
+        if doc.entities_extracted and not force:
+            rprint("[yellow]Entities already extracted for this document. Use --force to re-extract.[/yellow]")
+            return
+
+        if doc.entities_extracted and force:
+            # Remove existing entities before re-extracting
+            session.query(Entity).filter(Entity.document_id == doc.id).delete()
 
         rprint(f"[cyan]Extracting entities from {doc.filename}...[/cyan]")
 
@@ -1401,6 +1417,8 @@ def analyze_graph(
             rprint("[yellow]No entities found. Run entity extraction first.[/yellow]")
             return
 
+        entity_ids = {e.id for e in entities}
+
         # Build graph data
         nodes = [
             {
@@ -1412,14 +1430,19 @@ def analyze_graph(
             for e in entities
         ]
 
-        links = session.query(entity_links).all()
+        links_q = session.query(entity_links)
+        if entity_ids:
+            links_q = links_q.filter(
+                entity_links.c.source_id.in_(entity_ids),
+                entity_links.c.target_id.in_(entity_ids),
+            )
         edges = [
             {
                 "source": link.source_id,
                 "target": link.target_id,
                 "type": link.link_type,
             }
-            for link in links
+            for link in links_q.all()
         ]
 
         graph_data = {"nodes": nodes, "edges": edges}
