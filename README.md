@@ -4,6 +4,8 @@
 
 Your data never leaves your machine. Works offline. Works everywhere.
 
+![Entity relationship graph extracted from a single FOIA document — 19 entities, 84 relationships, generated locally with a 2GB model](docs/entity-graph.png)
+
 ---
 
 ## Install
