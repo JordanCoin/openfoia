@@ -37,6 +37,12 @@ tor = [
 browser = [
     "playwright>=1.40.0",
 ]
+ner = [
+    "gliner>=0.2.0",
+]
+ner-spacy = [
+    "spacy>=3.7.0",
+]
 encryption = [
     "pysqlcipher3>=1.2.0",
 ]
