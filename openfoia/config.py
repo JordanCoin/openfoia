@@ -38,18 +38,31 @@ class AIConfig:
 
 
 @dataclass
+class PDFExtractConfig:
+    """PDF text extraction configuration (direct extraction, not OCR)."""
+
+    # Path to a compiled binary that reads a PDF and writes extracted text to stdout.
+    # Auto-detected from $PATH if not set. Set to empty string to disable.
+    binary_path: str | None = None
+
+    # Minimum character count to consider extraction successful.
+    # Below this threshold, the PDF is likely scanned and needs OCR.
+    min_chars_threshold: int = 50
+
+
+@dataclass
 class OCRConfig:
-    """OCR configuration."""
-    
+    """OCR configuration (for scanned documents that have no extractable text)."""
+
     backend: str = "tesseract"  # tesseract, google, aws
-    
+
     # Tesseract options
     tesseract_cmd: str | None = None
     tesseract_lang: str = "eng"
-    
+
     # Google Cloud Vision
     google_credentials_file: str | None = None
-    
+
     # AWS Textract
     aws_region: str = "us-east-1"
     aws_access_key_id: str | None = None
@@ -128,6 +141,7 @@ class OpenFOIAConfig:
     """Main configuration container."""
     
     ai: AIConfig = field(default_factory=AIConfig)
+    pdf_extract: PDFExtractConfig = field(default_factory=PDFExtractConfig)
     ocr: OCRConfig = field(default_factory=OCRConfig)
     gateways: GatewayConfig = field(default_factory=GatewayConfig)
     entities: EntityConfig = field(default_factory=EntityConfig)
@@ -185,6 +199,11 @@ def _merge_config(config: OpenFOIAConfig, data: dict[str, Any]) -> OpenFOIAConfi
             config.ai.base_url = ai["ollama"].get("base_url", "http://localhost:11434")
             config.ai.model = ai["ollama"].get("model", "llama3.2")
     
+    if "pdf_extract" in data:
+        pe = data["pdf_extract"]
+        config.pdf_extract.binary_path = pe.get("binary_path", config.pdf_extract.binary_path)
+        config.pdf_extract.min_chars_threshold = pe.get("min_chars_threshold", config.pdf_extract.min_chars_threshold)
+
     if "ocr" in data:
         ocr = data["ocr"]
         config.ocr.backend = ocr.get("backend", config.ocr.backend)
@@ -264,6 +283,10 @@ def _apply_env_overrides(config: OpenFOIAConfig, prefix: str) -> OpenFOIAConfig:
         config.ai.provider = "ollama"
         config.ai.base_url = v
     
+    # PDF text extraction
+    if v := os.environ.get(f"{prefix}PDF_EXTRACT_BINARY"):
+        config.pdf_extract.binary_path = v
+
     # OCR
     if v := os.environ.get(f"{prefix}OCR_BACKEND"):
         config.ocr.backend = v

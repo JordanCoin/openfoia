@@ -21,9 +21,12 @@ class OCRResult:
 
 
 class OCREngine:
-    """OCR engine supporting multiple backends.
-    
-    Backends:
+    """Text extraction + OCR engine.
+
+    For PDFs, tries direct text extraction first (fast, lossless).
+    Falls back to OCR only for scanned documents where extraction returns nothing.
+
+    OCR Backends:
     - Tesseract (local, free, good quality)
     - Google Cloud Vision (cloud, paid, excellent quality)
     - AWS Textract (cloud, paid, excellent for forms)
@@ -35,16 +38,50 @@ class OCREngine:
         tesseract_cmd: str | None = None,
         google_credentials: str | None = None,
         aws_credentials: dict[str, str] | None = None,
+        pdf_extract_binary: str | None = None,
+        pdf_extract_min_chars: int = 50,
     ):
         self.backend = backend
         self.tesseract_cmd = tesseract_cmd
         self.google_credentials = google_credentials
         self.aws_credentials = aws_credentials
+        self.pdf_extract_binary = pdf_extract_binary
+        self.pdf_extract_min_chars = pdf_extract_min_chars
 
     async def process_pdf(self, pdf_path: Path | str) -> OCRResult:
-        """Process a PDF file through OCR."""
+        """Process a PDF: try direct text extraction first, fall back to OCR."""
         pdf_path = Path(pdf_path)
-        
+
+        # Try direct text extraction (not OCR — reads PDF structures directly)
+        from .pdf_extract import extract_text
+        extract_result = await extract_text(
+            pdf_path,
+            binary_path=self.pdf_extract_binary,
+            min_chars=self.pdf_extract_min_chars,
+        )
+        if extract_result:
+            # Split into per-page results
+            raw_pages = extract_result.text.split("\f")
+            pages = [
+                {"page_number": i + 1, "text": page_text, "confidence": 1.0}
+                for i, page_text in enumerate(raw_pages)
+            ]
+            # Rejoin without form feeds for the full text
+            full_text = "\n\n".join(p.strip() for p in raw_pages if p.strip())
+            return OCRResult(
+                text=full_text,
+                confidence=1.0,  # direct extraction is lossless
+                page_count=extract_result.page_count,
+                pages=pages,
+                metadata={
+                    "backend": "pdf_extract",
+                    "binary": extract_result.backend,
+                    "source_file": str(pdf_path),
+                    "char_count": extract_result.char_count,
+                },
+            )
+
+        # Scanned PDF or no extraction binary — fall back to OCR
         if self.backend == "tesseract":
             return await self._process_tesseract(pdf_path)
         elif self.backend == "google":

@@ -31,9 +31,15 @@
     }
   },
 
+  "pdf_extract": {
+    "_comment": "Direct PDF text extraction. Fast, lossless, no OCR needed for born-digital PDFs. Set binary_path to empty string to disable.",
+    "binary_path": null,
+    "min_chars_threshold": 50
+  },
+
   "ocr": {
-    "_comment": "Tesseract is local and free. Cloud APIs are faster but cost money.",
-    
+    "_comment": "OCR fallback for scanned documents. Only runs when PDF text extraction returns nothing.",
+
     "backend": "tesseract",
     
     "_alt_google": {
