@@ -1455,6 +1455,47 @@ def analyze_graph(
         rprint(f"  Relationships: {len(edges)}")
 
 
+# === Purge Command ===
+
+
+@app.command()
+def purge(
+    confirm: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+):
+    """Destroy all OpenFOIA data. Everything. Gone.
+
+    Removes the database, all ingested documents, exports, config,
+    and the entire ~/.openfoia/ directory. This cannot be undone.
+
+    For situations where you need everything off this machine, now.
+    """
+    import shutil
+
+    data_dir = Path.home() / ".openfoia"
+
+    if not data_dir.exists():
+        rprint("[dim]Nothing to purge. No data directory found.[/dim]")
+        return
+
+    if not confirm:
+        rprint("\n[bold red]This will permanently destroy:[/bold red]")
+        rprint(f"  [red]{data_dir}/data.db[/red]     — all requests, entities, tracking")
+        rprint(f"  [red]{data_dir}/docs/[/red]       — all ingested documents")
+        rprint(f"  [red]{data_dir}/exports/[/red]    — all generated reports")
+        rprint(f"  [red]{data_dir}/config.json[/red] — your configuration")
+        rprint(f"\n  [bold red]Everything in {data_dir}[/bold red]")
+        rprint("\n[dim]This cannot be undone.[/dim]\n")
+
+        answer = typer.prompt("Type PURGE to confirm", default="")
+        if answer != "PURGE":
+            rprint("[dim]Aborted.[/dim]")
+            raise typer.Exit(0)
+
+    shutil.rmtree(data_dir)
+    rprint(f"\n[green]{data_dir} destroyed.[/green]")
+    rprint("[dim]All OpenFOIA data has been removed from this machine.[/dim]\n")
+
+
 # === Main Entry Point ===
 
 
