@@ -396,6 +396,19 @@ Please contact me if you have questions about this request.
 
         request.status = RequestStatus.SENT
         request.sent_at = datetime.utcnow()
+
+        # Auto-set due date (20 business days per FOIA statute)
+        if not request.due_date:
+            response_days = request.agency.typical_response_days if request.agency else 20
+            from datetime import timedelta
+            current = request.sent_at
+            days_added = 0
+            while days_added < response_days:
+                current += timedelta(days=1)
+                if current.weekday() < 5:
+                    days_added += 1
+            request.due_date = current
+
         self.db.commit()
 
         return {
@@ -403,6 +416,7 @@ Please contact me if you have questions about this request.
             "status": "sent",
             "method": request.delivery_method.value,
             "sent_at": request.sent_at.isoformat(),
+            "due_date": request.due_date.isoformat() if request.due_date else None,
             "message": "Request marked as sent.",
         }
 

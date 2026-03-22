@@ -193,12 +193,15 @@ agency_app = typer.Typer(help="Manage agencies")
 analyze_app = typer.Typer(help="Analyze documents")
 template_app = typer.Typer(help="Request templates")
 
+deadline_app = typer.Typer(help="Track FOIA deadlines")
+
 app.add_typer(request_app, name="request")
 app.add_typer(docs_app, name="docs")
 app.add_typer(campaign_app, name="campaign")
 app.add_typer(agency_app, name="agency")
 app.add_typer(analyze_app, name="analyze")
 app.add_typer(template_app, name="template")
+app.add_typer(deadline_app, name="deadlines")
 
 
 # === Configuration ===
@@ -1453,6 +1456,165 @@ def analyze_graph(
         rprint(f"[green]Graph exported to {output}[/green]")
         rprint(f"  Entities: {len(nodes)}")
         rprint(f"  Relationships: {len(edges)}")
+
+
+# === Deadline Commands ===
+
+
+def _foia_due_date(sent_date: datetime, business_days: int = 20) -> datetime:
+    """Calculate FOIA due date (20 business days from sent date per 5 U.S.C. 552)."""
+    from datetime import timedelta
+    current = sent_date
+    days_added = 0
+    while days_added < business_days:
+        current += timedelta(days=1)
+        if current.weekday() < 5:  # Monday=0 through Friday=4
+            days_added += 1
+    return current
+
+
+@deadline_app.command("list")
+def deadline_list(
+    show_all: bool = typer.Option(False, "--all", help="Include completed/closed requests"),
+):
+    """Show FOIA deadlines and overdue requests.
+
+    Federal agencies have 20 business days to respond (5 U.S.C. 552).
+    This command shows what's due, what's overdue, and what needs follow-up.
+    """
+    from .db import get_session, get_db_path
+    from .models import Request as RequestModel, Agency as AgencyModel, RequestStatus
+
+    db_path = get_db_path()
+    if not db_path.exists():
+        rprint("[yellow]Database not initialized. Run 'openfoia init' first.[/yellow]")
+        raise typer.Exit(1)
+
+    with get_session() as session:
+        query = session.query(RequestModel).join(AgencyModel)
+
+        if not show_all:
+            query = query.filter(RequestModel.status.in_([
+                RequestStatus.SENT,
+                RequestStatus.ACKNOWLEDGED,
+                RequestStatus.PROCESSING,
+                RequestStatus.FEE_ESTIMATE,
+            ]))
+
+        requests = query.order_by(RequestModel.sent_at).all()
+
+        if not requests:
+            rprint("[dim]No active requests with deadlines.[/dim]")
+            return
+
+        overdue = []
+        upcoming = []
+        no_deadline = []
+
+        for r in requests:
+            if not r.sent_at:
+                no_deadline.append(r)
+                continue
+
+            if not r.due_date:
+                # Auto-calculate from sent_at
+                r.due_date = _foia_due_date(r.sent_at, r.agency.typical_response_days or 20)
+
+            if r.is_overdue():
+                overdue.append(r)
+            else:
+                upcoming.append(r)
+
+        # Show overdue first
+        if overdue:
+            rprint(f"\n[bold red]OVERDUE ({len(overdue)})[/bold red]")
+            table = Table()
+            table.add_column("Request #", style="cyan")
+            table.add_column("Agency")
+            table.add_column("Subject")
+            table.add_column("Sent")
+            table.add_column("Due")
+            table.add_column("Days Over", style="red")
+
+            for r in overdue:
+                days_over = (datetime.utcnow() - r.due_date).days
+                table.add_row(
+                    r.request_number,
+                    r.agency.abbreviation or r.agency.name,
+                    r.subject[:35] + "..." if len(r.subject) > 35 else r.subject,
+                    r.sent_at.strftime("%Y-%m-%d"),
+                    r.due_date.strftime("%Y-%m-%d"),
+                    f"+{days_over} days",
+                )
+            console.print(table)
+
+        if upcoming:
+            rprint(f"\n[bold yellow]UPCOMING ({len(upcoming)})[/bold yellow]")
+            table = Table()
+            table.add_column("Request #", style="cyan")
+            table.add_column("Agency")
+            table.add_column("Subject")
+            table.add_column("Sent")
+            table.add_column("Due")
+            table.add_column("Days Left", style="green")
+
+            for r in upcoming:
+                days_left = (r.due_date - datetime.utcnow()).days
+                color = "green" if days_left > 5 else "yellow"
+                table.add_row(
+                    r.request_number,
+                    r.agency.abbreviation or r.agency.name,
+                    r.subject[:35] + "..." if len(r.subject) > 35 else r.subject,
+                    r.sent_at.strftime("%Y-%m-%d"),
+                    r.due_date.strftime("%Y-%m-%d"),
+                    f"[{color}]{days_left} days[/{color}]",
+                )
+            console.print(table)
+
+        if no_deadline:
+            rprint(f"\n[dim]{len(no_deadline)} draft/unsent requests (no deadline)[/dim]")
+
+        rprint("")
+
+
+@deadline_app.command("check")
+def deadline_check():
+    """Check for overdue requests and print warnings.
+
+    Useful for cron jobs or shell startup. Returns exit code 1 if any overdue.
+
+    Example (add to .bashrc):
+        openfoia deadlines check 2>/dev/null
+    """
+    from .db import get_session, get_db_path
+    from .models import Request as RequestModel, RequestStatus
+
+    db_path = get_db_path()
+    if not db_path.exists():
+        return
+
+    with get_session() as session:
+        requests = session.query(RequestModel).filter(
+            RequestModel.status.in_([
+                RequestStatus.SENT,
+                RequestStatus.ACKNOWLEDGED,
+                RequestStatus.PROCESSING,
+            ]),
+            RequestModel.sent_at.isnot(None),
+        ).all()
+
+        overdue_count = 0
+        for r in requests:
+            if not r.due_date and r.sent_at:
+                r.due_date = _foia_due_date(r.sent_at)
+            if r.is_overdue():
+                overdue_count += 1
+                days_over = (datetime.utcnow() - r.due_date).days
+                rprint(f"[red]OVERDUE:[/red] {r.request_number} — {r.subject} (+{days_over} days)")
+
+        if overdue_count:
+            rprint(f"\n[red]{overdue_count} overdue request(s). Run 'openfoia deadlines list' for details.[/red]")
+            raise typer.Exit(1)
 
 
 # === Purge Command ===
