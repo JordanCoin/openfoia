@@ -9,6 +9,7 @@ ok()    { printf '\033[0;32m%s\033[0m\n' "$*"; }
 warn()  { printf '\033[0;33m%s\033[0m\n' "$*"; }
 
 DATA_DIR="$HOME/.openfoia"
+VENV_DIR="${OPENFOIA_VENV_DIR:-$HOME/.openfoia-venv}"
 BIN_DIR="${OPENFOIA_INSTALL_DIR:-$HOME/.local/bin}"
 
 main() {
@@ -16,17 +17,24 @@ main() {
     info "  OpenFOIA Uninstaller"
     info ""
 
-    # Remove Python package
+    # Remove Python package (pipx)
     if command -v pipx &>/dev/null; then
         pipx uninstall openfoia 2>/dev/null && ok "Removed openfoia (pipx)" || true
     fi
-    pip3 uninstall openfoia -y 2>/dev/null && ok "Removed openfoia (pip)" || true
 
-    # Remove pdf-extract binary
-    if [ -f "${BIN_DIR}/pdf-extract" ]; then
-        rm -f "${BIN_DIR}/pdf-extract"
-        ok "Removed ${BIN_DIR}/pdf-extract"
+    # Remove venv
+    if [ -d "$VENV_DIR" ]; then
+        rm -rf "$VENV_DIR"
+        ok "Removed venv ${VENV_DIR}"
     fi
+
+    # Remove symlinks and binary
+    for f in "${BIN_DIR}/openfoia" "${BIN_DIR}/pdf-extract"; do
+        if [ -f "$f" ] || [ -L "$f" ]; then
+            rm -f "$f"
+            ok "Removed $f"
+        fi
+    done
 
     # Remove data
     if [ -d "$DATA_DIR" ]; then
@@ -43,7 +51,7 @@ main() {
     fi
 
     echo ""
-    ok "OpenFOIA uninstalled."
+    ok "OpenFOIA uninstalled. No traces left."
     info ""
 }
 

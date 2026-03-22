@@ -62,20 +62,49 @@ download_binary() {
 }
 
 # --- Install Python package ---
+VENV_DIR="${OPENFOIA_VENV_DIR:-$HOME/.openfoia-venv}"
+
 install_python() {
     info "Installing openfoia..."
 
-    if command -v pipx &>/dev/null; then
-        pipx install "git+https://github.com/${REPO}.git"
-    elif command -v pip3 &>/dev/null; then
-        pip3 install --user "git+https://github.com/${REPO}.git"
-    elif command -v pip &>/dev/null; then
-        pip install --user "git+https://github.com/${REPO}.git"
-    else
-        die "Python pip not found. Install Python 3.11+ first."
+    # Find Python 3
+    local python=""
+    for candidate in python3 python; do
+        if command -v "$candidate" &>/dev/null; then
+            version=$("$candidate" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+')
+            major=$(echo "$version" | cut -d. -f1)
+            minor=$(echo "$version" | cut -d. -f2)
+            if [ "$major" -ge 3 ] && [ "$minor" -ge 11 ]; then
+                python="$candidate"
+                break
+            fi
+        fi
+    done
+
+    if [ -z "$python" ]; then
+        die "Python 3.11+ not found. Install Python first: https://python.org"
     fi
 
-    ok "Installed openfoia CLI"
+    info "Using $python ($($python --version))"
+
+    # pipx is the cleanest option — isolated by default
+    if command -v pipx &>/dev/null; then
+        pipx install "git+https://github.com/${REPO}.git"
+        ok "Installed via pipx"
+        return
+    fi
+
+    # Otherwise, create our own venv — no system pollution
+    info "Creating isolated environment at ${VENV_DIR}..."
+    "$python" -m venv "$VENV_DIR"
+    "${VENV_DIR}/bin/pip" install --upgrade pip -q
+    "${VENV_DIR}/bin/pip" install "git+https://github.com/${REPO}.git"
+
+    # Symlink the openfoia command to the install dir
+    mkdir -p "$INSTALL_DIR"
+    ln -sf "${VENV_DIR}/bin/openfoia" "${INSTALL_DIR}/openfoia"
+
+    ok "Installed openfoia CLI (venv at ${VENV_DIR})"
 }
 
 # --- Ensure PATH ---
