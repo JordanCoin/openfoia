@@ -1,6 +1,6 @@
 # OpenFOIA
 
-**Local-first FOIA automation for journalists, researchers, and citizens.**
+**Local-first investigation toolkit for journalists, researchers, and citizens.**
 
 Your data never leaves your machine. Works offline. Works everywhere.
 
@@ -14,232 +14,65 @@ Your data never leaves your machine. Works offline. Works everywhere.
 curl -fsSL https://raw.githubusercontent.com/JordanCoin/openfoia/main/install.sh | bash
 ```
 
-That's it. Works on Linux, macOS, and Windows (WSL). Installs the CLI and a fast PDF text extraction engine.
+Works on Linux, macOS, and Windows (WSL).
+
+New to OpenFOIA? Run `openfoia guide` after installing.
 
 ## What It Does
 
-OpenFOIA is a self-hosted toolkit for filing and tracking Freedom of Information Act requests. No accounts, no cloud, no third parties touching your investigation.
-
-- **File requests** via email, fax, or physical mail
-- **Track deadlines** with auto-calculated due dates (20 business days per statute)
-- **Extract text** from response PDFs (direct extraction + OCR fallback)
-- **Find entities** — people, organizations, money, dates — using AI or regex
-- **Build relationship graphs** across documents
-- **Coordinate campaigns** — 100 people FOIA the same thing
-
-A human can type a CLI command. An AI agent can call the same tool interface. It runs on Linux, Mac, Windows, or the web. Completely local, completely offline.
-
-## Quick Start
+File FOIA requests. Analyze documents. Extract entities. Build relationship graphs. Cross-reference against public databases. All locally, all offline, all purgeable.
 
 ```bash
-# Initialize database (53 federal agencies pre-loaded)
-openfoia init
-
-# Start the web interface (opens in your browser, private mode)
-openfoia serve
-
-# File a request
-openfoia request new --agency FBI --subject "Records on X" \
-  --body "I request all records..." --name "Jane Doe" --email jane@example.com
-
-# Send it
-openfoia request send --agency FBI --subject "Records on X" \
-  --name "Jane Doe" --email jane@example.com
-
-# Check deadlines
-openfoia deadlines list
-
-# Ingest a response PDF and extract entities
-openfoia docs ingest ./response.pdf --request REQ-20260322-A1B2C3
-openfoia analyze extract <document-id>
-
-# Build a relationship graph and view it
-openfoia analyze graph --view
+openfoia init                                          # 53 federal agencies pre-loaded
+openfoia records search "EPA water" --source muckrock  # search 46k+ completed FOIA requests
+openfoia records download 68490 --ingest               # download + ingest response documents
+openfoia analyze extract <doc-id>                      # extract people, orgs, money, dates
+openfoia analyze graph --name epa-water --view         # interactive relationship graph
+openfoia crossref                                      # check entities against 5 public databases
 ```
 
 ## Features
 
-| Feature | How |
-|---------|-----|
-| **53 federal agencies** | Pre-loaded with FOIA emails, fax numbers, addresses, portals |
-| **Request templates** | Standard, appeal, and records-about-self templates with proven legal language |
-| **Email gateway** | SMTP or SendGrid |
-| **Fax gateway** | Twilio — auto-generates PDF, sends to agency fax number |
-| **Mail gateway** | Lob — formats as certified letter with return envelope |
-| **PDF text extraction** | Compiled binary, ~3ms/page, lossless on born-digital PDFs |
-| **OCR fallback** | Tesseract (local), Google Cloud Vision, or AWS Textract for scanned docs |
-| **Entity extraction** | 4-tier: LLM → GLiNER → spaCy → Regex. 100% recall with local 2GB model. |
-| **Relationship graphs** | Force-directed HTML visualization, colored by type, clickable nodes |
-| **Deadline tracking** | Auto-calculates due dates, CLI checker for cron/bashrc |
-| **Campaign coordination** | Create campaigns, distribute requests to participants, track progress |
-| **Web UI** | Local htmx interface with agency search, form submission, document upload |
-| **Alembic migrations** | Schema versioning for safe upgrades |
-| **Encrypted storage** | SQLCipher AES-256 database encryption at rest |
-| **Forensic purge** | `openfoia purge --secure` — 3-pass overwrite, history scrub |
+| | |
+|---|---|
+| **File requests** | Email, fax (Twilio), physical mail (Lob) to 53 federal agencies |
+| **Entity extraction** | 4-tier: LLM → GLiNER → spaCy → Regex. 100% recall with a 2GB local model |
+| **Relationship graphs** | Interactive HTML visualization. Named investigations. Click to explore |
+| **Cross-reference** | MuckRock, OpenCorporates, SEC EDGAR, OpenSanctions, ICIJ Offshore Leaks |
+| **Data interchange** | Import/export FollowTheMoney format (Aleph, OpenAleph, OpenSanctions) |
+| **Encrypted storage** | SQLCipher AES-256. Duress mode with decoy database |
+| **Forensic purge** | 3-pass overwrite, shell history scrub, free space fill |
+| **Portable mode** | `openfoia portable` — everything stays on the USB, nothing on the host |
 | **Metadata stripping** | Auto-strips EXIF, PDF author, DOCX revision history on ingest |
-| **Duress mode** | Second password opens a decoy database with harmless data |
-| **Purge command** | `openfoia purge --yes` — everything gone, instantly |
 
-### Data Sources
-
-Search and pull from external databases — all analysis happens locally.
+## Data Sources
 
 | Source | What | Auth |
 |--------|------|------|
-| **[MuckRock](https://www.muckrock.com/)** | 46k+ completed FOIA requests with downloadable response documents | Free, no key needed |
-| **[OpenCorporates](https://opencorporates.com/)** | Global company ownership, directors, filings | Free tier |
-| **[SEC EDGAR](https://www.sec.gov/edgar/)** | US corporate filings, 10-K, 10-Q, proxy statements | Free |
+| [MuckRock](https://www.muckrock.com/) | 46k+ completed FOIA requests with downloadable documents | Free |
+| [OpenCorporates](https://opencorporates.com/) | Global company ownership, directors, filings | Free |
+| [SEC EDGAR](https://www.sec.gov/edgar/) | US corporate filings | Free |
+| [OpenSanctions](https://opensanctions.org/) | Sanctions lists, politically exposed persons | Free (non-commercial) |
+| [ICIJ Offshore Leaks](https://offshoreleaks.icij.org/) | Panama/Pandora/Paradise Papers (local CSV) | Free download |
 
-```bash
-# Search MuckRock's 46k+ completed FOIA requests
-openfoia records search "EPA water contamination" --source muckrock
+## Documentation
 
-# Download all response documents from a request
-openfoia records download 68490 --source muckrock
-
-# Download AND auto-ingest into the analysis pipeline
-openfoia records download 68490 --ingest
-
-# Search company ownership
-openfoia records search "Meridian Defense Systems" --source opencorporates
-
-# Search SEC filings
-openfoia records search "Acme Corp" --source sec
-```
-
-## Configuration
-
-```bash
-openfoia config --init    # Interactive setup
-# Or copy the example:
-cp config.example.json ~/.openfoia/config.json
-```
-
-### AI Provider (Entity Extraction)
-
-**Local models (recommended for privacy):**
-
-```json
-{
-  "ai": {
-    "provider": "ollama",
-    "ollama": {
-      "base_url": "http://localhost:11434",
-      "model": "llama3.2"
-    }
-  }
-}
-```
-
-No AI configured? Entity extraction falls back to regex — catches dates, money, emails, phone numbers, FOIA tracking numbers out of the box.
-
-Cloud APIs if you want them:
-
-```bash
-export OPENFOIA_ANTHROPIC_API_KEY="sk-ant-..."
-export OPENFOIA_OPENAI_API_KEY="sk-..."
-```
-
-### Delivery Gateways
-
-Only needed if you want to **send** requests (vs just tracking):
-
-| Gateway | Provider | Cost | Config |
-|---------|----------|------|--------|
-| **Email** | SMTP | Free | `openfoia config --init` |
-| **Fax** | Twilio | $0.07/page | `OPENFOIA_TWILIO_ACCOUNT_SID` + `OPENFOIA_TWILIO_AUTH_TOKEN` |
-| **Mail** | Lob | ~$1/letter | `OPENFOIA_LOB_API_KEY` |
-
-### Custom Entity Types
-
-Add domain-specific entities for your investigation:
-
-```bash
-# Add one at a time
-openfoia entities add -n CONTRACT_NUMBER -p '\b[A-Z]{2,4}-\d{4,}-\d{4,}\b' -d "Federal contract numbers"
-
-# Import from any CSV — columns can be named anything
-openfoia entities import investigation_patterns.csv
-
-# If your CSV has plain English instead of regex ("looks like XX-1234"),
-# a local LLM will generate the regex patterns for you automatically.
-
-# Test your patterns against a document
-openfoia entities test -f response.pdf.txt
-
-# List, export, share with your team
-openfoia entities list
-openfoia entities export -o our_entities.csv
-```
-
-The import is smart — if your spreadsheet has columns like "Entity Type", "What It Looks Like", "Notes" instead of "name", "pattern", "description", it figures out the mapping. If ollama is running, it'll even generate regex from plain English descriptions like "format: ABC-1234-5678".
-
-## CLI Reference
-
-```bash
-# Server
-openfoia serve                    # Start web interface
-openfoia serve --tor              # Open in Tor Browser
-openfoia serve --no-browser       # Just print URL
-
-# Requests
-openfoia request new              # Draft a FOIA request
-openfoia request send             # Send via email/fax/mail
-openfoia request list             # List all requests
-openfoia request status REQ-001   # Check status
-
-# Deadlines
-openfoia deadlines list           # Show overdue + upcoming
-openfoia deadlines check          # One-liner for cron (exits 1 if overdue)
-
-# Documents
-openfoia docs ingest ./folder/    # Import documents
-openfoia docs ocr DOC-001         # Run OCR on a document
-
-# Analysis
-openfoia analyze extract DOC-001  # Extract entities
-openfoia analyze graph            # Build relationship graph
-openfoia analyze graph --view     # Open interactive visualization
-
-# Campaigns
-openfoia campaign create          # Create a crowdsourced campaign
-openfoia campaign join <id>       # Join as participant
-openfoia campaign distribute <id> # Generate requests for all participants
-openfoia campaign progress <id>   # View per-participant status grid
-
-# Database
-openfoia db upgrade               # Run migrations
-
-# Danger zone
-openfoia purge                    # Destroy all data (asks for confirmation)
-openfoia purge --yes              # No confirmation. Everything gone.
-```
+| Guide | What |
+|-------|------|
+| **[Journalist Guide](docs/GUIDE.md)** | Full walkthrough — start here if you're new |
+| [Tails OS](docs/TAILS.md) | Running from Tails for maximum privacy |
+| [USB Install](docs/USB.md) | Encrypted USB portable setup |
+| [Air-Gapped](docs/AIRGAP.md) | Offline deployment overview |
 
 ## Privacy
 
-| | OpenFOIA | Cloud Services |
-|--|----------|----------------|
-| Data storage | Your machine | Their servers |
-| Who sees your requests | Only you | The service provider |
-| Works offline | Yes | No |
-| Open source | Yes (AGPL) | Rarely |
-| Cost | Free | Paid tiers |
-
-Everything runs locally. The server binds to `127.0.0.1` only. A random session token prevents other local apps from accessing your data.
+Everything runs on `127.0.0.1`. Token-authenticated. Encrypted at rest (optional). Forensically purgeable. Works offline. Open source.
 
 **For sensitive investigations:** `openfoia serve --tor`
 
-## Architecture
+**Portable mode:** `openfoia portable` — data stays on the USB, nothing touches the host.
 
-```
-~/.openfoia/
-├── data.db          # SQLite (requests, entities, campaigns, timeline)
-├── docs/            # Ingested documents
-├── exports/         # Reports, graph exports
-└── config.json      # Your settings
-```
-
-The CLI and the AI agent interface share the same tool layer. A human types `openfoia request new`. An agent calls `execute_tool("draft_request", {...})`. Same database, same logic, same privacy guarantees.
+**When you're done:** `openfoia purge --secure --yes`
 
 ## Uninstall
 
@@ -247,42 +80,13 @@ The CLI and the AI agent interface share the same tool layer. A human types `ope
 curl -fsSL https://raw.githubusercontent.com/JordanCoin/openfoia/main/uninstall.sh | bash
 ```
 
-Or just: `openfoia purge --yes && pip uninstall openfoia`
+## Legal Context for Contributors
 
-## Why Open Source?
-
-FOIA exists to make government transparent. The tools we use to exercise that right should be transparent too.
-
-Licensed under **AGPL-3.0** — if you modify and deploy it, you must share your changes. Transparency all the way down.
+**Writing this code is legal.** The US DOJ stated in August 2025: ["Merely writing code, without ill intent, is not a crime."](https://www.crowdfundinsider.com/2025/08/248043-us-department-of-justice-signals-shift-in-crypto-enforcement-writing-code-is-not-a-crime/) Open source encryption is [exempt from US export controls](https://www.eff.org/deeplinks/2019/08/us-export-controls-and-published-encryption-source-code-explained). The Tor Project, Signal, SecureDrop, and Tails set the precedent. [More context](https://www.linuxfoundation.org/resources/publications/understanding-us-export-controls-with-open-source-projects).
 
 ## Credits
 
-Built by people who believe in freedom of information — not journalists ourselves, just folks who want to support them with free tools.
-
-Inspired by [MuckRock](https://www.muckrock.com/), [DocumentCloud](https://www.documentcloud.org/), and the [Reporters Committee for Freedom of the Press](https://www.rcfp.org/).
-
-*Free as in freedom, free as in beer.*
-
-## Legal Context for Contributors
-
-If you're contributing to this project, you should know the legal landscape. We did the research so you don't have to.
-
-**Writing this code is legal.** In August 2025, the US DOJ explicitly stated: ["Merely writing code, without ill intent, is not a crime."](https://www.crowdfundinsider.com/2025/08/248043-us-department-of-justice-signals-shift-in-crypto-enforcement-writing-code-is-not-a-crime/) Open-source developers aren't criminally liable for how others use their tools, absent specific intent to facilitate crime.
-
-**Open source encryption is export-legal.** Published open-source encryption code is [generally exempt from US Export Administration Regulations](https://www.eff.org/deeplinks/2019/08/us-export-controls-and-published-encryption-source-code-explained). Standard encryption (AES, TLS) requires no notification. The [Linux Foundation's guide](https://www.linuxfoundation.org/resources/publications/understanding-us-export-controls-with-open-source-projects) covers this in detail.
-
-**Precedent exists.** The Tor Project, Signal, SecureDrop, and Tails have operated for years building privacy tools for journalists. They're legal, they're US-based, and they're still shipping. [Amnesty International considers Tor a human rights tool.](https://www.amnesty.org/en/latest/campaigns/2024/02/what-is-tor-and-how-does-it-advance-human-rights/)
-
-**What to be aware of:**
-- [OFAC sanctions](https://www.linuxfoundation.org/blog/navigating-global-regulations-and-open-source-us-ofac-sanctions) generally exempt open source as "informational materials," but don't provide targeted support to sanctioned entities
-- [Some countries block privacy tools](https://ooni.org/post/2021-how-signal-private-messenger-blocked-around-the-world/) — China, Egypt, Cuba, Iran, and others have banned Signal; Turkey and Venezuela have blocked Tor
-- [GitHub restricts accounts](https://docs.github.com/en/site-policy/other-site-policies/github-and-trade-controls) in sanctioned regions under US trade controls
-
-**Further reading on journalist safety:**
-- [Freedom of the Press Foundation — 2026 Digital Security Checklist](https://freedom.press/digisec/blog/journalists-digital-security-checklist/)
-- [UNESCO — Safety of Journalists](https://www.unesco.org/en/safety-journalists)
-- [2025 Journalist Safety Outlook](https://www.riskpal.com/2025-journalist-safety-outlook/)
-- [BIS — Encryption and Export Administration Regulations](https://www.bis.doc.gov/index.php/policy-guidance/encryption)
+Built by people who believe in freedom of information. Inspired by [MuckRock](https://www.muckrock.com/), [DocumentCloud](https://www.documentcloud.org/), and the [Reporters Committee for Freedom of the Press](https://www.rcfp.org/).
 
 ## License
 
