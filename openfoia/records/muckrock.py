@@ -75,10 +75,15 @@ class MuckRockAdapter(RecordAdapter):
             "format": "json",
             "page": page,
             "page_size": min(page_size, 100),
-            "search": query,
         }
         if status:
             params["status"] = status
+
+        # MuckRock's API has no full-text search. Available filters:
+        # title (exact), user, agency, jurisdiction, tags, embargo_status, status.
+        # Tags work best for topic-based search (e.g., "fbi", "epa", "surveillance").
+        # We use tags as primary search and fall back to client-side title filtering.
+        params["tags"] = query.lower().strip().replace(" ", "-")
 
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(
@@ -88,6 +93,26 @@ class MuckRockAdapter(RecordAdapter):
             )
             resp.raise_for_status()
             data = resp.json()
+
+            # If tags returned 0, try user filter (people often search by requester)
+            if data.get("count", 0) == 0:
+                fallback_params = {
+                    "format": "json",
+                    "page": page,
+                    "page_size": min(page_size, 100),
+                    "user": query,
+                }
+                if status:
+                    fallback_params["status"] = status
+                resp2 = await client.get(
+                    f"{API_BASE}/foia/",
+                    params=fallback_params,
+                    headers=self._headers,
+                )
+                if resp2.status_code == 200:
+                    fallback_data = resp2.json()
+                    if fallback_data.get("count", 0) > 0:
+                        data = fallback_data
 
         entities = []
         for req in data.get("results", []):
