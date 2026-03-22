@@ -1,11 +1,16 @@
 """Database session management for OpenFOIA.
 
 All data stored locally in ~/.openfoia/data.db
+Supports optional AES-256 encryption at rest via SQLCipher.
 """
 
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import sqlite3
+import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator
@@ -16,10 +21,49 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from .models import Base, Agency, AgencyLevel, DeliveryMethod
 
+# Check for SQLCipher availability
+_HAS_SQLCIPHER = False
+try:
+    import pysqlcipher3.dbapi2 as sqlcipher  # noqa: F401
+    _HAS_SQLCIPHER = True
+except ImportError:
+    pass
+
+
+def has_sqlcipher() -> bool:
+    """Return True if pysqlcipher3 is installed and usable."""
+    return _HAS_SQLCIPHER
+
+
+def get_db_password() -> str | None:
+    """Get the database password from env var or config.
+
+    Priority: OPENFOIA_DB_PASSWORD env var > config file.
+    Returns None if no password is configured.
+    """
+    # Check env var first
+    pw = os.environ.get("OPENFOIA_DB_PASSWORD")
+    if pw:
+        return pw
+
+    # Check config file
+    from .config import load_config
+    cfg = load_config()
+    return cfg.encryption.password
+
 
 def get_data_dir() -> Path:
-    """Get the OpenFOIA data directory, creating if needed."""
-    data_dir = Path.home() / ".openfoia"
+    """Get the OpenFOIA data directory, creating if needed.
+
+    Checks OPENFOIA_DATA_DIR env var first, then falls back to ~/.openfoia/.
+    This is essential for air-gapped / Tails OS / portable USB deployments
+    where the data directory must live on an encrypted persistent volume.
+    """
+    env_dir = os.environ.get("OPENFOIA_DATA_DIR")
+    if env_dir:
+        data_dir = Path(env_dir)
+    else:
+        data_dir = Path.home() / ".openfoia"
     data_dir.mkdir(parents=True, exist_ok=True)
     return data_dir
 
@@ -29,21 +73,53 @@ def get_db_path() -> Path:
     return get_data_dir() / "data.db"
 
 
-def get_engine(db_path: Path | None = None) -> Engine:
-    """Create a SQLAlchemy engine."""
+def get_engine(db_path: Path | None = None, password: str | None = None) -> Engine:
+    """Create a SQLAlchemy engine.
+
+    If *password* is provided (or discovered from config/env), the engine
+    will use SQLCipher for AES-256 encryption at rest.  When no password is
+    set, plain SQLite is used -- fully backwards-compatible.
+    """
     if db_path is None:
         db_path = get_db_path()
-    
-    url = f"sqlite:///{db_path}"
-    engine = create_engine(url, echo=False)
-    
-    # Enable foreign keys for SQLite
+
+    if password is None:
+        password = get_db_password()
+
+    if password and _HAS_SQLCIPHER:
+        # Use pysqlcipher3 as the DBAPI driver via creator pattern
+        def _sqlcipher_creator():
+            conn = sqlcipher.connect(str(db_path))
+            conn.execute(f"PRAGMA key='{password}'")
+            conn.execute("PRAGMA cipher_compatibility = 4")
+            return conn
+
+        engine = create_engine(
+            "sqlite+pysqlite:///",  # dummy URL; creator overrides
+            creator=_sqlcipher_creator,
+            echo=False,
+        )
+    elif password and not _HAS_SQLCIPHER:
+        import warnings
+        warnings.warn(
+            "Database password is set but pysqlcipher3 is not installed. "
+            "Falling back to plain SQLite (UNENCRYPTED). "
+            "Install with: pip install 'openfoia[encryption]'",
+            stacklevel=2,
+        )
+        url = f"sqlite:///{db_path}"
+        engine = create_engine(url, echo=False)
+    else:
+        url = f"sqlite:///{db_path}"
+        engine = create_engine(url, echo=False)
+
+    # Enable foreign keys for SQLite / SQLCipher
     @event.listens_for(engine, "connect")
     def set_sqlite_pragma(dbapi_connection, connection_record):
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
-    
+
     return engine
 
 
@@ -55,9 +131,9 @@ def get_session_factory(engine: Engine | None = None) -> sessionmaker:
 
 
 @contextmanager
-def get_session() -> Generator[Session, None, None]:
+def get_session(password: str | None = None) -> Generator[Session, None, None]:
     """Get a database session with automatic commit/rollback."""
-    engine = get_engine()
+    engine = get_engine(password=password)
     SessionLocal = sessionmaker(bind=engine)
     session = SessionLocal()
     try:
@@ -70,28 +146,93 @@ def get_session() -> Generator[Session, None, None]:
         session.close()
 
 
-def run_migrations() -> None:
+def run_migrations(password: str | None = None) -> None:
     """Run alembic migrations to bring the database schema up to date."""
     from alembic import command
     from alembic.config import Config
 
+    db_path = get_db_path()
+
     alembic_cfg = Config()
     alembic_cfg.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
-    alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{get_db_path()}")
-    command.upgrade(alembic_cfg, "head")
+
+    if password is None:
+        password = get_db_password()
+
+    if password and _HAS_SQLCIPHER:
+        # Alembic needs a real engine to run migrations against SQLCipher.
+        # We pass the engine via the config attributes.
+        engine = get_engine(db_path=db_path, password=password)
+        alembic_cfg.attributes["connection"] = engine.connect()
+        alembic_cfg.set_main_option("sqlalchemy.url", "sqlite:///")  # placeholder
+        command.upgrade(alembic_cfg, "head")
+        alembic_cfg.attributes["connection"].close()
+    else:
+        alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+        command.upgrade(alembic_cfg, "head")
 
 
-def init_db(seed: bool = True) -> None:
+def init_db(seed: bool = True, password: str | None = None) -> None:
     """Initialize the database, running migrations and optionally seeding data."""
     # Ensure data directory exists
     get_data_dir()
 
     # Run alembic migrations (creates/updates tables)
-    run_migrations()
+    run_migrations(password=password)
 
     if seed:
-        engine = get_engine()
+        engine = get_engine(password=password)
         seed_agencies(engine)
+
+
+def encrypt_database(password: str) -> None:
+    """Encrypt an existing plaintext SQLite database with SQLCipher.
+
+    Reads the current plaintext database, creates an encrypted copy,
+    then swaps it in place. Raises RuntimeError if SQLCipher is not available.
+    """
+    if not _HAS_SQLCIPHER:
+        raise RuntimeError(
+            "pysqlcipher3 is not installed. "
+            "Install with: pip install 'openfoia[encryption]'"
+        )
+
+    db_path = get_db_path()
+    if not db_path.exists():
+        raise FileNotFoundError(f"Database not found: {db_path}")
+
+    # Create encrypted copy in a temp file next to the original
+    tmp_fd, tmp_path = tempfile.mkstemp(
+        suffix=".db", dir=db_path.parent, prefix=".encrypting_"
+    )
+    os.close(tmp_fd)
+
+    try:
+        # Open plaintext database with regular sqlite3
+        plain_conn = sqlite3.connect(str(db_path))
+
+        # Open new encrypted database with SQLCipher
+        enc_conn = sqlcipher.connect(tmp_path)
+        enc_conn.execute(f"PRAGMA key='{password}'")
+        enc_conn.execute("PRAGMA cipher_compatibility = 4")
+
+        # Dump plaintext and replay into encrypted DB
+        for line in plain_conn.iterdump():
+            enc_conn.execute(line)
+
+        enc_conn.commit()
+        enc_conn.close()
+        plain_conn.close()
+
+        # Backup original, swap in encrypted version
+        backup_path = db_path.with_suffix(".db.bak")
+        shutil.copy2(db_path, backup_path)
+        shutil.move(tmp_path, db_path)
+    except Exception:
+        # Clean up temp file on failure
+        if Path(tmp_path).exists():
+            os.unlink(tmp_path)
+        raise
 
 
 def seed_agencies(engine: Engine) -> int:

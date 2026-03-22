@@ -129,9 +129,18 @@ class PrivacyConfig:
 
 
 @dataclass
+class EncryptionConfig:
+    """Database encryption configuration (SQLCipher / AES-256)."""
+
+    # Password for encrypting the database at rest.
+    # Can also be set via OPENFOIA_DB_PASSWORD env var.
+    password: str | None = None
+
+
+@dataclass
 class ServerConfig:
     """Server configuration."""
-    
+
     host: str = "127.0.0.1"
     port: int = 0  # 0 = random
 
@@ -146,10 +155,11 @@ class OpenFOIAConfig:
     gateways: GatewayConfig = field(default_factory=GatewayConfig)
     entities: EntityConfig = field(default_factory=EntityConfig)
     privacy: PrivacyConfig = field(default_factory=PrivacyConfig)
+    encryption: EncryptionConfig = field(default_factory=EncryptionConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
     
-    # Data directory
-    data_dir: Path = field(default_factory=lambda: Path.home() / ".openfoia")
+    # Data directory — override with OPENFOIA_DATA_DIR env var for portable / air-gapped installs
+    data_dir: Path = field(default_factory=lambda: Path(os.environ.get("OPENFOIA_DATA_DIR", str(Path.home() / ".openfoia"))))
 
 
 def load_config(
@@ -251,11 +261,15 @@ def _merge_config(config: OpenFOIAConfig, data: dict[str, Any]) -> OpenFOIAConfi
         config.privacy.auto_redact_pii_in_exports = priv.get("auto_redact_pii_in_exports", False)
         config.privacy.delete_processed_originals = priv.get("delete_processed_originals", False)
     
+    if "encryption" in data:
+        enc = data["encryption"]
+        config.encryption.password = enc.get("password") or enc.get("_password")
+
     if "server" in data:
         srv = data["server"]
         config.server.host = srv.get("host", config.server.host)
         config.server.port = srv.get("port", config.server.port)
-    
+
     return config
 
 
@@ -301,6 +315,14 @@ def _apply_env_overrides(config: OpenFOIAConfig, prefix: str) -> OpenFOIAConfig:
         config.gateways.mail_enabled = True
         config.gateways.lob_api_key = v
     
+    # Encryption
+    if v := os.environ.get(f"{prefix}DB_PASSWORD"):
+        config.encryption.password = v
+
+    # Data directory (for air-gapped / portable installs)
+    if v := os.environ.get(f"{prefix}DATA_DIR"):
+        config.data_dir = Path(v)
+
     return config
 
 

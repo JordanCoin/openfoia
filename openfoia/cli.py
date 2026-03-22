@@ -28,63 +28,76 @@ app = typer.Typer(
 def init(
     force: bool = typer.Option(False, "--force", "-f", help="Re-initialize even if database exists"),
     no_seed: bool = typer.Option(False, "--no-seed", help="Don't seed agency data"),
+    password: Optional[str] = typer.Option(None, "--password", help="Encrypt database with this password (AES-256 via SQLCipher)"),
 ):
     """Initialize the OpenFOIA database.
-    
+
     Creates ~/.openfoia/ directory and initializes the SQLite database
     with tables and seed data (federal agencies).
-    
+
+    Pass --password to encrypt the database at rest with AES-256 (requires
+    the sqlcipher C library and pysqlcipher3: pip install 'openfoia[encryption]').
+
     Examples:
-        openfoia init                # Initialize with agency data
-        openfoia init --no-seed      # Initialize without seed data
-        openfoia init --force        # Re-initialize (WARNING: loses data)
+        openfoia init                        # Initialize with agency data
+        openfoia init --no-seed              # Initialize without seed data
+        openfoia init --force                # Re-initialize (WARNING: loses data)
+        openfoia init --password SECRET      # Initialize with encryption
     """
-    from .db import get_data_dir, get_db_path, init_db, seed_agencies, get_engine
-    
+    from .db import get_data_dir, get_db_path, init_db, seed_agencies, get_engine, has_sqlcipher
+
     data_dir = get_data_dir()
     db_path = get_db_path()
-    
+
     rprint("\n[bold green]🔒 OpenFOIA Initialization[/bold green]")
     rprint("─" * 50)
-    
+
+    if password and not has_sqlcipher():
+        rprint("[bold yellow]Warning:[/bold yellow] pysqlcipher3 is not installed.")
+        rprint("[yellow]Database will NOT be encrypted. Install with:[/yellow]")
+        rprint("[yellow]  pip install 'openfoia[encryption]'[/yellow]")
+        rprint("")
+
     if db_path.exists() and not force:
         rprint(f"[cyan]Database already exists:[/cyan] {db_path}")
         rprint("[dim]Use --force to re-initialize (WARNING: loses data)[/dim]")
-        
+
         # Show stats
         from .db import get_session
         from .models import Agency, Request, Document
-        
-        with get_session() as session:
+
+        with get_session(password=password) as session:
             agency_count = session.query(Agency).count()
             request_count = session.query(Request).count()
             doc_count = session.query(Document).count()
-        
+
         rprint(f"\n[cyan]Current data:[/cyan]")
         rprint(f"  Agencies: {agency_count}")
         rprint(f"  Requests: {request_count}")
         rprint(f"  Documents: {doc_count}")
         return
-    
+
     if force and db_path.exists():
         rprint(f"[yellow]Removing existing database...[/yellow]")
         db_path.unlink()
-    
+
     rprint(f"[cyan]Data directory:[/cyan] {data_dir}")
     rprint(f"[cyan]Database:[/cyan] {db_path}")
-    
+    if password and has_sqlcipher():
+        rprint(f"[cyan]Encryption:[/cyan] AES-256 (SQLCipher)")
+
     # Initialize
     rprint("\n[cyan]Creating tables...[/cyan]")
-    init_db(seed=not no_seed)
-    
+    init_db(seed=not no_seed, password=password)
+
     if not no_seed:
         from .db import get_session
         from .models import Agency
-        
-        with get_session() as session:
+
+        with get_session(password=password) as session:
             count = session.query(Agency).count()
         rprint(f"[green]✓ Seeded {count} federal agencies[/green]")
-    
+
     rprint("\n[bold green]✓ Initialization complete![/bold green]")
     rprint("[dim]Run 'openfoia serve' to start the web interface.[/dim]\n")
 
@@ -235,6 +248,49 @@ def upgrade(
     command.upgrade(alembic_cfg, revision)
 
     rprint("[bold green]Database upgraded successfully.[/bold green]\n")
+
+
+@db_app.command()
+def encrypt(
+    password: str = typer.Option(..., "--password", prompt="Encryption password", hide_input=True, help="Password for AES-256 encryption"),
+):
+    """Encrypt an existing plaintext database with SQLCipher (AES-256).
+
+    Creates an encrypted copy of the current database and swaps it in place.
+    A backup of the original plaintext database is saved as data.db.bak.
+
+    Requires pysqlcipher3: pip install 'openfoia[encryption]'
+
+    Examples:
+        openfoia db encrypt --password SECRET
+        openfoia db encrypt   # will prompt for password
+    """
+    from .db import get_db_path, encrypt_database, has_sqlcipher
+
+    if not has_sqlcipher():
+        rprint("[bold red]Error:[/bold red] pysqlcipher3 is not installed.")
+        rprint("[yellow]Install with: pip install 'openfoia[encryption]'[/yellow]")
+        raise typer.Exit(1)
+
+    db_path = get_db_path()
+    if not db_path.exists():
+        rprint("[bold red]Error:[/bold red] No database found. Run 'openfoia init' first.")
+        raise typer.Exit(1)
+
+    rprint(f"\n[cyan]Database:[/cyan] {db_path}")
+    rprint("[cyan]Encrypting with AES-256 (SQLCipher)...[/cyan]")
+
+    try:
+        encrypt_database(password)
+    except Exception as e:
+        rprint(f"[bold red]Encryption failed:[/bold red] {e}")
+        raise typer.Exit(1)
+
+    rprint(f"[green]Backup saved:[/green] {db_path.with_suffix('.db.bak')}")
+    rprint("[bold green]Database encrypted successfully.[/bold green]")
+    rprint("")
+    rprint("[dim]Set OPENFOIA_DB_PASSWORD env var or pass --password to commands.[/dim]")
+    rprint("[dim]You can safely delete the .bak file after verifying the encrypted DB works.[/dim]\n")
 
 
 # === Configuration ===
