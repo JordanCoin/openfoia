@@ -553,36 +553,48 @@ def request_send(
     template: Optional[str] = typer.Option(None, "--template", "-t", help="Use template (standard/self)"),
     name: str = typer.Option(..., "--name", "-n", help="Your full name"),
     email: str = typer.Option(..., "--email", "-e", help="Your email address"),
-    method: str = typer.Option("email", "--method", "-m", help="Delivery method (email only for now)"),
+    method: str = typer.Option("email", "--method", "-m", help="Delivery method (email/fax/mail)"),
+    to_address: Optional[str] = typer.Option(None, "--to", help="Override recipient address (email, fax number, or mailing address)"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be sent without sending"),
 ):
     """Send a FOIA request to an agency.
-    
-    Sends via email by default. Requires SMTP configuration.
-    
+
+    Supports three delivery methods:
+    - email (default): Send via SMTP. Requires SMTP configuration.
+    - fax: Send via Twilio fax. Requires Twilio credentials.
+    - mail: Send physical letter via Lob. Requires Lob API key.
+
     Examples:
-        # Send with inline body
+        # Send via email (default)
         openfoia request send -a FBI -s "Records on X" -b "I request..." -n "Jane Doe" -e jane@example.com
-        
-        # Send from file
-        openfoia request send -a EPA -s "Pollution data" -f request.txt -n "John Smith" -e john@example.com
-        
-        # Use template
-        openfoia request send -a DOJ -s "Contract records" -t standard -n "Jane Doe" -e jane@example.com
-        
+
+        # Send via fax
+        openfoia request send -a FBI -s "Records on X" -t standard -n "Jane Doe" -e jane@example.com -m fax
+
+        # Send via physical mail (certified)
+        openfoia request send -a EPA -s "Pollution data" -t standard -n "Jane Doe" -e jane@example.com -m mail
+
+        # Override recipient fax number
+        openfoia request send -a FBI -s "Records" -t standard -n "Jane" -e j@x.com -m fax --to "+12025551234"
+
         # Dry run (preview without sending)
         openfoia request send -a FBI -s "Test" -t standard -n "Test User" -e test@example.com --dry-run
     """
     import asyncio
     from .db import get_db_path, get_session
     from .models import Agency
-    from .gateways.email import EmailGateway
     from .gateways.base import DeliveryPayload
-    
+
+    if method not in ("email", "fax", "mail"):
+        rprint(f"[red]Unknown method '{method}'. Use: email, fax, mail[/red]")
+        raise typer.Exit(1)
+
     # Get agency from database
     agency_name = agency
     agency_email = None
-    
+    agency_fax = None
+    agency_address = None
+
     db_path = get_db_path()
     if db_path.exists():
         with get_session() as session:
@@ -592,18 +604,37 @@ def request_send(
             if found:
                 agency_name = found.name
                 agency_email = found.foia_email
-    
-    if not agency_email:
-        rprint(f"[red]No FOIA email found for '{agency}'. Specify with --to or add agency to database.[/red]")
-        raise typer.Exit(1)
-    
+                agency_fax = getattr(found, 'foia_fax', None)
+                agency_address = getattr(found, 'foia_address', None)
+
+    # Determine recipient address based on method
+    if method == "email":
+        recipient = to_address or agency_email
+        if not recipient:
+            rprint(f"[red]No FOIA email found for '{agency}'. Specify with --to.[/red]")
+            raise typer.Exit(1)
+    elif method == "fax":
+        recipient = to_address or agency_fax
+        if not recipient:
+            rprint(f"[red]No FOIA fax number found for '{agency}'. Specify with --to.[/red]")
+            rprint("[dim]Example: --to '+12025551234'[/dim]")
+            raise typer.Exit(1)
+    elif method == "mail":
+        recipient = to_address or agency_address
+        if not recipient:
+            rprint(f"[red]No FOIA mailing address found for '{agency}'. Specify with --to.[/red]")
+            rprint("[dim]Format: 'Name\\nStreet\\nCity, ST ZIP' (use \\n for newlines)[/dim]")
+            raise typer.Exit(1)
+        # Handle escaped newlines from CLI
+        recipient = recipient.replace("\\n", "\n")
+
     # Get body content
     if template:
         from .templates import standard_request, records_about_self, RequesterInfo, RequestDetails
-        
+
         requester = RequesterInfo(name=name, email=email)
         details = RequestDetails(subject=subject, description=subject)
-        
+
         if template == "standard":
             body = standard_request(requester=requester, agency_name=agency_name, details=details)
         elif template == "self":
@@ -617,74 +648,163 @@ def request_send(
         rprint("[yellow]Enter request body (Ctrl+D when done):[/yellow]")
         import sys
         body = sys.stdin.read()
-    
+
     # Build payload
     payload = DeliveryPayload(
         recipient_name=f"FOIA Officer at {agency_name}",
-        recipient_address=agency_email,
+        recipient_address=recipient,
         subject=subject,
         body=body,
         return_address=f"{name}\n{email}",
     )
-    
+
     # Preview
-    rprint("\n[bold cyan]FOIA Request[/bold cyan]")
+    method_labels = {"email": "Email", "fax": "Fax", "mail": "Physical Mail"}
+    rprint(f"\n[bold cyan]FOIA Request ({method_labels[method]})[/bold cyan]")
     rprint("─" * 50)
-    rprint(f"[cyan]To:[/cyan] {agency_email}")
+    rprint(f"[cyan]Method:[/cyan] {method_labels[method]}")
+    rprint(f"[cyan]To:[/cyan] {recipient}")
     rprint(f"[cyan]Subject:[/cyan] FOIA Request: {subject}")
     rprint(f"[cyan]From:[/cyan] {name} <{email}>")
+
+    # Show cost estimate for paid methods
+    if method == "fax":
+        from .gateways.fax import TwilioFaxGateway
+        est_pages = max(1, len(body) // 3000 + 1) + (1 if payload.cover_page else 0)
+        est_cost = est_pages * TwilioFaxGateway.COST_PER_PAGE_CENTS
+        rprint(f"[cyan]Est. Cost:[/cyan] ${est_cost / 100:.2f} ({est_pages} pages @ $0.07/page)")
+    elif method == "mail":
+        from .gateways.mail import LobMailGateway
+        est_pages = max(1, len(body) // 3000 + 1)
+        est_cost = 63 + max(0, (est_pages - 1) * 15) + 400 + 50  # certified + return envelope
+        rprint(f"[cyan]Est. Cost:[/cyan] ${est_cost / 100:.2f} ({est_pages} pages, certified mail)")
+
     rprint("─" * 50)
-    
+
     if dry_run:
-        rprint("\n[yellow]DRY RUN - Request not sent[/yellow]")
+        rprint(f"\n[yellow]DRY RUN ({method_labels[method]}) - Request not sent[/yellow]")
         rprint("\n[dim]Request body preview:[/dim]")
         preview = body[:500] + "..." if len(body) > 500 else body
         rprint(preview)
         return
-    
-    # Check for SMTP config
-    config_path = Path.home() / ".openfoia" / "config.json"
-    if not config_path.exists():
-        rprint("[yellow]No config found. Run 'openfoia config --init' to set up SMTP.[/yellow]")
-        rprint("[dim]Or set environment variables: OPENFOIA_SMTP_USER, OPENFOIA_SMTP_PASSWORD[/dim]")
-        raise typer.Exit(1)
-    
+
     # Load config
+    config_path = Path.home() / ".openfoia" / "config.json"
     import os
-    smtp_user = os.environ.get('OPENFOIA_SMTP_USER')
-    smtp_password = os.environ.get('OPENFOIA_SMTP_PASSWORD')
-    
-    if not smtp_user or not smtp_password:
-        import json
-        config = json.loads(config_path.read_text())
-        smtp_config = config.get('email', {})
-        smtp_user = smtp_user or smtp_config.get('smtp_user')
-        smtp_password = smtp_password or smtp_config.get('smtp_password')
-    
-    if not smtp_user or not smtp_password:
-        rprint("[red]SMTP credentials not configured.[/red]")
-        rprint("[dim]Set OPENFOIA_SMTP_USER and OPENFOIA_SMTP_PASSWORD env vars[/dim]")
-        rprint("[dim]Or run 'openfoia config --init'[/dim]")
-        raise typer.Exit(1)
-    
-    # Send
-    gateway = EmailGateway(
-        smtp_user=smtp_user,
-        smtp_password=smtp_password,
-        from_email=email,
-        from_name=name,
-    )
-    
-    rprint("\n[cyan]Sending...[/cyan]")
+    import json
+
+    config = {}
+    if config_path.exists():
+        try:
+            config = json.loads(config_path.read_text())
+        except json.JSONDecodeError:
+            pass
+
+    # Build and send via the appropriate gateway
+    if method == "email":
+        from .gateways.email import EmailGateway
+
+        smtp_user = os.environ.get('OPENFOIA_SMTP_USER')
+        smtp_password = os.environ.get('OPENFOIA_SMTP_PASSWORD')
+
+        if not smtp_user or not smtp_password:
+            smtp_config = config.get('email', {})
+            smtp_user = smtp_user or smtp_config.get('smtp_user')
+            smtp_password = smtp_password or smtp_config.get('smtp_password')
+
+        if not smtp_user or not smtp_password:
+            rprint("[red]SMTP credentials not configured.[/red]")
+            rprint("[dim]Set OPENFOIA_SMTP_USER and OPENFOIA_SMTP_PASSWORD env vars[/dim]")
+            rprint("[dim]Or run 'openfoia config --init'[/dim]")
+            raise typer.Exit(1)
+
+        gateway = EmailGateway(
+            smtp_user=smtp_user,
+            smtp_password=smtp_password,
+            from_email=email,
+            from_name=name,
+        )
+
+    elif method == "fax":
+        from .gateways.fax import TwilioFaxGateway
+
+        account_sid = os.environ.get('OPENFOIA_TWILIO_ACCOUNT_SID')
+        auth_token = os.environ.get('OPENFOIA_TWILIO_AUTH_TOKEN')
+        from_number = os.environ.get('OPENFOIA_TWILIO_FROM_NUMBER')
+
+        if not account_sid or not auth_token:
+            fax_config = config.get('fax', {})
+            account_sid = account_sid or fax_config.get('account_sid') or fax_config.get('_account_sid')
+            auth_token = auth_token or fax_config.get('auth_token') or fax_config.get('_auth_token')
+            from_number = from_number or fax_config.get('from_number')
+
+        if not account_sid or not auth_token or not from_number:
+            rprint("[red]Twilio credentials not configured for fax delivery.[/red]")
+            rprint("[dim]Set environment variables:[/dim]")
+            rprint("[dim]  OPENFOIA_TWILIO_ACCOUNT_SID[/dim]")
+            rprint("[dim]  OPENFOIA_TWILIO_AUTH_TOKEN[/dim]")
+            rprint("[dim]  OPENFOIA_TWILIO_FROM_NUMBER[/dim]")
+            rprint("[dim]Or run 'openfoia config --init'[/dim]")
+            raise typer.Exit(1)
+
+        gateway = TwilioFaxGateway(
+            account_sid=account_sid,
+            auth_token=auth_token,
+            from_number=from_number,
+            media_base_url=os.environ.get('OPENFOIA_MEDIA_BASE_URL'),
+        )
+
+    elif method == "mail":
+        from .gateways.mail import LobMailGateway
+
+        lob_api_key = os.environ.get('OPENFOIA_LOB_API_KEY')
+
+        if not lob_api_key:
+            mail_config = config.get('mail', {})
+            lob_api_key = lob_api_key or mail_config.get('api_key') or mail_config.get('_api_key')
+
+        if not lob_api_key:
+            rprint("[red]Lob API key not configured for physical mail delivery.[/red]")
+            rprint("[dim]Set environment variable: OPENFOIA_LOB_API_KEY[/dim]")
+            rprint("[dim]Or run 'openfoia config --init'[/dim]")
+            raise typer.Exit(1)
+
+        # Return address from config or environment
+        return_addr = config.get('mail', {}).get('return_address', {})
+        if not return_addr:
+            rprint("[red]Return address not configured for physical mail.[/red]")
+            rprint("[dim]Add to ~/.openfoia/config.json under mail.return_address:[/dim]")
+            rprint('[dim]  {"name": "...", "address_line1": "...", "address_city": "...", "address_state": "...", "address_zip": "..."}[/dim]')
+            raise typer.Exit(1)
+
+        gateway = LobMailGateway(
+            api_key=lob_api_key,
+            return_address=return_addr,
+        )
+
+    rprint(f"\n[cyan]Sending via {method_labels[method]}...[/cyan]")
     result = asyncio.run(gateway.send(payload))
-    
+
     if result.success:
-        rprint(f"[bold green]✓ Request sent![/bold green]")
+        rprint(f"[bold green]Request sent![/bold green]")
         rprint(f"  Reference: {result.reference_id}")
         rprint(f"  Sent at: {result.sent_at}")
+        if result.cost_cents:
+            rprint(f"  Estimated cost: ${result.cost_cents / 100:.2f}")
+
+        # Show method-specific details
+        if result.metadata:
+            if method == "fax" and result.metadata.get("estimated_pages"):
+                rprint(f"  Estimated pages: {result.metadata['estimated_pages']}")
+            if method == "mail":
+                if result.metadata.get("tracking_number"):
+                    rprint(f"  Tracking #: {result.metadata['tracking_number']}")
+                if result.metadata.get("expected_delivery_date"):
+                    rprint(f"  Expected delivery: {result.metadata['expected_delivery_date']}")
+
         rprint(f"\n[dim]Save this reference to track your request.[/dim]")
     else:
-        rprint(f"[bold red]✗ Failed to send[/bold red]")
+        rprint(f"[bold red]Failed to send[/bold red]")
         rprint(f"  Error: {result.error_message}")
         raise typer.Exit(1)
 

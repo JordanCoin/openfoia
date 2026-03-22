@@ -23,8 +23,9 @@ dependencies = [
     "python-docx>=1.1.0",
     "aiofiles>=23.2.0",
     "apscheduler>=3.10.0",
-    "twilio>=8.10.0",  # Fax gateway
-    "lob>=6.0.0",       # Physical mail gateway
+    "twilio>=8.10.0",       # Fax gateway (Twilio Programmable Fax)
+    "lob-python>=6.0.0",   # Physical mail gateway (Lob print-and-mail)
+    "reportlab>=4.0.0",    # PDF generation for fax documents
     "anthropic>=0.18.0",
     "openai>=1.10.0",
 ]
