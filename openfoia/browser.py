@@ -21,7 +21,6 @@ import subprocess
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any
 
 
 class BrowserType(str, Enum):
@@ -78,24 +77,28 @@ def detect_browsers() -> list[Browser]:
     if system == "Darwin":  # macOS
         for browser_type, app_path in MACOS_BROWSERS.items():
             if Path(app_path).exists():
-                browsers.append(Browser(
-                    browser_type=browser_type,
-                    name=_get_browser_name(browser_type),
-                    path=app_path,
-                    supports_private=True,
-                    supports_tor=browser_type in (BrowserType.TOR, BrowserType.BRAVE),
-                ))
+                browsers.append(
+                    Browser(
+                        browser_type=browser_type,
+                        name=_get_browser_name(browser_type),
+                        path=app_path,
+                        supports_private=True,
+                        supports_tor=browser_type in (BrowserType.TOR, BrowserType.BRAVE),
+                    )
+                )
 
     elif system == "Linux":
         for browser_type, cmd in LINUX_BROWSERS.items():
             if shutil.which(cmd):
-                browsers.append(Browser(
-                    browser_type=browser_type,
-                    name=_get_browser_name(browser_type),
-                    path=cmd,
-                    supports_private=True,
-                    supports_tor=browser_type in (BrowserType.TOR, BrowserType.BRAVE),
-                ))
+                browsers.append(
+                    Browser(
+                        browser_type=browser_type,
+                        name=_get_browser_name(browser_type),
+                        path=cmd,
+                        supports_private=True,
+                        supports_tor=browser_type in (BrowserType.TOR, BrowserType.BRAVE),
+                    )
+                )
 
     elif system == "Windows":
         # Windows browser detection
@@ -105,22 +108,26 @@ def detect_browsers() -> list[Browser]:
         ]
         for p in chrome_paths:
             if p.exists():
-                browsers.append(Browser(
-                    browser_type=BrowserType.CHROME,
-                    name="Google Chrome",
-                    path=str(p),
-                ))
+                browsers.append(
+                    Browser(
+                        browser_type=BrowserType.CHROME,
+                        name="Google Chrome",
+                        path=str(p),
+                    )
+                )
                 break
 
         # Add more Windows paths as needed
 
     # Always add "default" option
-    browsers.append(Browser(
-        browser_type=BrowserType.DEFAULT,
-        name="System Default",
-        path=None,
-        supports_private=False,
-    ))
+    browsers.append(
+        Browser(
+            browser_type=BrowserType.DEFAULT,
+            name="System Default",
+            path=None,
+            supports_private=False,
+        )
+    )
 
     return browsers
 
@@ -193,6 +200,7 @@ def launch_browser(
     if not browser:
         # Fallback: use Python's webbrowser module
         import webbrowser
+
         webbrowser.open(url)
         return True
 
@@ -205,6 +213,7 @@ def launch_browser(
             return _launch_windows(url, browser, private, tor_mode)
         else:
             import webbrowser
+
             webbrowser.open(url)
             return True
     except Exception as e:
@@ -286,6 +295,7 @@ def _launch_linux(url: str, browser: Browser, private: bool, tor_mode: bool) -> 
 
     if not cmd:
         import webbrowser
+
         webbrowser.open(url)
         return True
 
@@ -376,6 +386,7 @@ def select_browser_interactive(
     if not browsers:
         print("No browsers detected. Opening with system default...")
         import webbrowser
+
         webbrowser.open(url)
         return
 
@@ -400,5 +411,7 @@ def select_browser_interactive(
         tor_choice = input("Use Tor for additional privacy? [y/N]: ").strip().lower()
         tor_mode = tor_choice == "y"
 
-    print(f"\n🚀 Launching {browser.name}{'(private)' if private else ''}{'(Tor)' if tor_mode else ''}...")
+    print(
+        f"\n🚀 Launching {browser.name}{'(private)' if private else ''}{'(Tor)' if tor_mode else ''}..."
+    )
     launch_browser(url, browser, private=private, tor_mode=tor_mode)

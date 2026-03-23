@@ -90,33 +90,55 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
 
         with get_session() as session:
             total_requests = session.query(func.count(FOIARequest.id)).scalar() or 0
-            pending = session.query(func.count(FOIARequest.id)).filter(
-                FOIARequest.status.in_([
-                    RequestStatus.SENT,
-                    RequestStatus.ACKNOWLEDGED,
-                    RequestStatus.PROCESSING,
-                ])
-            ).scalar() or 0
-            complete = session.query(func.count(FOIARequest.id)).filter(
-                FOIARequest.status == RequestStatus.COMPLETE
-            ).scalar() or 0
-            denied = session.query(func.count(FOIARequest.id)).filter(
-                FOIARequest.status == RequestStatus.DENIED
-            ).scalar() or 0
+            pending = (
+                session.query(func.count(FOIARequest.id))
+                .filter(
+                    FOIARequest.status.in_(
+                        [
+                            RequestStatus.SENT,
+                            RequestStatus.ACKNOWLEDGED,
+                            RequestStatus.PROCESSING,
+                        ]
+                    )
+                )
+                .scalar()
+                or 0
+            )
+            complete = (
+                session.query(func.count(FOIARequest.id))
+                .filter(FOIARequest.status == RequestStatus.COMPLETE)
+                .scalar()
+                or 0
+            )
+            denied = (
+                session.query(func.count(FOIARequest.id))
+                .filter(FOIARequest.status == RequestStatus.DENIED)
+                .scalar()
+                or 0
+            )
 
             total_docs = session.query(func.count(Document.id)).scalar() or 0
-            processed_docs = session.query(func.count(Document.id)).filter(
-                Document.ocr_completed.is_(True)
-            ).scalar() or 0
+            processed_docs = (
+                session.query(func.count(Document.id))
+                .filter(Document.ocr_completed.is_(True))
+                .scalar()
+                or 0
+            )
             total_pages = session.query(func.coalesce(func.sum(Document.page_count), 0)).scalar()
 
             total_entities = session.query(func.count(Entity.id)).scalar() or 0
-            people = session.query(func.count(Entity.id)).filter(
-                Entity.entity_type == EntityType.PERSON
-            ).scalar() or 0
-            orgs = session.query(func.count(Entity.id)).filter(
-                Entity.entity_type == EntityType.ORGANIZATION
-            ).scalar() or 0
+            people = (
+                session.query(func.count(Entity.id))
+                .filter(Entity.entity_type == EntityType.PERSON)
+                .scalar()
+                or 0
+            )
+            orgs = (
+                session.query(func.count(Entity.id))
+                .filter(Entity.entity_type == EntityType.ORGANIZATION)
+                .scalar()
+                or 0
+            )
 
         return {
             "requests": {
@@ -249,10 +271,7 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
 
             if query:
                 search = f"%{query}%"
-                q = q.filter(
-                    (Agency.name.ilike(search)) |
-                    (Agency.abbreviation.ilike(search))
-                )
+                q = q.filter((Agency.name.ilike(search)) | (Agency.abbreviation.ilike(search)))
 
             if level:
                 try:
@@ -325,7 +344,9 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
         import shutil
 
         if not request_id:
-            raise HTTPException(status_code=400, detail="request_id is required for document uploads")
+            raise HTTPException(
+                status_code=400, detail="request_id is required for document uploads"
+            )
 
         docs_dir = app.state.data_dir / "docs"
         docs_dir.mkdir(exist_ok=True)
@@ -1141,7 +1162,7 @@ def run_server(
     # Find available port if not specified
     if port == 0:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(('127.0.0.1', 0))
+            s.bind(("127.0.0.1", 0))
             port = s.getsockname()[1]
 
     # Create app
@@ -1149,7 +1170,7 @@ def run_server(
 
     # Print startup message
     url = f"http://{host}:{port}/?token={token}"
-    print(f"\nOpenFOIA")
+    print("\nOpenFOIA")
     print("-" * 50)
     print(f"Local server: {url}")
     print(f"Data stored:  {data_dir or Path.home() / '.openfoia'}")

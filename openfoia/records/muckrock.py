@@ -10,7 +10,6 @@ Rate limit: 1 req/sec average, 20 burst
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any
 
@@ -117,31 +116,32 @@ class MuckRockAdapter(RecordAdapter):
         entities = []
         for req in data.get("results", []):
             # Each FOIA request becomes an entity with rich metadata
-            entities.append(RecordEntity(
-                entity_type="FOIA_REQUEST",
-                name=req.get("title", "Untitled"),
-                source="muckrock",
-                source_url=f"https://www.muckrock.com/foi/{req.get('slug', '')}-{req.get('id', '')}/",
-                jurisdiction=None,
-                status=req.get("status"),
-                identifiers={
-                    "muckrock_id": str(req.get("id", "")),
-                    "tracking_id": req.get("tracking_id", ""),
-                },
-                extra_data={
-                    "username": req.get("username", ""),
-                    "agency_id": req.get("agency"),
-                    "submitted": req.get("datetime_submitted"),
-                    "completed": req.get("datetime_done"),
-                    "tags": req.get("tags", []),
-                    "price": req.get("price"),
-                    "communications_count": len(req.get("communications", [])),
-                    "files_count": sum(
-                        len(c.get("files", []))
-                        for c in req.get("communications", [])
-                    ),
-                },
-            ))
+            entities.append(
+                RecordEntity(
+                    entity_type="FOIA_REQUEST",
+                    name=req.get("title", "Untitled"),
+                    source="muckrock",
+                    source_url=f"https://www.muckrock.com/foi/{req.get('slug', '')}-{req.get('id', '')}/",
+                    jurisdiction=None,
+                    status=req.get("status"),
+                    identifiers={
+                        "muckrock_id": str(req.get("id", "")),
+                        "tracking_id": req.get("tracking_id", ""),
+                    },
+                    extra_data={
+                        "username": req.get("username", ""),
+                        "agency_id": req.get("agency"),
+                        "submitted": req.get("datetime_submitted"),
+                        "completed": req.get("datetime_done"),
+                        "tags": req.get("tags", []),
+                        "price": req.get("price"),
+                        "communications_count": len(req.get("communications", [])),
+                        "files_count": sum(
+                            len(c.get("files", [])) for c in req.get("communications", [])
+                        ),
+                    },
+                )
+            )
 
         return SearchResult(
             source="muckrock",
@@ -153,7 +153,10 @@ class MuckRockAdapter(RecordAdapter):
         )
 
     async def _search_agencies(
-        self, query: str, page: int, page_size: int,
+        self,
+        query: str,
+        page: int,
+        page_size: int,
     ) -> SearchResult:
         """Search MuckRock's agency database."""
         params: dict[str, Any] = {
@@ -174,24 +177,26 @@ class MuckRockAdapter(RecordAdapter):
 
         entities = []
         for agency in data.get("results", []):
-            entities.append(RecordEntity(
-                entity_type="ORGANIZATION",
-                name=agency.get("name", ""),
-                source="muckrock",
-                source_url=f"https://www.muckrock.com/agency/{agency.get('slug', '')}-{agency.get('id', '')}/",
-                jurisdiction=str(agency.get("jurisdiction")),
-                status=agency.get("status"),
-                identifiers={
-                    "muckrock_agency_id": str(agency.get("id", "")),
-                },
-                extra_data={
-                    "types": agency.get("types", []),
-                    "requires_proxy": agency.get("requires_proxy", False),
-                    "average_response_time": agency.get("average_response_time"),
-                    "success_rate": agency.get("success_rate"),
-                    "absolute_url": agency.get("absolute_url", ""),
-                },
-            ))
+            entities.append(
+                RecordEntity(
+                    entity_type="ORGANIZATION",
+                    name=agency.get("name", ""),
+                    source="muckrock",
+                    source_url=f"https://www.muckrock.com/agency/{agency.get('slug', '')}-{agency.get('id', '')}/",
+                    jurisdiction=str(agency.get("jurisdiction")),
+                    status=agency.get("status"),
+                    identifiers={
+                        "muckrock_agency_id": str(agency.get("id", "")),
+                    },
+                    extra_data={
+                        "types": agency.get("types", []),
+                        "requires_proxy": agency.get("requires_proxy", False),
+                        "average_response_time": agency.get("average_response_time"),
+                        "success_rate": agency.get("success_rate"),
+                        "absolute_url": agency.get("absolute_url", ""),
+                    },
+                )
+            )
 
         return SearchResult(
             source="muckrock",
@@ -230,11 +235,13 @@ class MuckRockAdapter(RecordAdapter):
                 "status": comm.get("status"),
             }
             for f in comm.get("files", []):
-                files.append({
-                    "id": f.get("id"),
-                    "url": f.get("ffile"),
-                    "date": comm.get("datetime"),
-                })
+                files.append(
+                    {
+                        "id": f.get("id"),
+                        "url": f.get("ffile"),
+                        "date": comm.get("datetime"),
+                    }
+                )
             communications.append(comm_data)
 
         return RecordEntity(

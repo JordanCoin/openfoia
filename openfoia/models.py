@@ -11,7 +11,7 @@ Core entities:
 from __future__ import annotations
 
 import enum
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
@@ -96,8 +96,8 @@ class EntityType(str, enum.Enum):
 
 class ConfidenceLevel(str, enum.Enum):
     CONFIRMED = "confirmed"  # Direct evidence
-    PROBABLE = "probable"    # Strong circumstantial
-    POSSIBLE = "possible"    # Weak link
+    PROBABLE = "probable"  # Strong circumstantial
+    POSSIBLE = "possible"  # Weak link
     UNRESOLVED = "unresolved"
 
 
@@ -154,25 +154,25 @@ class Agency(Base):
     abbreviation: Mapped[str | None] = mapped_column(String(20), nullable=True)
     level: Mapped[AgencyLevel] = mapped_column(Enum(AgencyLevel))
     state: Mapped[str | None] = mapped_column(String(2), nullable=True)  # For state/local
-    
+
     # Contact info
     foia_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     foia_fax: Mapped[str | None] = mapped_column(String(20), nullable=True)
     foia_address: Mapped[str | None] = mapped_column(Text, nullable=True)
     foia_portal_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    
+
     # Processing info
     preferred_method: Mapped[DeliveryMethod] = mapped_column(
         Enum(DeliveryMethod), default=DeliveryMethod.EMAIL
     )
     typical_response_days: Mapped[int] = mapped_column(Integer, default=20)
     fee_waiver_criteria: Mapped[str | None] = mapped_column(Text, nullable=True)
-    
+
     # Stats (updated over time)
     avg_response_days: Mapped[float | None] = mapped_column(Float, nullable=True)
     denial_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
     total_requests_tracked: Mapped[int] = mapped_column(Integer, default=0)
-    
+
     # Relationships
     requests: Mapped[list["Request"]] = relationship(back_populates="agency")
 
@@ -184,12 +184,12 @@ class Request(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     request_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
-    
+
     # Core fields
     requester_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
     agency_id: Mapped[str] = mapped_column(ForeignKey("agencies.id"))
     campaign_id: Mapped[str | None] = mapped_column(ForeignKey("campaigns.id"), nullable=True)
-    
+
     # Request content
     subject: Mapped[str] = mapped_column(Text)
     body: Mapped[str] = mapped_column(Text)
@@ -197,30 +197,32 @@ class Request(Base):
     date_range_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     fee_waiver_requested: Mapped[bool] = mapped_column(default=True)
     expedited_requested: Mapped[bool] = mapped_column(default=False)
-    
+
     # Delivery
     delivery_method: Mapped[DeliveryMethod] = mapped_column(Enum(DeliveryMethod))
-    delivery_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)  # Fax confirmation, tracking #
-    
+    delivery_reference: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )  # Fax confirmation, tracking #
+
     # Status tracking
     status: Mapped[RequestStatus] = mapped_column(Enum(RequestStatus), default=RequestStatus.DRAFT)
     agency_tracking_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    
+
     # Dates
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     due_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    
+
     # Fees
     fee_estimate: Mapped[float | None] = mapped_column(Float, nullable=True)
     fee_paid: Mapped[float | None] = mapped_column(Float, nullable=True)
-    
+
     # Metadata
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     extra_data: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSON, nullable=True)
-    
+
     # Relationships
     requester: Mapped["User"] = relationship(back_populates="requests")
     agency: Mapped["Agency"] = relationship(back_populates="requests")
@@ -248,7 +250,7 @@ class Document(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     request_id: Mapped[str] = mapped_column(ForeignKey("requests.id"))
-    
+
     # Document info
     doc_type: Mapped[DocumentType] = mapped_column(Enum(DocumentType))
     filename: Mapped[str] = mapped_column(String(255))
@@ -256,20 +258,22 @@ class Document(Base):
     file_size: Mapped[int] = mapped_column(Integer)
     mime_type: Mapped[str] = mapped_column(String(100))
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    
+
     # Processing status
     ocr_completed: Mapped[bool] = mapped_column(default=False)
     extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     entities_extracted: Mapped[bool] = mapped_column(default=False)
-    
+
     # Redaction tracking
     redaction_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    exemptions_cited: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)  # e.g., ["b(6)", "b(7)(A)"]
-    
+    exemptions_cited: Mapped[list[str] | None] = mapped_column(
+        JSON, nullable=True
+    )  # e.g., ["b(6)", "b(7)(A)"]
+
     # Dates
     received_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    
+
     # Relationships
     request: Mapped["Request"] = relationship(back_populates="documents")
     entities: Mapped[list["Entity"]] = relationship(back_populates="source_document")
@@ -282,21 +286,23 @@ class Entity(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     document_id: Mapped[str] = mapped_column(ForeignKey("documents.id"))
-    
+
     # Entity info
     entity_type: Mapped[EntityType] = mapped_column(Enum(EntityType))
     raw_text: Mapped[str] = mapped_column(Text)  # As it appeared in document
     normalized_text: Mapped[str] = mapped_column(Text, index=True)  # Cleaned/normalized
-    canonical_id: Mapped[str | None] = mapped_column(String(36), nullable=True)  # Link to canonical entity
-    
+    canonical_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True
+    )  # Link to canonical entity
+
     # Extraction info
     confidence: Mapped[float] = mapped_column(Float, default=1.0)
     page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     context: Mapped[str | None] = mapped_column(Text, nullable=True)  # Surrounding text
-    
+
     # Metadata
     extra_data: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSON, nullable=True)
-    
+
     # Relationships
     source_document: Mapped["Document"] = relationship(back_populates="entities")
     linked_entities: Mapped[list["Entity"]] = relationship(
@@ -312,24 +318,24 @@ class Campaign(Base):
     __tablename__ = "campaigns"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    
+
     # Campaign info
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(Text)
     organizer_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
-    
+
     # Template
     request_template: Mapped[str] = mapped_column(Text)
     target_agency_ids: Mapped[list[str]] = mapped_column(JSON)  # List of agency IDs
-    
+
     # Goals
     target_request_count: Mapped[int] = mapped_column(Integer, default=100)
-    
+
     # Status
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     ends_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    
+
     # Relationships
     participants: Mapped[list["User"]] = relationship(
         secondary=campaign_participants, back_populates="campaigns"
@@ -353,12 +359,14 @@ class TimelineEvent(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     request_id: Mapped[str] = mapped_column(ForeignKey("requests.id"))
-    
-    event_type: Mapped[str] = mapped_column(String(50))  # sent, acknowledged, response, appeal, etc.
+
+    event_type: Mapped[str] = mapped_column(
+        String(50)
+    )  # sent, acknowledged, response, appeal, etc.
     description: Mapped[str] = mapped_column(Text)
     occurred_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     extra_data: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSON, nullable=True)
-    
+
     # Relationships
     request: Mapped["Request"] = relationship(back_populates="timeline")
 

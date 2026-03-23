@@ -63,6 +63,7 @@ def _hash_metadata(metadata_dict: dict[str, Any]) -> str:
 # Image metadata (EXIF) — uses Pillow
 # ---------------------------------------------------------------------------
 
+
 def _strip_image_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
     from PIL import Image
 
@@ -80,6 +81,7 @@ def _strip_image_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
 
     if hasattr(img, "_getexif") and img._getexif():
         from PIL.ExifTags import TAGS
+
         raw_exif = img._getexif()
         for tag_id, value in raw_exif.items():
             tag_name = TAGS.get(tag_id, str(tag_id))
@@ -119,8 +121,14 @@ def _strip_image_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 _PDF_SENSITIVE_KEYS = {
-    "/Author", "/Creator", "/Producer", "/CreationDate", "/ModDate",
-    "/Title", "/Subject", "/Keywords",
+    "/Author",
+    "/Creator",
+    "/Producer",
+    "/CreationDate",
+    "/ModDate",
+    "/Title",
+    "/Subject",
+    "/Keywords",
 }
 
 
@@ -177,8 +185,14 @@ def _strip_pdf_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 _DOCX_SENSITIVE_ATTRS = [
-    "author", "last_modified_by", "company", "manager",
-    "revision", "comments", "created", "modified",
+    "author",
+    "last_modified_by",
+    "company",
+    "manager",
+    "revision",
+    "comments",
+    "created",
+    "modified",
 ]
 
 

@@ -7,8 +7,13 @@ Tests verify that each backend finds them.
 
 import asyncio
 import pytest
-from openfoia.pipeline.extract import EntityExtractor, ExtractionResult, _gliner_available, _spacy_available, _llm_available
-from openfoia.models import EntityType
+from openfoia.pipeline.extract import (
+    EntityExtractor,
+    ExtractionResult,
+    _gliner_available,
+    _spacy_available,
+    _llm_available,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -51,14 +56,19 @@ Director, Office of Information Policy
 DOC_FOIA_LETTER_EXPECTED = {
     "persons": {"Sarah Chen", "James R. Whitfield", "Michael Torres"},
     "organizations": {
-        "Department of Justice", "Department of Defense", "Meridian Defense Systems",
-        "Consolidated Federal Services LLC", "First National Bank of Virginia",
+        "Department of Justice",
+        "Department of Defense",
+        "Meridian Defense Systems",
+        "Consolidated Federal Services LLC",
+        "First National Bank of Virginia",
         "Office of Information Policy",
     },
     "locations": {"Washington, DC", "Pentagon"},
     "money": {"$14,750,000"},
     "dates": {
-        "March 15, 2026", "January 8, 2026", "September 12, 2024",
+        "March 15, 2026",
+        "January 8, 2026",
+        "September 12, 2024",
     },
     "emails": {"michael.torres@usdoj.gov"},
     "phones": {"(202) 514-3642"},
@@ -107,13 +117,18 @@ RECOMMENDATION: Refer for criminal prosecution under 18 U.S.C. § 201 (bribery).
 DOC_FINANCIAL_MEMO_EXPECTED = {
     "persons": {"Patricia Reyes", "Thomas Blackwell", "Linda Okafor", "David Park"},
     "organizations": {
-        "Department of the Interior", "Office of Inspector General",
-        "Bureau of Land Management", "Coastal Resources Inc.",
-        "Wells Fargo", "Chase Bank",
+        "Department of the Interior",
+        "Office of Inspector General",
+        "Bureau of Land Management",
+        "Coastal Resources Inc.",
+        "Wells Fargo",
+        "Chase Bank",
     },
     "locations": {
-        "Albuquerque, New Mexico", "Wilmington, Delaware",
-        "Phoenix, Arizona", "Scottsdale",
+        "Albuquerque, New Mexico",
+        "Wilmington, Delaware",
+        "Phoenix, Arizona",
+        "Scottsdale",
     },
     "money": {"$3.2 million", "$50,000", "$175,000"},
     "dates": {"November 3, 2025", "March 2023", "August 2025"},
@@ -168,6 +183,7 @@ DOC_SCAN_MESSY_EXPECTED = {
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _entities_by_type(result: ExtractionResult) -> dict[str, set[str]]:
     """Group extracted entities by type for easy comparison."""
     grouped: dict[str, set[str]] = {}
@@ -216,10 +232,7 @@ def _check_entities(
             total_expected += 1
             exp_lower = exp.lower().strip()
             # Check exact match or substring match
-            matched = any(
-                exp_lower in found or found in exp_lower
-                for found in found_normalized
-            )
+            matched = any(exp_lower in found or found in exp_lower for found in found_normalized)
             if matched:
                 total_found += 1
 
@@ -227,7 +240,9 @@ def _check_entities(
         return
 
     recall = total_found / total_expected
-    print(f"\n  [{backend}] {doc_name}: {total_found}/{total_expected} entities found ({recall:.0%} recall)")
+    print(
+        f"\n  [{backend}] {doc_name}: {total_found}/{total_expected} entities found ({recall:.0%} recall)"
+    )
 
     # Print what was missed
     for expected_key, expected_set in expected.items():
@@ -272,14 +287,15 @@ def _check_relationships(
         src_l = exp_src.lower()
         tgt_l = exp_tgt.lower()
         matched = any(
-            (src_l in fs and tgt_l in ft) or (tgt_l in fs and src_l in ft)
-            for fs, ft in found_pairs
+            (src_l in fs and tgt_l in ft) or (tgt_l in fs and src_l in ft) for fs, ft in found_pairs
         )
         if matched:
             total_found += 1
 
     recall = total_found / len(expected_rels)
-    print(f"  [{backend}] {doc_name} relationships: {total_found}/{len(expected_rels)} ({recall:.0%})")
+    print(
+        f"  [{backend}] {doc_name} relationships: {total_found}/{len(expected_rels)} ({recall:.0%})"
+    )
 
     if recall < min_recall:
         for exp_src, exp_tgt in expected_rels:
@@ -297,6 +313,7 @@ def _check_relationships(
 # Tests: Regex backend (always available)
 # ---------------------------------------------------------------------------
 
+
 class TestRegexExtraction:
     """Tests for the regex fallback — the baseline that always works."""
 
@@ -312,7 +329,8 @@ class TestRegexExtraction:
         # Regex should find: dates, money, emails, phones, doc IDs
         # It will NOT find people or organizations — that's expected
         _check_entities(
-            result, {
+            result,
+            {
                 "money": DOC_FOIA_LETTER_EXPECTED["money"],
                 "emails": DOC_FOIA_LETTER_EXPECTED["emails"],
                 "phones": DOC_FOIA_LETTER_EXPECTED["phones"],
@@ -329,7 +347,8 @@ class TestRegexExtraction:
         result = asyncio.run(ext.extract(DOC_FINANCIAL_MEMO))
 
         _check_entities(
-            result, {
+            result,
+            {
                 "money": DOC_FINANCIAL_MEMO_EXPECTED["money"],
                 "document_ids": DOC_FINANCIAL_MEMO_EXPECTED["document_ids"],
             },
@@ -343,7 +362,8 @@ class TestRegexExtraction:
         result = asyncio.run(ext.extract(DOC_SCAN_MESSY))
 
         _check_entities(
-            result, {
+            result,
+            {
                 "money": DOC_SCAN_MESSY_EXPECTED["money"],
                 "emails": DOC_SCAN_MESSY_EXPECTED["emails"],
             },
@@ -364,6 +384,7 @@ class TestRegexExtraction:
 # Tests: GLiNER backend (requires pip install gliner)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.skipif(not _gliner_available(), reason="GLiNER not installed")
 class TestGLiNERExtraction:
     """Tests for GLiNER zero-shot NER — the sweet spot backend."""
@@ -379,7 +400,8 @@ class TestGLiNERExtraction:
 
         # GLiNER should find people, orgs, AND structured entities
         _check_entities(
-            result, {
+            result,
+            {
                 "persons": DOC_FOIA_LETTER_EXPECTED["persons"],
                 "organizations": DOC_FOIA_LETTER_EXPECTED["organizations"],
                 "money": DOC_FOIA_LETTER_EXPECTED["money"],
@@ -402,7 +424,8 @@ class TestGLiNERExtraction:
         result = asyncio.run(ext.extract(DOC_FINANCIAL_MEMO))
 
         _check_entities(
-            result, {
+            result,
+            {
                 "persons": DOC_FINANCIAL_MEMO_EXPECTED["persons"],
                 "organizations": DOC_FINANCIAL_MEMO_EXPECTED["organizations"],
                 "money": DOC_FINANCIAL_MEMO_EXPECTED["money"],
@@ -425,7 +448,8 @@ class TestGLiNERExtraction:
         result = asyncio.run(ext.extract(DOC_SCAN_MESSY))
 
         _check_entities(
-            result, {
+            result,
+            {
                 "persons": {"Mark Sullivan", "Diana Walsh"},
                 "organizations": DOC_SCAN_MESSY_EXPECTED["organizations"],
             },
@@ -438,6 +462,7 @@ class TestGLiNERExtraction:
 # ---------------------------------------------------------------------------
 # Tests: spaCy backend (requires pip install spacy + model)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.skipif(not _spacy_available(), reason="spaCy not installed with English model")
 class TestSpaCyExtraction:
@@ -453,7 +478,8 @@ class TestSpaCyExtraction:
         result = asyncio.run(ext.extract(DOC_FOIA_LETTER))
 
         _check_entities(
-            result, {
+            result,
+            {
                 "persons": DOC_FOIA_LETTER_EXPECTED["persons"],
                 "organizations": DOC_FOIA_LETTER_EXPECTED["organizations"],
             },
@@ -463,14 +489,17 @@ class TestSpaCyExtraction:
         )
         # spaCy should also produce syntactic relationships
         syntactic_rels = [r for r in result.relationships if r.get("confidence") == 0.7]
-        print(f"\n  [spacy] FOIA Letter: {len(syntactic_rels)} syntactic relationships, {len(result.relationships)} total")
+        print(
+            f"\n  [spacy] FOIA Letter: {len(syntactic_rels)} syntactic relationships, {len(result.relationships)} total"
+        )
 
     def test_financial_memo_people_and_orgs(self):
         ext = self._make_extractor()
         result = asyncio.run(ext.extract(DOC_FINANCIAL_MEMO))
 
         _check_entities(
-            result, {
+            result,
+            {
                 "persons": DOC_FINANCIAL_MEMO_EXPECTED["persons"],
                 "organizations": DOC_FINANCIAL_MEMO_EXPECTED["organizations"],
             },
@@ -486,8 +515,9 @@ class TestSpaCyExtraction:
 
         grouped = _entities_by_type(result)
         # These come from regex supplementation
-        assert "email" in grouped or "phone" in grouped, \
+        assert "email" in grouped or "phone" in grouped, (
             "spaCy path should supplement with regex for emails/phones"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -497,6 +527,7 @@ class TestSpaCyExtraction:
 _LLM_AVAILABLE = False
 try:
     from openfoia.config import load_config
+
     _cfg = load_config()
     _LLM_AVAILABLE = _llm_available(_cfg.ai.provider, _cfg.ai.api_key, _cfg.ai.base_url)
 except Exception:
@@ -518,7 +549,8 @@ class TestLLMExtraction:
 
         # LLM should be the best — highest recall bar
         _check_entities(
-            result, {
+            result,
+            {
                 "persons": DOC_FOIA_LETTER_EXPECTED["persons"],
                 "organizations": DOC_FOIA_LETTER_EXPECTED["organizations"],
                 "money": DOC_FOIA_LETTER_EXPECTED["money"],
@@ -542,7 +574,8 @@ class TestLLMExtraction:
         result = asyncio.run(ext.extract(DOC_FINANCIAL_MEMO))
 
         _check_entities(
-            result, {
+            result,
+            {
                 "persons": DOC_FINANCIAL_MEMO_EXPECTED["persons"],
                 "organizations": DOC_FINANCIAL_MEMO_EXPECTED["organizations"],
                 "money": DOC_FINANCIAL_MEMO_EXPECTED["money"],
@@ -563,6 +596,7 @@ class TestLLMExtraction:
 # ---------------------------------------------------------------------------
 # Meta test: backend selection
 # ---------------------------------------------------------------------------
+
 
 class TestBackendSelection:
     """Verify the backend selection logic."""

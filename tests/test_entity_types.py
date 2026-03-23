@@ -5,8 +5,6 @@ Tests the full lifecycle: add, list, import (CSV), export, test, remove.
 
 import csv
 import json
-import shutil
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -36,14 +34,20 @@ def _get_config(home: Path) -> dict:
 
 
 class TestEntitiesAdd:
-
     def test_add_basic(self, isolated_config):
-        result = runner.invoke(app, [
-            "entities", "add",
-            "-n", "CONTRACT_NUMBER",
-            "-p", r"\b[A-Z]{2,4}-\d{4,}-\d{4,}\b",
-            "-d", "Federal contract numbers",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "entities",
+                "add",
+                "-n",
+                "CONTRACT_NUMBER",
+                "-p",
+                r"\b[A-Z]{2,4}-\d{4,}-\d{4,}\b",
+                "-d",
+                "Federal contract numbers",
+            ],
+        )
         assert result.exit_code == 0
         assert "Added entity type 'CONTRACT_NUMBER'" in result.output
 
@@ -54,22 +58,34 @@ class TestEntitiesAdd:
         assert types[0]["description"] == "Federal contract numbers"
 
     def test_add_normalizes_name(self, isolated_config):
-        result = runner.invoke(app, [
-            "entities", "add",
-            "-n", "case number",
-            "-p", r"\b\d{2}-cv-\d{4,}\b",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "entities",
+                "add",
+                "-n",
+                "case number",
+                "-p",
+                r"\b\d{2}-cv-\d{4,}\b",
+            ],
+        )
         assert result.exit_code == 0
 
         config = _get_config(isolated_config)
         assert config["entities"]["custom_types"][0]["name"] == "CASE_NUMBER"
 
     def test_add_rejects_invalid_regex(self, isolated_config):
-        result = runner.invoke(app, [
-            "entities", "add",
-            "-n", "BAD",
-            "-p", "[invalid",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "entities",
+                "add",
+                "-n",
+                "BAD",
+                "-p",
+                "[invalid",
+            ],
+        )
         assert result.exit_code == 1
         assert "Invalid regex" in result.output
 
@@ -81,7 +97,6 @@ class TestEntitiesAdd:
 
 
 class TestEntitiesList:
-
     def test_list_empty(self, isolated_config):
         result = runner.invoke(app, ["entities", "list"])
         assert result.exit_code == 0
@@ -98,7 +113,6 @@ class TestEntitiesList:
 
 
 class TestEntitiesRemove:
-
     def test_remove(self, isolated_config):
         runner.invoke(app, ["entities", "add", "-n", "TEMP", "-p", r"\btemp\b"])
         result = runner.invoke(app, ["entities", "remove", "TEMP"])
@@ -115,7 +129,6 @@ class TestEntitiesRemove:
 
 
 class TestEntitiesImport:
-
     def test_import_standard_csv(self, isolated_config, tmp_path):
         csv_file = tmp_path / "types.csv"
         with open(csv_file, "w", newline="") as f:
@@ -179,7 +192,6 @@ class TestEntitiesImport:
 
 
 class TestEntitiesExport:
-
     def test_export(self, isolated_config, tmp_path):
         runner.invoke(app, ["entities", "add", "-n", "A", "-p", r"\ba\b", "-d", "first"])
         runner.invoke(app, ["entities", "add", "-n", "B", "-p", r"\bb\b", "-d", "second"])
@@ -203,15 +215,23 @@ class TestEntitiesExport:
 
 
 class TestEntitiesTest:
-
     def test_pattern_matching(self, isolated_config):
-        runner.invoke(app, ["entities", "add", "-n", "SSN", "-p", r"\b\d{3}-\d{2}-\d{4}\b", "-d", "SSNs"])
-        runner.invoke(app, ["entities", "add", "-n", "ZIP", "-p", r"\b\d{5}(?:-\d{4})?\b", "-d", "ZIP codes"])
+        runner.invoke(
+            app, ["entities", "add", "-n", "SSN", "-p", r"\b\d{3}-\d{2}-\d{4}\b", "-d", "SSNs"]
+        )
+        runner.invoke(
+            app, ["entities", "add", "-n", "ZIP", "-p", r"\b\d{5}(?:-\d{4})?\b", "-d", "ZIP codes"]
+        )
 
-        result = runner.invoke(app, [
-            "entities", "test",
-            "-t", "John's SSN is 123-45-6789 and he lives in 20530-1234",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "entities",
+                "test",
+                "-t",
+                "John's SSN is 123-45-6789 and he lives in 20530-1234",
+            ],
+        )
         assert result.exit_code == 0
         assert "123-45-6789" in result.output
         assert "20530-1234" in result.output
@@ -227,8 +247,32 @@ class TestRoundTrip:
 
     def test_full_lifecycle(self, isolated_config, tmp_path):
         # Add some types
-        runner.invoke(app, ["entities", "add", "-n", "FOIA_TRACKING", "-p", r"\bFOIA-\d{4}-\d+\b", "-d", "FOIA tracking"])
-        runner.invoke(app, ["entities", "add", "-n", "CASE_REF", "-p", r"\b\d{2}-cv-\d{4,}\b", "-d", "Court cases"])
+        runner.invoke(
+            app,
+            [
+                "entities",
+                "add",
+                "-n",
+                "FOIA_TRACKING",
+                "-p",
+                r"\bFOIA-\d{4}-\d+\b",
+                "-d",
+                "FOIA tracking",
+            ],
+        )
+        runner.invoke(
+            app,
+            [
+                "entities",
+                "add",
+                "-n",
+                "CASE_REF",
+                "-p",
+                r"\b\d{2}-cv-\d{4,}\b",
+                "-d",
+                "Court cases",
+            ],
+        )
 
         # Export
         csv_file = tmp_path / "exported.csv"
@@ -247,9 +291,14 @@ class TestRoundTrip:
         assert "Imported 2" in result.output
 
         # Test against sample text
-        result = runner.invoke(app, [
-            "entities", "test",
-            "-t", "Request FOIA-2026-001234 relates to case 24-cv-0892",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "entities",
+                "test",
+                "-t",
+                "Request FOIA-2026-001234 relates to case 24-cv-0892",
+            ],
+        )
         assert "FOIA-2026-001234" in result.output
         assert "24-cv-0892" in result.output

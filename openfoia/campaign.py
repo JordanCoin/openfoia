@@ -31,19 +31,19 @@ class CampaignTemplate:
 
     name: str
     description: str
-    
+
     # Request template (Jinja2)
     subject_template: str
     body_template: str
-    
+
     # Variations to distribute load and avoid pattern detection
     subject_variations: list[str] = field(default_factory=list)
     intro_variations: list[str] = field(default_factory=list)
     closing_variations: list[str] = field(default_factory=list)
-    
+
     # Parameters that requesters can customize
     customizable_fields: list[str] = field(default_factory=list)
-    
+
     # Targeting
     target_agency_ids: list[str] = field(default_factory=list)
     recommended_method: DeliveryMethod = DeliveryMethod.EMAIL
@@ -58,30 +58,30 @@ class CampaignTemplate:
         """Render a FOIA request for a specific participant."""
         # Build context
         context = {
-            'participant': participant,
-            'agency': agency,
-            'date': datetime.utcnow().strftime('%B %d, %Y'),
-            'custom': custom_params or {},
+            "participant": participant,
+            "agency": agency,
+            "date": datetime.utcnow().strftime("%B %d, %Y"),
+            "custom": custom_params or {},
         }
-        
+
         # Apply variations
         if randomize and self.subject_variations:
-            context['subject_variation'] = random.choice(self.subject_variations)
+            context["subject_variation"] = random.choice(self.subject_variations)
         if randomize and self.intro_variations:
-            context['intro_variation'] = random.choice(self.intro_variations)
+            context["intro_variation"] = random.choice(self.intro_variations)
         if randomize and self.closing_variations:
-            context['closing_variation'] = random.choice(self.closing_variations)
-        
+            context["closing_variation"] = random.choice(self.closing_variations)
+
         # Render templates
         subject = Template(self.subject_template).render(**context)
         body = Template(self.body_template).render(**context)
-        
+
         return subject, body
 
 
 class CampaignCoordinator:
     """Coordinate crowdsourced FOIA campaigns.
-    
+
     Features:
     - Distributed request generation
     - Staggered sending to avoid detection
@@ -114,10 +114,10 @@ class CampaignCoordinator:
             is_active=True,
             ends_at=ends_at,
         )
-        
+
         self.db.add(campaign)
         await self.db.commit()
-        
+
         return campaign
 
     async def join_campaign(
@@ -146,10 +146,10 @@ class CampaignCoordinator:
             custom_params=custom_params,
             randomize=True,
         )
-        
+
         # Generate request number
         request_number = f"REQ-{datetime.utcnow().strftime('%Y%m%d')}-{uuid4().hex[:6].upper()}"
-        
+
         # Determine delivery method
         if agency.foia_email and template.recommended_method == DeliveryMethod.EMAIL:
             method = DeliveryMethod.EMAIL
@@ -159,7 +159,7 @@ class CampaignCoordinator:
             method = DeliveryMethod.MAIL
         else:
             method = DeliveryMethod.EMAIL
-        
+
         request = Request(
             id=str(uuid4()),
             request_number=request_number,
@@ -172,10 +172,10 @@ class CampaignCoordinator:
             status=RequestStatus.DRAFT,
             fee_waiver_requested=True,
         )
-        
+
         self.db.add(request)
         await self.db.commit()
-        
+
         return request
 
     async def schedule_staggered_send(
@@ -186,7 +186,7 @@ class CampaignCoordinator:
         spread_hours: int = 72,
     ) -> list[tuple[Request, datetime]]:
         """Schedule requests to be sent over time.
-        
+
         Staggering avoids:
         1. Looking like a coordinated attack
         2. Overwhelming agency systems
@@ -194,98 +194,101 @@ class CampaignCoordinator:
         """
         start = start_time or datetime.utcnow()
         schedule = []
-        
+
         # Distribute evenly with some randomness
         interval = timedelta(hours=spread_hours) / len(requests)
-        
+
         for i, request in enumerate(requests):
             # Add some jitter (-30 to +30 minutes)
             jitter = timedelta(minutes=random.randint(-30, 30))
             send_time = start + (interval * i) + jitter
-            
+
             # Avoid sending at weird hours (2-6 AM)
             while send_time.hour >= 2 and send_time.hour < 6:
                 send_time += timedelta(hours=4)
-            
+
             request.metadata = request.metadata or {}
-            request.metadata['scheduled_send_time'] = send_time.isoformat()
+            request.metadata["scheduled_send_time"] = send_time.isoformat()
             schedule.append((request, send_time))
-        
+
         await self.db.commit()
         return schedule
 
     async def get_campaign_stats(self, campaign: Campaign) -> dict[str, Any]:
         """Get statistics for a campaign."""
         requests = campaign.requests
-        
+
         status_counts = {}
         for request in requests:
             status = request.status.value
             status_counts[status] = status_counts.get(status, 0) + 1
-        
+
         # Response statistics
-        responded = [r for r in requests if r.status in (
-            RequestStatus.PARTIAL_RESPONSE,
-            RequestStatus.COMPLETE,
-            RequestStatus.DENIED,
-        )]
-        
+        responded = [
+            r
+            for r in requests
+            if r.status
+            in (
+                RequestStatus.PARTIAL_RESPONSE,
+                RequestStatus.COMPLETE,
+                RequestStatus.DENIED,
+            )
+        ]
+
         avg_response_days = None
         if responded:
             response_times = [
-                (r.completed_at - r.sent_at).days
-                for r in responded
-                if r.completed_at and r.sent_at
+                (r.completed_at - r.sent_at).days for r in responded if r.completed_at and r.sent_at
             ]
             if response_times:
                 avg_response_days = sum(response_times) / len(response_times)
-        
+
         # Fee statistics
         total_fees_estimated = sum(r.fee_estimate or 0 for r in requests)
         total_fees_paid = sum(r.fee_paid or 0 for r in requests)
-        
+
         return {
-            'campaign_id': campaign.id,
-            'campaign_name': campaign.name,
-            'is_active': campaign.is_active,
-            'participant_count': len(campaign.participants),
-            'request_count': len(requests),
-            'target_count': campaign.target_request_count,
-            'completion_percentage': len(requests) / campaign.target_request_count * 100,
-            'status_breakdown': status_counts,
-            'response_rate': len(responded) / len(requests) * 100 if requests else 0,
-            'avg_response_days': avg_response_days,
-            'total_fees_estimated': total_fees_estimated,
-            'total_fees_paid': total_fees_paid,
-            'denial_count': status_counts.get('denied', 0),
+            "campaign_id": campaign.id,
+            "campaign_name": campaign.name,
+            "is_active": campaign.is_active,
+            "participant_count": len(campaign.participants),
+            "request_count": len(requests),
+            "target_count": campaign.target_request_count,
+            "completion_percentage": len(requests) / campaign.target_request_count * 100,
+            "status_breakdown": status_counts,
+            "response_rate": len(responded) / len(requests) * 100 if requests else 0,
+            "avg_response_days": avg_response_days,
+            "total_fees_estimated": total_fees_estimated,
+            "total_fees_paid": total_fees_paid,
+            "denial_count": status_counts.get("denied", 0),
         }
 
     async def generate_progress_report(self, campaign: Campaign) -> str:
         """Generate a human-readable progress report."""
         stats = await self.get_campaign_stats(campaign)
-        
+
         return f"""
-# Campaign Progress Report: {stats['campaign_name']}
+# Campaign Progress Report: {stats["campaign_name"]}
 
 ## Overview
-- **Participants:** {stats['participant_count']}
-- **Requests Filed:** {stats['request_count']} / {stats['target_count']} ({stats['completion_percentage']:.1f}%)
-- **Response Rate:** {stats['response_rate']:.1f}%
-- **Average Response Time:** {stats['avg_response_days'] or 'N/A'} days
+- **Participants:** {stats["participant_count"]}
+- **Requests Filed:** {stats["request_count"]} / {stats["target_count"]} ({stats["completion_percentage"]:.1f}%)
+- **Response Rate:** {stats["response_rate"]:.1f}%
+- **Average Response Time:** {stats["avg_response_days"] or "N/A"} days
 
 ## Status Breakdown
-{chr(10).join(f'- {status}: {count}' for status, count in stats['status_breakdown'].items())}
+{chr(10).join(f"- {status}: {count}" for status, count in stats["status_breakdown"].items())}
 
 ## Financial
-- **Total Fees Estimated:** ${stats['total_fees_estimated']:,.2f}
-- **Total Fees Paid:** ${stats['total_fees_paid']:,.2f}
+- **Total Fees Estimated:** ${stats["total_fees_estimated"]:,.2f}
+- **Total Fees Paid:** ${stats["total_fees_paid"]:,.2f}
 
 ## Analysis
-- **Denials:** {stats['denial_count']}
-- **Active:** {'Yes' if stats['is_active'] else 'No'}
+- **Denials:** {stats["denial_count"]}
+- **Active:** {"Yes" if stats["is_active"] else "No"}
 
 ---
-*Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}*
+*Generated: {datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")}*
         """.strip()
 
 
@@ -329,7 +332,7 @@ Thank you for your prompt attention to this request.
         "Please contact me regarding fees before processing if they exceed $25.",
         "I request a fee waiver as this information will contribute to public understanding.",
     ],
-    customizable_fields=['contractor_name', 'start_date', 'end_date'],
+    customizable_fields=["contractor_name", "start_date", "end_date"],
 )
 
 
@@ -356,5 +359,5 @@ Search terms should include: {{ custom.search_terms | default(custom.topic) }}
 
 Please provide records in electronic format where possible.
     """.strip(),
-    customizable_fields=['topic', 'officials', 'start_date', 'search_terms'],
+    customizable_fields=["topic", "officials", "start_date", "search_terms"],
 )

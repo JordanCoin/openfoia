@@ -23,6 +23,7 @@ from typing import Any
 def _default_config_path() -> Path:
     """Get config path respecting portable mode and OPENFOIA_DATA_DIR."""
     from .db import get_data_dir
+
     return get_data_dir() / "config.json"
 
 
@@ -33,12 +34,12 @@ DEFAULT_CONFIG_PATH = Path.home() / ".openfoia" / "config.json"
 @dataclass
 class AIConfig:
     """AI/LLM configuration."""
-    
+
     provider: str = "ollama"  # ollama, anthropic, openai
     model: str = "llama3.2"
     base_url: str | None = None
     api_key: str | None = None
-    
+
     # For entity extraction
     extraction_temperature: float = 0.1
     extraction_max_tokens: int = 4096
@@ -79,7 +80,7 @@ class OCRConfig:
 @dataclass
 class GatewayConfig:
     """Delivery gateway configuration."""
-    
+
     # Email
     email_enabled: bool = False
     smtp_host: str = "smtp.gmail.com"
@@ -88,13 +89,13 @@ class GatewayConfig:
     smtp_password: str | None = None
     from_name: str = "FOIA Requester"
     from_email: str | None = None
-    
+
     # Fax (Twilio)
     fax_enabled: bool = False
     twilio_account_sid: str | None = None
     twilio_auth_token: str | None = None
     twilio_from_number: str | None = None
-    
+
     # Mail (Lob)
     mail_enabled: bool = False
     lob_api_key: str | None = None
@@ -104,23 +105,25 @@ class GatewayConfig:
 @dataclass
 class EntityConfig:
     """Entity extraction configuration."""
-    
+
     # Built-in entity types (always enabled)
-    builtin_types: list[str] = field(default_factory=lambda: [
-        "PERSON",
-        "ORGANIZATION",
-        "LOCATION",
-        "DATE",
-        "MONEY",
-        "DOCUMENT_ID",
-        "PHONE",
-        "EMAIL",
-        "ADDRESS",
-    ])
-    
+    builtin_types: list[str] = field(
+        default_factory=lambda: [
+            "PERSON",
+            "ORGANIZATION",
+            "LOCATION",
+            "DATE",
+            "MONEY",
+            "DOCUMENT_ID",
+            "PHONE",
+            "EMAIL",
+            "ADDRESS",
+        ]
+    )
+
     # Custom entity types defined by user
     custom_types: list[dict[str, str]] = field(default_factory=list)
-    
+
     # Additional prompt instructions for extraction
     extraction_prompt_suffix: str = ""
 
@@ -128,7 +131,7 @@ class EntityConfig:
 @dataclass
 class PrivacyConfig:
     """Privacy settings."""
-    
+
     browser_default: str | None = None  # brave, firefox, safari, tor, etc.
     always_private_mode: bool = True
     auto_redact_pii_in_exports: bool = False
@@ -155,7 +158,7 @@ class ServerConfig:
 @dataclass
 class OpenFOIAConfig:
     """Main configuration container."""
-    
+
     ai: AIConfig = field(default_factory=AIConfig)
     pdf_extract: PDFExtractConfig = field(default_factory=PDFExtractConfig)
     ocr: OCRConfig = field(default_factory=OCRConfig)
@@ -164,9 +167,13 @@ class OpenFOIAConfig:
     privacy: PrivacyConfig = field(default_factory=PrivacyConfig)
     encryption: EncryptionConfig = field(default_factory=EncryptionConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
-    
+
     # Data directory — override with OPENFOIA_DATA_DIR env var for portable / air-gapped installs
-    data_dir: Path = field(default_factory=lambda: Path(os.environ.get("OPENFOIA_DATA_DIR", str(Path.home() / ".openfoia"))))
+    data_dir: Path = field(
+        default_factory=lambda: Path(
+            os.environ.get("OPENFOIA_DATA_DIR", str(Path.home() / ".openfoia"))
+        )
+    )
 
 
 def load_config(
@@ -174,14 +181,14 @@ def load_config(
     env_prefix: str = "OPENFOIA_",
 ) -> OpenFOIAConfig:
     """Load configuration from file and environment.
-    
+
     Priority (highest to lowest):
     1. Environment variables
     2. Config file
     3. Defaults
     """
     config = OpenFOIAConfig()
-    
+
     # Load from file
     path = Path(config_path) if config_path else _default_config_path()
     if path.exists():
@@ -191,35 +198,45 @@ def load_config(
             config = _merge_config(config, data)
         except (json.JSONDecodeError, OSError) as e:
             print(f"Warning: Failed to load config from {path}: {e}")
-    
+
     # Override with environment variables
     config = _apply_env_overrides(config, env_prefix)
-    
+
     # Ensure data directory exists
     config.data_dir.mkdir(parents=True, exist_ok=True)
-    
+
     return config
 
 
 def _merge_config(config: OpenFOIAConfig, data: dict[str, Any]) -> OpenFOIAConfig:
     """Merge loaded data into config object."""
-    
+
     if "ai" in data:
         ai = data["ai"]
         config.ai.provider = ai.get("provider", config.ai.provider)
-        config.ai.model = ai.get("model") or ai.get(ai.get("provider", ""), {}).get("model", config.ai.model)
-        config.ai.base_url = ai.get("base_url") or ai.get(ai.get("provider", ""), {}).get("base_url")
-        config.ai.api_key = ai.get("api_key") or ai.get("_api_key") or ai.get(ai.get("provider", ""), {}).get("api_key")
-        
+        config.ai.model = ai.get("model") or ai.get(ai.get("provider", ""), {}).get(
+            "model", config.ai.model
+        )
+        config.ai.base_url = ai.get("base_url") or ai.get(ai.get("provider", ""), {}).get(
+            "base_url"
+        )
+        config.ai.api_key = (
+            ai.get("api_key")
+            or ai.get("_api_key")
+            or ai.get(ai.get("provider", ""), {}).get("api_key")
+        )
+
         # Handle ollama specifically
         if config.ai.provider == "ollama" and "ollama" in ai:
             config.ai.base_url = ai["ollama"].get("base_url", "http://localhost:11434")
             config.ai.model = ai["ollama"].get("model", "llama3.2")
-    
+
     if "pdf_extract" in data:
         pe = data["pdf_extract"]
         config.pdf_extract.binary_path = pe.get("binary_path", config.pdf_extract.binary_path)
-        config.pdf_extract.min_chars_threshold = pe.get("min_chars_threshold", config.pdf_extract.min_chars_threshold)
+        config.pdf_extract.min_chars_threshold = pe.get(
+            "min_chars_threshold", config.pdf_extract.min_chars_threshold
+        )
 
     if "ocr" in data:
         ocr = data["ocr"]
@@ -228,11 +245,13 @@ def _merge_config(config: OpenFOIAConfig, data: dict[str, Any]) -> OpenFOIAConfi
         config.ocr.google_credentials_file = ocr.get("credentials_file")
         config.ocr.aws_region = ocr.get("region", config.ocr.aws_region)
         config.ocr.aws_access_key_id = ocr.get("access_key_id") or ocr.get("_access_key_id")
-        config.ocr.aws_secret_access_key = ocr.get("secret_access_key") or ocr.get("_secret_access_key")
-    
+        config.ocr.aws_secret_access_key = ocr.get("secret_access_key") or ocr.get(
+            "_secret_access_key"
+        )
+
     if "gateways" in data:
         gw = data["gateways"]
-        
+
         if "email" in gw:
             e = gw["email"]
             config.gateways.email_enabled = True
@@ -242,32 +261,32 @@ def _merge_config(config: OpenFOIAConfig, data: dict[str, Any]) -> OpenFOIAConfi
             config.gateways.smtp_password = e.get("smtp_password") or e.get("_smtp_password")
             config.gateways.from_name = e.get("from_name", config.gateways.from_name)
             config.gateways.from_email = e.get("from_email") or config.gateways.smtp_user
-        
+
         if "fax" in gw:
             f = gw["fax"]
             config.gateways.fax_enabled = True
             config.gateways.twilio_account_sid = f.get("account_sid") or f.get("_account_sid")
             config.gateways.twilio_auth_token = f.get("auth_token") or f.get("_auth_token")
             config.gateways.twilio_from_number = f.get("from_number")
-        
+
         if "mail" in gw:
             m = gw["mail"]
             config.gateways.mail_enabled = True
             config.gateways.lob_api_key = m.get("api_key") or m.get("_api_key")
             config.gateways.return_address = m.get("return_address", {})
-    
+
     if "entities" in data:
         ent = data["entities"]
         config.entities.custom_types = ent.get("custom_types", [])
         config.entities.extraction_prompt_suffix = ent.get("extraction_prompt_suffix", "")
-    
+
     if "privacy" in data:
         priv = data["privacy"]
         config.privacy.browser_default = priv.get("browser_default")
         config.privacy.always_private_mode = priv.get("always_private_mode", True)
         config.privacy.auto_redact_pii_in_exports = priv.get("auto_redact_pii_in_exports", False)
         config.privacy.delete_processed_originals = priv.get("delete_processed_originals", False)
-    
+
     if "encryption" in data:
         enc = data["encryption"]
         config.encryption.password = enc.get("password") or enc.get("_password")
@@ -282,7 +301,7 @@ def _merge_config(config: OpenFOIAConfig, data: dict[str, Any]) -> OpenFOIAConfi
 
 def _apply_env_overrides(config: OpenFOIAConfig, prefix: str) -> OpenFOIAConfig:
     """Apply environment variable overrides."""
-    
+
     # AI
     if v := os.environ.get(f"{prefix}AI_PROVIDER"):
         config.ai.provider = v
@@ -292,7 +311,7 @@ def _apply_env_overrides(config: OpenFOIAConfig, prefix: str) -> OpenFOIAConfig:
         config.ai.api_key = v
     if v := os.environ.get(f"{prefix}AI_BASE_URL"):
         config.ai.base_url = v
-    
+
     # Specific providers
     if v := os.environ.get(f"{prefix}ANTHROPIC_API_KEY"):
         config.ai.provider = "anthropic"
@@ -303,7 +322,7 @@ def _apply_env_overrides(config: OpenFOIAConfig, prefix: str) -> OpenFOIAConfig:
     if v := os.environ.get(f"{prefix}OLLAMA_BASE_URL"):
         config.ai.provider = "ollama"
         config.ai.base_url = v
-    
+
     # PDF text extraction
     if v := os.environ.get(f"{prefix}PDF_EXTRACT_BINARY"):
         config.pdf_extract.binary_path = v
@@ -311,7 +330,7 @@ def _apply_env_overrides(config: OpenFOIAConfig, prefix: str) -> OpenFOIAConfig:
     # OCR
     if v := os.environ.get(f"{prefix}OCR_BACKEND"):
         config.ocr.backend = v
-    
+
     # Gateways
     if v := os.environ.get(f"{prefix}TWILIO_ACCOUNT_SID"):
         config.gateways.fax_enabled = True
@@ -321,7 +340,7 @@ def _apply_env_overrides(config: OpenFOIAConfig, prefix: str) -> OpenFOIAConfig:
     if v := os.environ.get(f"{prefix}LOB_API_KEY"):
         config.gateways.mail_enabled = True
         config.gateways.lob_api_key = v
-    
+
     # Encryption
     if v := os.environ.get(f"{prefix}DB_PASSWORD"):
         config.encryption.password = v
@@ -337,7 +356,7 @@ def save_config(config: OpenFOIAConfig, config_path: Path | str | None = None) -
     """Save configuration to file (excludes secrets)."""
     path = Path(config_path) if config_path else _default_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     data = {
         "ai": {
             "provider": config.ai.provider,
@@ -360,6 +379,6 @@ def save_config(config: OpenFOIAConfig, config_path: Path | str | None = None) -
             "port": config.server.port,
         },
     }
-    
+
     with open(path, "w") as f:
         json.dump(data, f, indent=2)

@@ -14,7 +14,6 @@ protection on modern SSDs.
 from __future__ import annotations
 
 import os
-import platform
 import tempfile
 from pathlib import Path
 
@@ -225,6 +224,7 @@ _PROFILE_SLOTS = ["profile_0.db", "profile_1.db"]
 def get_profile_paths() -> list[Path]:
     """Return paths for both profile slots."""
     from .db import get_data_dir
+
     data_dir = get_data_dir()
     return [data_dir / name for name in _PROFILE_SLOTS]
 
@@ -279,6 +279,7 @@ def _can_open_db(db_path: Path, password: str) -> bool:
     """
     try:
         import pysqlcipher3.dbapi2 as sqlcipher
+
         conn = sqlcipher.connect(str(db_path))
         conn.execute(f"PRAGMA key='{password}'")
         conn.execute("PRAGMA cipher_compatibility = 4")
@@ -301,6 +302,7 @@ def is_duress_password(password: str) -> bool:
 def get_decoy_db_path() -> Path:
     """Return the path to the decoy profile (slot 1)."""
     from .db import get_data_dir
+
     return get_data_dir() / _PROFILE_SLOTS[1]
 
 
@@ -323,7 +325,7 @@ def seed_decoy_db(db_path: Path, password: str | None = None) -> None:
     from datetime import datetime, timedelta
     from uuid import uuid4
 
-    from sqlalchemy import create_engine, event
+    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from .models import (
@@ -368,7 +370,12 @@ def seed_decoy_db(db_path: Path, password: str | None = None) -> None:
     # --- Users (randomized to avoid fingerprinting) ---
     first_names = ["Alex", "Jordan", "Sam", "Pat", "Casey", "Morgan", "Taylor", "Jamie"]
     last_names = ["Chen", "Park", "Davis", "Wilson", "Thomas", "Garcia", "Lee", "Brown"]
-    orgs = ["Local Civic Association", "Community Research Group", "Neighborhood Watch", "Public Data Project"]
+    orgs = [
+        "Local Civic Association",
+        "Community Research Group",
+        "Neighborhood Watch",
+        "Public Data Project",
+    ]
     decoy_first = random.choice(first_names)
     decoy_last = random.choice(last_names)
     decoy_name = f"{decoy_first} {decoy_last}"
@@ -463,7 +470,7 @@ def seed_decoy_db(db_path: Path, password: str | None = None) -> None:
     for i, rd in enumerate(requests_data):
         req = Request(
             id=str(uuid4()),
-            request_number=f"REQ-{(now - timedelta(days=60-i*15)).strftime('%Y%m%d')}-{uuid4().hex[:6].upper()}",
+            request_number=f"REQ-{(now - timedelta(days=60 - i * 15)).strftime('%Y%m%d')}-{uuid4().hex[:6].upper()}",
             requester_id=user.id,
             agency_id=agencies[rd["agency_idx"]].id,
             subject=rd["subject"],

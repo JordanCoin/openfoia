@@ -13,7 +13,6 @@ $999/year for.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -26,6 +25,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CrossRefHit:
     """A single match from a cross-reference source."""
+
     source: str
     entity_name: str
     match_type: str  # "exact", "partial", "fuzzy"
@@ -37,6 +37,7 @@ class CrossRefHit:
 @dataclass
 class CrossRefResult:
     """Cross-reference results for a single entity."""
+
     entity_name: str
     entity_type: str
     hits: list[CrossRefHit]
@@ -50,6 +51,7 @@ class CrossRefResult:
 @dataclass
 class CrossRefReport:
     """Full cross-reference report for all entities."""
+
     results: list[CrossRefResult]
     total_entities: int
     total_hits: int
@@ -95,14 +97,18 @@ async def crossref_entities(
                 source_hits = await checker(entity.normalized_text, entity.entity_type)
                 hits.extend(source_hits)
             except Exception as e:
-                logger.warning("CrossRef %s failed for '%s': %s", source_name, entity.normalized_text, e)
+                logger.warning(
+                    "CrossRef %s failed for '%s': %s", source_name, entity.normalized_text, e
+                )
 
-        results.append(CrossRefResult(
-            entity_name=entity.normalized_text,
-            entity_type=entity.entity_type.value,
-            hits=hits,
-            sources_checked=sources_checked,
-        ))
+        results.append(
+            CrossRefResult(
+                entity_name=entity.normalized_text,
+                entity_type=entity.entity_type.value,
+                hits=hits,
+                sources_checked=sources_checked,
+            )
+        )
 
     flagged = [r for r in results if r.flagged]
     total_hits = sum(len(r.hits) for r in results)
@@ -132,6 +138,7 @@ def _get_available_sources(icij_data_dir: str | None = None) -> dict[str, Any]:
     # ICIJ Offshore Leaks — available if CSVs downloaded locally
     if icij_data_dir:
         from pathlib import Path
+
         if Path(icij_data_dir).exists():
             sources["icij"] = lambda name, etype: _check_icij(name, etype, icij_data_dir)
 
@@ -144,6 +151,7 @@ def _get_available_sources(icij_data_dir: str | None = None) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Source checkers
 # ---------------------------------------------------------------------------
+
 
 async def _check_muckrock(name: str, entity_type: EntityType) -> list[CrossRefHit]:
     """Search MuckRock for FOIA requests mentioning this entity."""
@@ -159,25 +167,29 @@ async def _check_muckrock(name: str, entity_type: EntityType) -> list[CrossRefHi
     for req in result.entities:
         # Only count if the name actually appears in the title
         if name.lower() in req.name.lower():
-            hits.append(CrossRefHit(
-                source="muckrock",
-                entity_name=name,
-                match_type="partial",
-                details=f"FOIA request: {req.name} (by {req.extra_data.get('username', '?')})",
-                url=req.source_url,
-                extra={"muckrock_id": req.identifiers.get("muckrock_id")},
-            ))
+            hits.append(
+                CrossRefHit(
+                    source="muckrock",
+                    entity_name=name,
+                    match_type="partial",
+                    details=f"FOIA request: {req.name} (by {req.extra_data.get('username', '?')})",
+                    url=req.source_url,
+                    extra={"muckrock_id": req.identifiers.get("muckrock_id")},
+                )
+            )
 
     # Only report fuzzy matches if the result count is meaningfully small
     # (a broad search returning 46k results is not useful)
     if not hits and 0 < result.total_results <= 100:
-        hits.append(CrossRefHit(
-            source="muckrock",
-            entity_name=name,
-            match_type="fuzzy",
-            details=f"{result.total_results} FOIA requests in related search",
-            url=f"https://www.muckrock.com/foi/list/?q={name.replace(' ', '+')}",
-        ))
+        hits.append(
+            CrossRefHit(
+                source="muckrock",
+                entity_name=name,
+                match_type="fuzzy",
+                details=f"{result.total_results} FOIA requests in related search",
+                url=f"https://www.muckrock.com/foi/list/?q={name.replace(' ', '+')}",
+            )
+        )
 
     return hits
 
@@ -201,19 +213,23 @@ async def _check_opencorporates(name: str, entity_type: EntityType) -> list[Cros
         ent_lower = ent.name.lower()
         if name_lower in ent_lower or ent_lower in name_lower:
             officers = ent.extra_data.get("officers", [])
-            officer_names = ", ".join(o["name"] for o in officers[:3]) if officers else "none listed"
-            hits.append(CrossRefHit(
-                source="opencorporates",
-                entity_name=name,
-                match_type="exact" if name_lower == ent_lower else "partial",
-                details=f"{ent.name} ({ent.jurisdiction or '?'}) — officers: {officer_names}",
-                url=ent.source_url,
-                extra={
-                    "company_number": ent.identifiers.get("company_number"),
-                    "jurisdiction": ent.jurisdiction,
-                    "status": ent.status,
-                },
-            ))
+            officer_names = (
+                ", ".join(o["name"] for o in officers[:3]) if officers else "none listed"
+            )
+            hits.append(
+                CrossRefHit(
+                    source="opencorporates",
+                    entity_name=name,
+                    match_type="exact" if name_lower == ent_lower else "partial",
+                    details=f"{ent.name} ({ent.jurisdiction or '?'}) — officers: {officer_names}",
+                    url=ent.source_url,
+                    extra={
+                        "company_number": ent.identifiers.get("company_number"),
+                        "jurisdiction": ent.jurisdiction,
+                        "status": ent.status,
+                    },
+                )
+            )
 
     return hits
 
@@ -239,14 +255,16 @@ async def _check_sec(name: str, entity_type: EntityType) -> list[CrossRefHit]:
         if cik in seen_ciks:
             continue
         seen_ciks.add(cik)
-        hits.append(CrossRefHit(
-            source="sec",
-            entity_name=name,
-            match_type="partial",
-            details=f"{ent.name} (CIK {cik}) — {ent.extra_data.get('filing_type', '?')} ({ent.extra_data.get('filing_date', '?')})",
-            url=ent.source_url,
-            extra={"cik": cik},
-        ))
+        hits.append(
+            CrossRefHit(
+                source="sec",
+                entity_name=name,
+                match_type="partial",
+                details=f"{ent.name} (CIK {cik}) — {ent.extra_data.get('filing_type', '?')} ({ent.extra_data.get('filing_date', '?')})",
+                url=ent.source_url,
+                extra={"cik": cik},
+            )
+        )
 
     return hits[:5]  # cap at 5 most relevant
 
@@ -274,18 +292,20 @@ async def _check_icij(name: str, entity_type: EntityType, data_dir: str) -> list
                     for field_name in ["name", "entity_name", "officer_name", "intermediary_name"]:
                         val = row.get(field_name, "")
                         if val and name_lower in val.lower():
-                            hits.append(CrossRefHit(
-                                source="icij",
-                                entity_name=name,
-                                match_type="partial",
-                                details=f"ICIJ {csv_file.stem}: {val}",
-                                url=f"https://offshoreleaks.icij.org/search?q={name.replace(' ', '+')}",
-                                extra={
-                                    "jurisdiction": row.get("jurisdiction", ""),
-                                    "source": csv_file.stem,
-                                    "node_id": row.get("node_id", ""),
-                                },
-                            ))
+                            hits.append(
+                                CrossRefHit(
+                                    source="icij",
+                                    entity_name=name,
+                                    match_type="partial",
+                                    details=f"ICIJ {csv_file.stem}: {val}",
+                                    url=f"https://offshoreleaks.icij.org/search?q={name.replace(' ', '+')}",
+                                    extra={
+                                        "jurisdiction": row.get("jurisdiction", ""),
+                                        "source": csv_file.stem,
+                                        "node_id": row.get("node_id", ""),
+                                    },
+                                )
+                            )
                             break  # one hit per row is enough
         except Exception as e:
             logger.warning("Failed to search ICIJ file %s: %s", csv_file, e)
@@ -340,18 +360,20 @@ async def _check_opensanctions(name: str, entity_type: EntityType) -> list[Cross
 
         result_name = properties.get("name", [name])[0] if properties.get("name") else name
 
-        hits.append(CrossRefHit(
-            source="opensanctions",
-            entity_name=name,
-            match_type="exact" if score > 0.9 else "fuzzy",
-            details=f"{result_name} — {'; '.join(detail_parts)}",
-            url=f"https://opensanctions.org/search/?q={name.replace(' ', '+')}",
-            extra={
-                "score": score,
-                "is_pep": is_pep,
-                "is_sanctioned": is_sanctioned,
-                "datasets": topics,
-            },
-        ))
+        hits.append(
+            CrossRefHit(
+                source="opensanctions",
+                entity_name=name,
+                match_type="exact" if score > 0.9 else "fuzzy",
+                details=f"{result_name} — {'; '.join(detail_parts)}",
+                url=f"https://opensanctions.org/search/?q={name.replace(' ', '+')}",
+                extra={
+                    "score": score,
+                    "is_pep": is_pep,
+                    "is_sanctioned": is_sanctioned,
+                    "datasets": topics,
+                },
+            )
+        )
 
     return hits

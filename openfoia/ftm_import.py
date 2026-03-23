@@ -43,9 +43,17 @@ _FTM_SCHEMA_TO_ENTITY_TYPE: dict[str, EntityType] = {
 
 # FtM schemas that represent relationships (interstitial entities)
 _FTM_RELATIONSHIP_SCHEMAS = {
-    "Membership", "Directorship", "Ownership", "Employment",
-    "UnknownLink", "Family", "Associate", "Representation",
-    "Payment", "Contract", "Succession",
+    "Membership",
+    "Directorship",
+    "Ownership",
+    "Employment",
+    "UnknownLink",
+    "Family",
+    "Associate",
+    "Representation",
+    "Payment",
+    "Contract",
+    "Succession",
 }
 
 # Which FtM properties contain the entity name
@@ -106,26 +114,43 @@ def parse_ftm_file(file_path: Path | str) -> tuple[list[dict], list[dict]]:
                 target_ref = None
 
                 # Different schemas use different property names for endpoints
-                for src_prop in ["member", "director", "owner", "payer", "subject", "authority", "emitters"]:
+                for src_prop in [
+                    "member",
+                    "director",
+                    "owner",
+                    "payer",
+                    "subject",
+                    "authority",
+                    "emitters",
+                ]:
                     vals = properties.get(src_prop, [])
                     if vals:
                         source_ref = vals[0]
                         break
 
-                for tgt_prop in ["organization", "asset", "beneficiary", "object", "contractor", "recipients"]:
+                for tgt_prop in [
+                    "organization",
+                    "asset",
+                    "beneficiary",
+                    "object",
+                    "contractor",
+                    "recipients",
+                ]:
                     vals = properties.get(tgt_prop, [])
                     if vals:
                         target_ref = vals[0]
                         break
 
                 if source_ref and target_ref:
-                    relationships.append({
-                        "ftm_id": ftm_id,
-                        "schema": schema,
-                        "source_ref": source_ref,
-                        "target_ref": target_ref,
-                        "properties": properties,
-                    })
+                    relationships.append(
+                        {
+                            "ftm_id": ftm_id,
+                            "schema": schema,
+                            "source_ref": source_ref,
+                            "target_ref": target_ref,
+                            "properties": properties,
+                        }
+                    )
             else:
                 entity_type = _FTM_SCHEMA_TO_ENTITY_TYPE.get(schema)
                 if entity_type is None:
@@ -135,14 +160,16 @@ def parse_ftm_file(file_path: Path | str) -> tuple[list[dict], list[dict]]:
                 name = _extract_name(properties)
                 context = _extract_context(properties)
 
-                entities.append({
-                    "ftm_id": ftm_id,
-                    "schema": schema,
-                    "entity_type": entity_type,
-                    "name": name,
-                    "context": context,
-                    "properties": properties,
-                })
+                entities.append(
+                    {
+                        "ftm_id": ftm_id,
+                        "schema": schema,
+                        "entity_type": entity_type,
+                        "name": name,
+                        "context": context,
+                        "properties": properties,
+                    }
+                )
 
     return entities, relationships
 
@@ -193,10 +220,14 @@ def import_ftm_to_db(
 
             if key in existing:
                 # Already have this entity — find its ID for relationship mapping
-                existing_ent = session.query(Entity).filter(
-                    Entity.entity_type == etype,
-                    Entity.normalized_text == name,
-                ).first()
+                existing_ent = (
+                    session.query(Entity)
+                    .filter(
+                        Entity.entity_type == etype,
+                        Entity.normalized_text == name,
+                    )
+                    .first()
+                )
                 if existing_ent:
                     ftm_to_local[ent_data["ftm_id"]] = existing_ent.id
                 continue
@@ -225,21 +256,28 @@ def import_ftm_to_db(
 
         # Import relationships as entity_links
         from .models import entity_links
+
         for rel_data in parsed_relationships:
             source_id = ftm_to_local.get(rel_data["source_ref"])
             target_id = ftm_to_local.get(rel_data["target_ref"])
             if source_id and target_id and source_id != target_id:
                 # Check if link already exists
-                existing_link = session.query(entity_links).filter(
-                    entity_links.c.source_id == source_id,
-                    entity_links.c.target_id == target_id,
-                ).first()
+                existing_link = (
+                    session.query(entity_links)
+                    .filter(
+                        entity_links.c.source_id == source_id,
+                        entity_links.c.target_id == target_id,
+                    )
+                    .first()
+                )
                 if not existing_link:
-                    session.execute(entity_links.insert().values(
-                        source_id=source_id,
-                        target_id=target_id,
-                        link_type=rel_data["schema"].lower(),
-                    ))
+                    session.execute(
+                        entity_links.insert().values(
+                            source_id=source_id,
+                            target_id=target_id,
+                            link_type=rel_data["schema"].lower(),
+                        )
+                    )
                     rels_added += 1
 
     return entities_added, rels_added

@@ -24,6 +24,7 @@ from ..models import EntityType, ConfidenceLevel
 # Data classes
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ExtractedEntity:
     """An entity extracted from text."""
@@ -64,40 +65,43 @@ class ExtractionResult:
 
 _REGEX_PATTERNS: dict[EntityType, list[re.Pattern[str]]] = {
     EntityType.DATE: [
-        re.compile(r'\b(\d{4}-\d{2}-\d{2})\b'),
-        re.compile(r'\b(\d{1,2}/\d{1,2}/\d{2,4})\b'),
+        re.compile(r"\b(\d{4}-\d{2}-\d{2})\b"),
+        re.compile(r"\b(\d{1,2}/\d{1,2}/\d{2,4})\b"),
         re.compile(
-            r'\b((?:January|February|March|April|May|June|July|August|September|'
-            r'October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)'
-            r'\.?\s+\d{1,2},?\s+\d{4})\b',
+            r"\b((?:January|February|March|April|May|June|July|August|September|"
+            r"October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)"
+            r"\.?\s+\d{1,2},?\s+\d{4})\b",
             re.IGNORECASE,
         ),
         re.compile(
-            r'\b(\d{1,2}\s+(?:January|February|March|April|May|June|July|August|'
-            r'September|October|November|December)\.?,?\s+\d{4})\b',
+            r"\b(\d{1,2}\s+(?:January|February|March|April|May|June|July|August|"
+            r"September|October|November|December)\.?,?\s+\d{4})\b",
             re.IGNORECASE,
         ),
     ],
     EntityType.MONEY: [
-        re.compile(r'(\$[\d,]+(?:\.\d{1,2})?(?:\s*(?:million|billion|trillion|[MBTmbt]))?)\b'),
+        re.compile(r"(\$[\d,]+(?:\.\d{1,2})?(?:\s*(?:million|billion|trillion|[MBTmbt]))?)\b"),
     ],
     EntityType.EMAIL: [
-        re.compile(r'\b([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\b'),
+        re.compile(r"\b([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\b"),
     ],
     EntityType.PHONE: [
-        re.compile(r'(\+?1?[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})\b'),
+        re.compile(r"(\+?1?[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})\b"),
     ],
     EntityType.DOCUMENT_ID: [
-        re.compile(r'\b(\d{4}-[A-Z]-\d{3,6})\b'),
-        re.compile(r'\b((?:FOIA|FOI|ATF|DOJ|FBI|CIA|DHS|DOD|DOS|EPA|HHS|USDA|OIG|SEC|FTC|FCC|IRS|DEA|ICE|CBP|TSA|NARA)-\d{4}-\d{3,8})\b', re.IGNORECASE),
-        re.compile(r'\b(Case\s+(?:No\.?|Number|#)\s*:?\s*[\w-]{4,20})\b', re.IGNORECASE),
+        re.compile(r"\b(\d{4}-[A-Z]-\d{3,6})\b"),
+        re.compile(
+            r"\b((?:FOIA|FOI|ATF|DOJ|FBI|CIA|DHS|DOD|DOS|EPA|HHS|USDA|OIG|SEC|FTC|FCC|IRS|DEA|ICE|CBP|TSA|NARA)-\d{4}-\d{3,8})\b",
+            re.IGNORECASE,
+        ),
+        re.compile(r"\b(Case\s+(?:No\.?|Number|#)\s*:?\s*[\w-]{4,20})\b", re.IGNORECASE),
     ],
     EntityType.ADDRESS: [
         re.compile(
-            r'\b(\d{1,6}\s+[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*'
-            r'\s+(?:Street|St|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Road|Rd|Lane|Ln|'
-            r'Way|Court|Ct|Circle|Cir|Place|Pl|Terrace|Ter|Highway|Hwy)'
-            r'\.?(?:\s*,?\s*(?:Suite|Ste|Apt|Unit|#)\s*\w+)?)\b',
+            r"\b(\d{1,6}\s+[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*"
+            r"\s+(?:Street|St|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Road|Rd|Lane|Ln|"
+            r"Way|Court|Ct|Circle|Cir|Place|Pl|Terrace|Ter|Highway|Hwy)"
+            r"\.?(?:\s*,?\s*(?:Suite|Ste|Apt|Unit|#)\s*\w+)?)\b",
             re.IGNORECASE,
         ),
     ],
@@ -108,11 +112,11 @@ def _get_context_window(text: str, start: int, end: int, window: int = 80) -> st
     """Return surrounding text for a match."""
     ctx_start = max(0, start - window)
     ctx_end = min(len(text), end + window)
-    ctx = text[ctx_start:ctx_end].replace('\n', ' ').strip()
+    ctx = text[ctx_start:ctx_end].replace("\n", " ").strip()
     if ctx_start > 0:
-        ctx = '...' + ctx
+        ctx = "..." + ctx
     if ctx_end < len(text):
-        ctx = ctx + '...'
+        ctx = ctx + "..."
     return ctx
 
 
@@ -120,13 +124,13 @@ def _get_sentence(text: str, pos: int) -> str:
     """Extract the sentence containing position `pos`."""
     # Walk backward to sentence start
     start = pos
-    while start > 0 and text[start - 1] not in '.!?\n':
+    while start > 0 and text[start - 1] not in ".!?\n":
         start -= 1
     # Walk forward to sentence end
     end = pos
-    while end < len(text) and text[end] not in '.!?\n':
+    while end < len(text) and text[end] not in ".!?\n":
         end += 1
-    return text[start:end + 1].strip()
+    return text[start : end + 1].strip()
 
 
 # ---------------------------------------------------------------------------
@@ -141,6 +145,7 @@ def _get_gliner():
     global _GLINER_MODEL
     if _GLINER_MODEL is None:
         from gliner import GLiNER
+
         _GLINER_MODEL = GLiNER.from_pretrained("urchade/gliner_medium-v2.1")
     return _GLINER_MODEL
 
@@ -149,6 +154,7 @@ def _gliner_available() -> bool:
     """Check if GLiNER is installed."""
     try:
         import gliner  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -194,6 +200,7 @@ def _get_spacy():
     global _SPACY_NLP
     if _SPACY_NLP is None:
         import spacy
+
         # Try models from best to smallest
         for model_name in ["en_core_web_trf", "en_core_web_lg", "en_core_web_md", "en_core_web_sm"]:
             try:
@@ -213,6 +220,7 @@ def _spacy_available() -> bool:
     """Check if spaCy is installed with an English model."""
     try:
         import spacy
+
         for model_name in ["en_core_web_trf", "en_core_web_lg", "en_core_web_md", "en_core_web_sm"]:
             try:
                 spacy.load(model_name)
@@ -243,6 +251,7 @@ def _spacy_label_to_entity_type(label: str) -> EntityType | None:
 # ---------------------------------------------------------------------------
 # Relationship extraction (works with GLiNER and spaCy outputs)
 # ---------------------------------------------------------------------------
+
 
 def _extract_cooccurrence_relationships(
     entities: list[ExtractedEntity],
@@ -310,13 +319,15 @@ def _extract_cooccurrence_relationships(
             mid_pos = (pos_a + pos_b) // 2
             evidence = _get_sentence(text, mid_pos)
 
-            relationships.append({
-                "source": ent_a.normalized_text,
-                "target": ent_b.normalized_text,
-                "relation": relation,
-                "confidence": round(confidence, 2),
-                "evidence": evidence[:300],
-            })
+            relationships.append(
+                {
+                    "source": ent_a.normalized_text,
+                    "target": ent_b.normalized_text,
+                    "relation": relation,
+                    "confidence": round(confidence, 2),
+                    "evidence": evidence[:300],
+                }
+            )
 
     return relationships
 
@@ -356,7 +367,6 @@ def _extract_spacy_syntactic_relationships(
     known entities.
     """
     relationships: list[dict[str, Any]] = []
-    entity_texts = {e.normalized_text.lower() for e in entities}
     seen: set[tuple[str, str, str]] = set()
 
     for sent in doc.sents:
@@ -392,13 +402,15 @@ def _extract_spacy_syntactic_relationships(
                     continue
                 seen.add(key)
 
-                relationships.append({
-                    "source": subj_match.normalized_text,
-                    "target": obj_match.normalized_text,
-                    "relation": root.lemma_,  # the verb lemma (e.g., "work", "pay", "send")
-                    "confidence": 0.7,
-                    "evidence": sent.text.strip()[:300],
-                })
+                relationships.append(
+                    {
+                        "source": subj_match.normalized_text,
+                        "target": obj_match.normalized_text,
+                        "relation": root.lemma_,  # the verb lemma (e.g., "work", "pay", "send")
+                        "confidence": 0.7,
+                        "evidence": sent.text.strip()[:300],
+                    }
+                )
 
     return relationships
 
@@ -415,6 +427,7 @@ def _find_entity_match(text: str, entities: list[ExtractedEntity]) -> ExtractedE
 # ---------------------------------------------------------------------------
 # LLM prompt builder
 # ---------------------------------------------------------------------------
+
 
 def _build_extraction_prompt(
     text: str,
@@ -455,8 +468,8 @@ def _build_extraction_prompt(
     return f"""Analyze this document and extract ALL entities and relationships.
 This is a government/legal document obtained through FOIA. Be thorough.
 
-CONTEXT: {context or 'FOIA response document'}
-PAGE: {page_number or 'Unknown'}
+CONTEXT: {context or "FOIA response document"}
+PAGE: {page_number or "Unknown"}
 
 DOCUMENT TEXT:
 {text}
@@ -497,39 +510,71 @@ Return ONLY valid JSON:
 # LLM client helpers
 # ---------------------------------------------------------------------------
 
-def _call_ollama(prompt: str, model: str, base_url: str | None, temperature: float, max_tokens: int) -> str:
+
+def _call_ollama(
+    prompt: str, model: str, base_url: str | None, temperature: float, max_tokens: int
+) -> str:
     import urllib.request
+
     url = (base_url or "http://localhost:11434").rstrip("/")
-    payload = json.dumps({
-        "model": model, "prompt": prompt, "stream": False, "format": "json",
-        "options": {"temperature": temperature, "num_predict": max_tokens},
-    }).encode()
-    req = urllib.request.Request(f"{url}/api/generate", data=payload, headers={"Content-Type": "application/json"}, method="POST")
+    payload = json.dumps(
+        {
+            "model": model,
+            "prompt": prompt,
+            "stream": False,
+            "format": "json",
+            "options": {"temperature": temperature, "num_predict": max_tokens},
+        }
+    ).encode()
+    req = urllib.request.Request(
+        f"{url}/api/generate",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
     with urllib.request.urlopen(req, timeout=120) as resp:
         body = json.loads(resp.read())
     return body.get("response", "")
 
 
-def _call_anthropic(prompt: str, model: str, api_key: str, temperature: float, max_tokens: int) -> str:
+def _call_anthropic(
+    prompt: str, model: str, api_key: str, temperature: float, max_tokens: int
+) -> str:
     import anthropic
+
     client = anthropic.Anthropic(api_key=api_key)
-    response = client.messages.create(model=model, max_tokens=max_tokens, temperature=temperature, messages=[{"role": "user", "content": prompt}])
+    response = client.messages.create(
+        model=model,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        messages=[{"role": "user", "content": prompt}],
+    )
     return response.content[0].text
 
 
-def _call_openai(prompt: str, model: str, api_key: str, base_url: str | None, temperature: float, max_tokens: int) -> str:
+def _call_openai(
+    prompt: str, model: str, api_key: str, base_url: str | None, temperature: float, max_tokens: int
+) -> str:
     import openai
+
     kwargs: dict[str, Any] = {"api_key": api_key}
     if base_url:
         kwargs["base_url"] = base_url
     client = openai.OpenAI(**kwargs)
-    response = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], temperature=temperature, max_tokens=max_tokens, response_format={"type": "json_object"})
+    response = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=temperature,
+        max_tokens=max_tokens,
+        response_format={"type": "json_object"},
+    )
     return response.choices[0].message.content or ""
 
 
 def _llm_available(provider: str, api_key: str | None, base_url: str | None) -> bool:
     if provider == "ollama":
         import urllib.request
+
         url = (base_url or "http://localhost:11434").rstrip("/")
         try:
             req = urllib.request.Request(f"{url}/api/tags", method="GET")
@@ -543,6 +588,7 @@ def _llm_available(provider: str, api_key: str | None, base_url: str | None) -> 
 # ---------------------------------------------------------------------------
 # Main extractor
 # ---------------------------------------------------------------------------
+
 
 class EntityExtractor:
     """Extract entities and relationships from document text.
@@ -580,6 +626,7 @@ class EntityExtractor:
         if _llm_available(self.provider, self.api_key, self.base_url):
             if self.provider in ("anthropic", "openai"):
                 import sys
+
                 print(
                     f"WARNING: Using cloud AI provider '{self.provider}'. "
                     "Document text will be sent to external servers.",
@@ -624,7 +671,10 @@ class EntityExtractor:
     # ------------------------------------------------------------------
 
     async def _extract_with_llm(
-        self, text: str, context: str | None, page_numbers: list[int] | None,
+        self,
+        text: str,
+        context: str | None,
+        page_numbers: list[int] | None,
     ) -> ExtractionResult:
         import asyncio
 
@@ -659,7 +709,9 @@ class EntityExtractor:
         # Supplement with co-occurrence relationships
         cooccurrence_rels = _extract_cooccurrence_relationships(merged, text)
         # Merge, preferring LLM relationships (higher quality)
-        existing_keys = {(r.get("source", "").lower(), r.get("target", "").lower()) for r in all_relationships}
+        existing_keys = {
+            (r.get("source", "").lower(), r.get("target", "").lower()) for r in all_relationships
+        }
         for rel in cooccurrence_rels:
             key = (rel["source"].lower(), rel["target"].lower())
             if key not in existing_keys:
@@ -669,19 +721,37 @@ class EntityExtractor:
             entities=merged,
             relationships=all_relationships,
             summary=self._generate_summary(merged, all_relationships),
-            metadata={"backend": "llm", "model": self.model, "provider": self.provider,
-                       "chunks": len(chunks), "total_chars": len(text)},
+            metadata={
+                "backend": "llm",
+                "model": self.model,
+                "provider": self.provider,
+                "chunks": len(chunks),
+                "total_chars": len(text),
+            },
         )
 
-    def _extract_chunk_llm(self, text: str, context: str | None, page_number: int | None) -> dict[str, Any]:
+    def _extract_chunk_llm(
+        self, text: str, context: str | None, page_number: int | None
+    ) -> dict[str, Any]:
         prompt = _build_extraction_prompt(text, context, page_number, self.entity_config)
 
         if self.provider == "ollama":
-            content = _call_ollama(prompt, self.model, self.base_url, self.temperature, self.max_tokens)
+            content = _call_ollama(
+                prompt, self.model, self.base_url, self.temperature, self.max_tokens
+            )
         elif self.provider == "anthropic":
-            content = _call_anthropic(prompt, self.model, self.api_key or "", self.temperature, self.max_tokens)
+            content = _call_anthropic(
+                prompt, self.model, self.api_key or "", self.temperature, self.max_tokens
+            )
         elif self.provider == "openai":
-            content = _call_openai(prompt, self.model, self.api_key or "", self.base_url, self.temperature, self.max_tokens)
+            content = _call_openai(
+                prompt,
+                self.model,
+                self.api_key or "",
+                self.base_url,
+                self.temperature,
+                self.max_tokens,
+            )
         else:
             raise ValueError(f"Unknown AI provider: {self.provider}")
 
@@ -689,8 +759,12 @@ class EntityExtractor:
 
     def _parse_llm_response(self, content: str, page_number: int | None) -> dict[str, Any]:
         try:
-            json_match = re.search(r'\{[\s\S]*\}', content)
-            data = json.loads(json_match.group()) if json_match else {"entities": [], "relationships": []}
+            json_match = re.search(r"\{[\s\S]*\}", content)
+            data = (
+                json.loads(json_match.group())
+                if json_match
+                else {"entities": [], "relationships": []}
+            )
         except json.JSONDecodeError:
             data = {"entities": [], "relationships": []}
 
@@ -710,14 +784,16 @@ class EntityExtractor:
             except ValueError:
                 continue
 
-            entities.append(ExtractedEntity(
-                entity_type=entity_type,
-                raw_text=e.get("raw_text", ""),
-                normalized_text=e.get("normalized", e.get("raw_text", "")),
-                confidence=float(e.get("confidence", 0.5)),
-                context=e.get("context", ""),
-                page_number=page_number,
-            ))
+            entities.append(
+                ExtractedEntity(
+                    entity_type=entity_type,
+                    raw_text=e.get("raw_text", ""),
+                    normalized_text=e.get("normalized", e.get("raw_text", "")),
+                    confidence=float(e.get("confidence", 0.5)),
+                    context=e.get("context", ""),
+                    page_number=page_number,
+                )
+            )
 
         return {"entities": entities, "relationships": data.get("relationships", [])}
 
@@ -726,16 +802,27 @@ class EntityExtractor:
     # ------------------------------------------------------------------
 
     def _extract_with_gliner(
-        self, text: str, page_numbers: list[int] | None,
+        self,
+        text: str,
+        page_numbers: list[int] | None,
     ) -> ExtractionResult:
         model = _get_gliner()
 
         # Define entity labels — including custom types from config
         labels = [
-            "person", "organization", "government agency",
-            "location", "date", "money", "dollar amount",
-            "email address", "phone number", "address",
-            "case number", "document id", "tracking number",
+            "person",
+            "organization",
+            "government agency",
+            "location",
+            "date",
+            "money",
+            "dollar amount",
+            "email address",
+            "phone number",
+            "address",
+            "case number",
+            "document id",
+            "tracking number",
         ]
 
         # Add custom types from config
@@ -765,16 +852,18 @@ class EntityExtractor:
 
                 ctx_start = max(0, chunk.find(raw) - 80)
                 ctx_end = min(len(chunk), chunk.find(raw) + len(raw) + 80)
-                context = chunk[ctx_start:ctx_end].replace('\n', ' ').strip()
+                context = chunk[ctx_start:ctx_end].replace("\n", " ").strip()
 
-                all_entities.append(ExtractedEntity(
-                    entity_type=entity_type,
-                    raw_text=raw,
-                    normalized_text=raw.strip(),
-                    confidence=round(pred["score"], 3),
-                    context=context,
-                    page_number=page_num,
-                ))
+                all_entities.append(
+                    ExtractedEntity(
+                        entity_type=entity_type,
+                        raw_text=raw,
+                        normalized_text=raw.strip(),
+                        confidence=round(pred["score"], 3),
+                        context=context,
+                        page_number=page_num,
+                    )
+                )
 
         merged = self._merge_entities(all_entities)
 
@@ -785,8 +874,12 @@ class EntityExtractor:
             entities=merged,
             relationships=relationships,
             summary=self._generate_summary(merged, relationships),
-            metadata={"backend": "gliner", "model": "gliner_medium-v2.1",
-                       "chunks": len(chunks), "total_chars": len(text)},
+            metadata={
+                "backend": "gliner",
+                "model": "gliner_medium-v2.1",
+                "chunks": len(chunks),
+                "total_chars": len(text),
+            },
         )
 
     # ------------------------------------------------------------------
@@ -794,7 +887,9 @@ class EntityExtractor:
     # ------------------------------------------------------------------
 
     def _extract_with_spacy(
-        self, text: str, page_numbers: list[int] | None,
+        self,
+        text: str,
+        page_numbers: list[int] | None,
     ) -> ExtractionResult:
         nlp = _get_spacy()
 
@@ -821,17 +916,21 @@ class EntityExtractor:
 
                 context = _get_context_window(chunk, ent.start_char, ent.end_char)
 
-                all_entities.append(ExtractedEntity(
-                    entity_type=entity_type,
-                    raw_text=ent.text,
-                    normalized_text=ent.text.strip(),
-                    confidence=0.85,  # spaCy doesn't provide per-entity scores
-                    context=context,
-                    page_number=page_num,
-                ))
+                all_entities.append(
+                    ExtractedEntity(
+                        entity_type=entity_type,
+                        raw_text=ent.text,
+                        normalized_text=ent.text.strip(),
+                        confidence=0.85,  # spaCy doesn't provide per-entity scores
+                        context=context,
+                        page_number=page_num,
+                    )
+                )
 
             # Extract syntactic relationships
-            chunk_entities = [e for e in all_entities if e.page_number == page_num or page_num is None]
+            chunk_entities = [
+                e for e in all_entities if e.page_number == page_num or page_num is None
+            ]
             syntactic_rels = _extract_spacy_syntactic_relationships(doc, chunk_entities)
             all_relationships.extend(syntactic_rels)
 
@@ -839,7 +938,9 @@ class EntityExtractor:
 
         # Also add co-occurrence relationships
         cooccurrence_rels = _extract_cooccurrence_relationships(merged, text)
-        existing_keys = {(r.get("source", "").lower(), r.get("target", "").lower()) for r in all_relationships}
+        existing_keys = {
+            (r.get("source", "").lower(), r.get("target", "").lower()) for r in all_relationships
+        }
         for rel in cooccurrence_rels:
             key = (rel["source"].lower(), rel["target"].lower())
             if key not in existing_keys:
@@ -848,7 +949,12 @@ class EntityExtractor:
         # Also run regex for structured patterns spaCy misses (emails, phones, doc IDs)
         regex_result = self._extract_with_regex(text, page_numbers)
         for ent in regex_result.entities:
-            if ent.entity_type in (EntityType.EMAIL, EntityType.PHONE, EntityType.DOCUMENT_ID, EntityType.ADDRESS):
+            if ent.entity_type in (
+                EntityType.EMAIL,
+                EntityType.PHONE,
+                EntityType.DOCUMENT_ID,
+                EntityType.ADDRESS,
+            ):
                 # Only add if not already found
                 key = (ent.entity_type, ent.normalized_text.lower())
                 existing = {(e.entity_type, e.normalized_text.lower()) for e in merged}
@@ -859,8 +965,12 @@ class EntityExtractor:
             entities=merged,
             relationships=all_relationships,
             summary=self._generate_summary(merged, all_relationships),
-            metadata={"backend": "spacy", "model": _SPACY_NLP.meta["name"] if _SPACY_NLP else "unknown",
-                       "chunks": len(chunks), "total_chars": len(text)},
+            metadata={
+                "backend": "spacy",
+                "model": _SPACY_NLP.meta["name"] if _SPACY_NLP else "unknown",
+                "chunks": len(chunks),
+                "total_chars": len(text),
+            },
         )
 
     # ------------------------------------------------------------------
@@ -868,7 +978,9 @@ class EntityExtractor:
     # ------------------------------------------------------------------
 
     def _extract_with_regex(
-        self, text: str, page_numbers: list[int] | None,
+        self,
+        text: str,
+        page_numbers: list[int] | None,
     ) -> ExtractionResult:
         entities: list[ExtractedEntity] = []
         seen: set[tuple[str, str]] = set()
@@ -886,14 +998,16 @@ class EntityExtractor:
                     ctx = _get_context_window(text, match.start(), match.end())
                     page_num = page_numbers[0] if page_numbers else None
 
-                    entities.append(ExtractedEntity(
-                        entity_type=entity_type,
-                        raw_text=raw,
-                        normalized_text=normalized,
-                        confidence=0.6,
-                        context=ctx,
-                        page_number=page_num,
-                    ))
+                    entities.append(
+                        ExtractedEntity(
+                            entity_type=entity_type,
+                            raw_text=raw,
+                            normalized_text=normalized,
+                            confidence=0.6,
+                            context=ctx,
+                            page_number=page_num,
+                        )
+                    )
 
         # Custom patterns from config (so openfoia entities add actually works in regex mode)
         for ct in self.entity_config.custom_types:
@@ -917,12 +1031,17 @@ class EntityExtractor:
                     continue
                 seen.add(key)
                 ctx = _get_context_window(text, match.start(), match.end())
-                entities.append(ExtractedEntity(
-                    entity_type=etype, raw_text=raw, normalized_text=normalized,
-                    confidence=0.6, context=ctx,
-                    page_number=page_numbers[0] if page_numbers else None,
-                    metadata={"custom_type": type_name},
-                ))
+                entities.append(
+                    ExtractedEntity(
+                        entity_type=etype,
+                        raw_text=raw,
+                        normalized_text=normalized,
+                        confidence=0.6,
+                        context=ctx,
+                        page_number=page_numbers[0] if page_numbers else None,
+                        metadata={"custom_type": type_name},
+                    )
+                )
 
         # Co-occurrence relationships even in regex mode
         relationships = _extract_cooccurrence_relationships(entities, text) if entities else []
@@ -931,8 +1050,11 @@ class EntityExtractor:
             entities=entities,
             relationships=relationships,
             summary=self._generate_summary(entities, relationships),
-            metadata={"backend": "regex", "total_chars": len(text),
-                       "note": "No AI/NER model available. Install gliner or spacy for people/org extraction."},
+            metadata={
+                "backend": "regex",
+                "total_chars": len(text),
+                "note": "No AI/NER model available. Install gliner or spacy for people/org extraction.",
+            },
         )
 
     # ------------------------------------------------------------------
@@ -945,21 +1067,21 @@ class EntityExtractor:
             return [text]
 
         chunks: list[str] = []
-        paragraphs = text.split('\n\n')
+        paragraphs = text.split("\n\n")
         current_chunk: list[str] = []
         current_len = 0
 
         for para in paragraphs:
             para_len = len(para) + 2
             if current_len + para_len > max_chars and current_chunk:
-                chunks.append('\n\n'.join(current_chunk))
+                chunks.append("\n\n".join(current_chunk))
                 current_chunk = []
                 current_len = 0
             current_chunk.append(para)
             current_len += para_len
 
         if current_chunk:
-            chunks.append('\n\n'.join(current_chunk))
+            chunks.append("\n\n".join(current_chunk))
 
         return chunks
 
@@ -982,7 +1104,9 @@ class EntityExtractor:
         return merged
 
     def _generate_summary(
-        self, entities: list[ExtractedEntity], relationships: list[dict[str, Any]],
+        self,
+        entities: list[ExtractedEntity],
+        relationships: list[dict[str, Any]],
     ) -> str:
         by_type: dict[EntityType, list[ExtractedEntity]] = {}
         for entity in entities:
@@ -1010,12 +1134,13 @@ class EntityExtractor:
             if len(relationships) > 20:
                 lines.append(f"  ... and {len(relationships) - 20} more")
 
-        return '\n'.join(lines)
+        return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
 # Entity linker (cross-document dedup)
 # ---------------------------------------------------------------------------
+
 
 class EntityLinker:
     """Link entities across documents to build a knowledge graph."""
@@ -1027,54 +1152,69 @@ class EntityLinker:
     def add_entities(self, entities: list[ExtractedEntity], source_doc_id: str) -> None:
         for entity in entities:
             canonical_id = self._find_or_create_canonical(entity)
-            entity.metadata['canonical_id'] = canonical_id
-            entity.metadata['source_doc'] = source_doc_id
+            entity.metadata["canonical_id"] = canonical_id
+            entity.metadata["source_doc"] = source_doc_id
 
     def _find_or_create_canonical(self, entity: ExtractedEntity) -> str:
         normalized = entity.normalized_text.lower().strip()
 
         for can_id, canonical in self.canonical_entities.items():
-            if canonical['type'] != entity.entity_type:
+            if canonical["type"] != entity.entity_type:
                 continue
 
-            if canonical['normalized'].lower() == normalized:
-                canonical['aliases'].add(entity.raw_text)
-                canonical['confidence'] = max(canonical['confidence'], entity.confidence)
+            if canonical["normalized"].lower() == normalized:
+                canonical["aliases"].add(entity.raw_text)
+                canonical["confidence"] = max(canonical["confidence"], entity.confidence)
                 return can_id
 
-            can_norm = canonical['normalized'].lower()
+            can_norm = canonical["normalized"].lower()
             if normalized in can_norm or can_norm in normalized:
                 if len(normalized) > 3 and len(can_norm) > 3:
-                    canonical['aliases'].add(entity.raw_text)
+                    canonical["aliases"].add(entity.raw_text)
                     return can_id
 
         import uuid
+
         can_id = str(uuid.uuid4())
         self.canonical_entities[can_id] = {
-            'id': can_id,
-            'type': entity.entity_type,
-            'normalized': entity.normalized_text,
-            'aliases': {entity.raw_text},
-            'confidence': entity.confidence,
-            'first_seen': entity.metadata.get('source_doc'),
+            "id": can_id,
+            "type": entity.entity_type,
+            "normalized": entity.normalized_text,
+            "aliases": {entity.raw_text},
+            "confidence": entity.confidence,
+            "first_seen": entity.metadata.get("source_doc"),
         }
         return can_id
 
     def link_entities(
-        self, source_id: str, target_id: str, relation: str,
-        confidence: ConfidenceLevel, evidence: str,
+        self,
+        source_id: str,
+        target_id: str,
+        relation: str,
+        confidence: ConfidenceLevel,
+        evidence: str,
     ) -> None:
-        self.links.append({
-            'source': source_id, 'target': target_id,
-            'relation': relation, 'confidence': confidence, 'evidence': evidence,
-        })
+        self.links.append(
+            {
+                "source": source_id,
+                "target": target_id,
+                "relation": relation,
+                "confidence": confidence,
+                "evidence": evidence,
+            }
+        )
 
     def export_graph(self) -> dict[str, Any]:
         return {
-            'entities': [
-                {'id': e['id'], 'type': e['type'].value, 'name': e['normalized'],
-                 'aliases': list(e['aliases']), 'confidence': e['confidence']}
+            "entities": [
+                {
+                    "id": e["id"],
+                    "type": e["type"].value,
+                    "name": e["normalized"],
+                    "aliases": list(e["aliases"]),
+                    "confidence": e["confidence"],
+                }
                 for e in self.canonical_entities.values()
             ],
-            'links': self.links,
+            "links": self.links,
         }

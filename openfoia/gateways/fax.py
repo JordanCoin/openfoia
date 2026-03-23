@@ -13,7 +13,6 @@ SRFax. The gateway interface remains the same regardless of provider.
 from __future__ import annotations
 
 import asyncio
-import base64
 import io
 import logging
 import tempfile
@@ -164,7 +163,9 @@ class TwilioFaxGateway(DeliveryGateway):
                 status=delivery_status,
                 reference_id=reference_id,
                 sent_at=fax.date_created,
-                delivered_at=fax.date_updated if delivery_status == DeliveryStatus.DELIVERED else None,
+                delivered_at=fax.date_updated
+                if delivery_status == DeliveryStatus.DELIVERED
+                else None,
                 cost_cents=int(float(fax.price or 0) * -100) if fax.price else None,
                 metadata={
                     "twilio_status": fax.status,
@@ -238,7 +239,7 @@ class TwilioFaxGateway(DeliveryGateway):
         from reportlab.lib.pagesizes import letter
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib.units import inch
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(
@@ -276,44 +277,50 @@ class TwilioFaxGateway(DeliveryGateway):
         if payload.cover_page:
             story.append(Paragraph("FACSIMILE TRANSMITTAL", header_style))
             story.append(Spacer(1, 12))
-            story.append(Paragraph(
-                f"<b>TO:</b> {payload.recipient_name}", body_style
-            ))
-            story.append(Paragraph(
-                f"<b>FAX:</b> {payload.recipient_address}", body_style
-            ))
-            story.append(Paragraph(
-                f"<b>DATE:</b> {datetime.now(timezone.utc).strftime('%B %d, %Y')}", body_style
-            ))
-            story.append(Paragraph(
-                f"<b>RE:</b> FOIA Request - {payload.subject}", body_style
-            ))
-            story.append(Paragraph(
-                f"<b>PAGES:</b> {self._estimate_pages(payload)} (including cover)",
-                body_style,
-            ))
+            story.append(Paragraph(f"<b>TO:</b> {payload.recipient_name}", body_style))
+            story.append(Paragraph(f"<b>FAX:</b> {payload.recipient_address}", body_style))
+            story.append(
+                Paragraph(
+                    f"<b>DATE:</b> {datetime.now(timezone.utc).strftime('%B %d, %Y')}", body_style
+                )
+            )
+            story.append(Paragraph(f"<b>RE:</b> FOIA Request - {payload.subject}", body_style))
+            story.append(
+                Paragraph(
+                    f"<b>PAGES:</b> {self._estimate_pages(payload)} (including cover)",
+                    body_style,
+                )
+            )
             if payload.return_address:
                 story.append(Spacer(1, 12))
-                story.append(Paragraph(
-                    f"<b>FROM:</b> {payload.return_address.split(chr(10))[0]}", body_style
-                ))
+                story.append(
+                    Paragraph(
+                        f"<b>FROM:</b> {payload.return_address.split(chr(10))[0]}", body_style
+                    )
+                )
             story.append(Spacer(1, 24))
-            story.append(Paragraph(
-                "FREEDOM OF INFORMATION ACT REQUEST",
-                header_style,
-            ))
+            story.append(
+                Paragraph(
+                    "FREEDOM OF INFORMATION ACT REQUEST",
+                    header_style,
+                )
+            )
             story.append(Spacer(1, 12))
 
         # FOIA preamble
-        story.append(Paragraph(
-            "Dear FOIA Officer,",
-            body_style,
-        ))
+        story.append(
+            Paragraph(
+                "Dear FOIA Officer,",
+                body_style,
+            )
+        )
         story.append(Spacer(1, 6))
-        story.append(Paragraph(
-            "This is a request under the Freedom of Information Act, 5 U.S.C. &sect; 552.",
-            body_style,
-        ))
+        story.append(
+            Paragraph(
+                "This is a request under the Freedom of Information Act, 5 U.S.C. &sect; 552.",
+                body_style,
+            )
+        )
         story.append(Spacer(1, 12))
 
         # Request body paragraphs
@@ -327,12 +334,14 @@ class TwilioFaxGateway(DeliveryGateway):
 
         # Fee waiver and closing
         story.append(Spacer(1, 12))
-        story.append(Paragraph(
-            "I request a fee waiver for this request. Disclosure of the requested "
-            "information is in the public interest because it is likely to contribute "
-            "significantly to public understanding of government operations and activities.",
-            body_style,
-        ))
+        story.append(
+            Paragraph(
+                "I request a fee waiver for this request. Disclosure of the requested "
+                "information is in the public interest because it is likely to contribute "
+                "significantly to public understanding of government operations and activities.",
+                body_style,
+            )
+        )
         story.append(Spacer(1, 12))
         story.append(Paragraph("Thank you for your assistance.", body_style))
         story.append(Spacer(1, 24))
@@ -376,15 +385,15 @@ class TwilioFaxGateway(DeliveryGateway):
                 line = line[split_at:].lstrip()
             text_lines.append(line)
 
-        text_lines.extend([
-            "",
-            "Respectfully,",
-            sender,
-        ])
+        text_lines.extend(
+            [
+                "",
+                "Respectfully,",
+                sender,
+            ]
+        )
 
         # Build minimal PDF manually
-        content = "\n".join(text_lines)
-        stream = f"BT /F1 12 Tf 72 720 Td 14 TL ({self._pdf_escape(content)}) Tj ET"
         # For multi-line, use T* operator
         lines_pdf = []
         y = 720
@@ -438,6 +447,7 @@ class TwilioFaxGateway(DeliveryGateway):
         if self.media_base_url:
             # Write to temp file and construct URL from configured base
             import hashlib
+
             file_hash = hashlib.sha256(pdf_bytes).hexdigest()[:16]
             filename = f"foia_fax_{file_hash}.pdf"
 

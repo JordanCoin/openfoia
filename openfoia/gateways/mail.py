@@ -70,6 +70,7 @@ class LobMailGateway(DeliveryGateway):
         """Lazily initialize Lob client."""
         if self._letters_api is None:
             import lob
+
             lob.api_key = self.api_key
             self._letters_api = lob
         return self._letters_api
@@ -81,7 +82,7 @@ class LobMailGateway(DeliveryGateway):
         sends it via Lob's print-and-mail API, and returns tracking info.
         """
         try:
-            import lob
+            import lob  # noqa: F401 — triggers ImportError if not installed
 
             lob_client = self._get_lob()
 
@@ -175,12 +176,14 @@ class LobMailGateway(DeliveryGateway):
 
             if hasattr(letter, "tracking_events") and letter.tracking_events:
                 for event in letter.tracking_events:
-                    tracking_events.append({
-                        "type": getattr(event, "type", None),
-                        "name": getattr(event, "name", None),
-                        "time": str(getattr(event, "time", "")),
-                        "location": getattr(event, "location", None),
-                    })
+                    tracking_events.append(
+                        {
+                            "type": getattr(event, "type", None),
+                            "name": getattr(event, "name", None),
+                            "time": str(getattr(event, "time", "")),
+                            "location": getattr(event, "location", None),
+                        }
+                    )
 
                 latest = letter.tracking_events[-1]
                 event_name = getattr(latest, "name", "") or ""

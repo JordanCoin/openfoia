@@ -104,12 +104,14 @@ class OpenCorporatesAdapter(RecordAdapter):
             officer = officer_item.get("officer", {})
             officer_name = officer.get("name")
             if officer_name:
-                officers.append({
-                    "name": officer_name,
-                    "position": officer.get("position", ""),
-                    "start_date": officer.get("start_date", ""),
-                    "end_date": officer.get("end_date"),
-                })
+                officers.append(
+                    {
+                        "name": officer_name,
+                        "position": officer.get("position", ""),
+                        "start_date": officer.get("start_date", ""),
+                        "end_date": officer.get("end_date"),
+                    }
+                )
 
         # Collect addresses
         registered_address = company.get("registered_address") or {}

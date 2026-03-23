@@ -6,7 +6,6 @@ Supports optional AES-256 encryption at rest via SQLCipher.
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import sqlite3
@@ -19,12 +18,13 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from .models import Base, Agency, AgencyLevel, DeliveryMethod
+from .models import Agency, AgencyLevel, DeliveryMethod
 
 # Check for SQLCipher availability
 _HAS_SQLCIPHER = False
 try:
     import pysqlcipher3.dbapi2 as sqlcipher  # noqa: F401
+
     _HAS_SQLCIPHER = True
 except ImportError:
     pass
@@ -48,6 +48,7 @@ def get_db_password() -> str | None:
 
     # Check config file
     from .config import load_config
+
     cfg = load_config()
     return cfg.encryption.password
 
@@ -105,6 +106,7 @@ def get_db_path(password: str | None = None) -> Path:
 
     if password:
         from .security import is_duress_password, get_decoy_db_path
+
         if is_duress_password(password):
             return get_decoy_db_path()
 
@@ -227,8 +229,7 @@ def encrypt_database(password: str) -> None:
     """
     if not _HAS_SQLCIPHER:
         raise RuntimeError(
-            "pysqlcipher3 is not installed. "
-            "Install with: pip install 'openfoia[encryption]'"
+            "pysqlcipher3 is not installed. Install with: pip install 'openfoia[encryption]'"
         )
 
     db_path = get_db_path()
@@ -236,9 +237,7 @@ def encrypt_database(password: str) -> None:
         raise FileNotFoundError(f"Database not found: {db_path}")
 
     # Create encrypted copy in a temp file next to the original
-    tmp_fd, tmp_path = tempfile.mkstemp(
-        suffix=".db", dir=db_path.parent, prefix=".encrypting_"
-    )
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".db", dir=db_path.parent, prefix=".encrypting_")
     os.close(tmp_fd)
 
     try:
@@ -266,6 +265,7 @@ def encrypt_database(password: str) -> None:
         # Remove the plaintext backup — don't leave unencrypted data on disk
         try:
             from .security import secure_delete
+
             secure_delete(backup_path)
         except Exception:
             # If secure_delete isn't available, at least do a normal delete
@@ -282,15 +282,15 @@ def seed_agencies(engine: Engine) -> int:
     """Seed the database with federal agencies. Returns count of agencies added."""
     SessionLocal = sessionmaker(bind=engine)
     session = SessionLocal()
-    
+
     # Check if agencies already exist
     existing = session.query(Agency).count()
     if existing > 0:
         session.close()
         return 0
-    
+
     agencies_data = get_federal_agencies()
-    
+
     for data in agencies_data:
         agency = Agency(
             name=data["name"],
@@ -305,7 +305,7 @@ def seed_agencies(engine: Engine) -> int:
             fee_waiver_criteria=data.get("fee_waiver_criteria"),
         )
         session.add(agency)
-    
+
     session.commit()
     count = len(agencies_data)
     session.close()
@@ -314,7 +314,7 @@ def seed_agencies(engine: Engine) -> int:
 
 def get_federal_agencies() -> list[dict]:
     """Return federal agency seed data.
-    
+
     Sources:
     - https://www.foia.gov/agency-search.html
     - Individual agency FOIA pages
@@ -361,7 +361,6 @@ def get_federal_agencies() -> list[dict]:
             "preferred_method": "email",
             "typical_response_days": 30,
         },
-        
         # Justice
         {
             "name": "Department of Justice",
@@ -397,7 +396,6 @@ def get_federal_agencies() -> list[dict]:
             "preferred_method": "email",
             "typical_response_days": 25,
         },
-        
         # Defense
         {
             "name": "Department of Defense",
@@ -432,7 +430,6 @@ def get_federal_agencies() -> list[dict]:
             "preferred_method": "email",
             "typical_response_days": 30,
         },
-        
         # Regulatory
         {
             "name": "Environmental Protection Agency",
@@ -487,7 +484,6 @@ def get_federal_agencies() -> list[dict]:
             "preferred_method": "email",
             "typical_response_days": 20,
         },
-        
         # Executive
         {
             "name": "White House Office",
@@ -504,7 +500,6 @@ def get_federal_agencies() -> list[dict]:
             "preferred_method": "email",
             "typical_response_days": 25,
         },
-        
         # Health & Human Services
         {
             "name": "Department of Health and Human Services",
@@ -550,7 +545,6 @@ def get_federal_agencies() -> list[dict]:
             "preferred_method": "email",
             "typical_response_days": 25,
         },
-        
         # Treasury & Finance
         {
             "name": "Department of the Treasury",
@@ -588,7 +582,6 @@ def get_federal_agencies() -> list[dict]:
             "preferred_method": "email",
             "typical_response_days": 20,
         },
-        
         # State & International
         {
             "name": "Department of State",
@@ -607,7 +600,6 @@ def get_federal_agencies() -> list[dict]:
             "preferred_method": "email",
             "typical_response_days": 25,
         },
-        
         # Labor & Commerce
         {
             "name": "Department of Labor",
@@ -644,7 +636,6 @@ def get_federal_agencies() -> list[dict]:
             "preferred_method": "email",
             "typical_response_days": 20,
         },
-        
         # Transportation
         {
             "name": "Department of Transportation",
@@ -671,7 +662,6 @@ def get_federal_agencies() -> list[dict]:
             "preferred_method": "email",
             "typical_response_days": 20,
         },
-        
         # Other Major Agencies
         {
             "name": "National Aeronautics and Space Administration",
@@ -745,7 +735,6 @@ def get_federal_agencies() -> list[dict]:
             "preferred_method": "email",
             "typical_response_days": 20,
         },
-        
         # Independent Agencies
         {
             "name": "General Services Administration",

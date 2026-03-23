@@ -16,10 +16,10 @@ import time
 from pathlib import Path
 
 from openfoia.pipeline.extract import (
-    EntityExtractor, ExtractionResult,
-    _gliner_available, _spacy_available, _llm_available,
+    EntityExtractor,
+    _gliner_available,
+    _llm_available,
 )
-from openfoia.models import EntityType
 from openfoia.config import load_config
 
 # Richer test doc with more entities and relationships
@@ -69,14 +69,23 @@ Director, Office of Information Policy
 """
 
 EXPECTED_PERSONS = {
-    "Sarah Chen", "James R. Whitfield", "Robert Garrison", "Lisa Park",
-    "Maria Gonzalez", "Daniel Okoro", "Michael Torres",
+    "Sarah Chen",
+    "James R. Whitfield",
+    "Robert Garrison",
+    "Lisa Park",
+    "Maria Gonzalez",
+    "Daniel Okoro",
+    "Michael Torres",
 }
 
 EXPECTED_ORGS = {
-    "Department of Justice", "Department of Defense", "Meridian Defense Systems",
-    "Consolidated Federal Services LLC", "First National Bank of Virginia",
-    "Defense Intelligence Agency", "Armed Services Committee",
+    "Department of Justice",
+    "Department of Defense",
+    "Meridian Defense Systems",
+    "Consolidated Federal Services LLC",
+    "First National Bank of Virginia",
+    "Defense Intelligence Agency",
+    "Armed Services Committee",
     "Office of Information Policy",
 }
 
@@ -128,8 +137,7 @@ def check_relationship_recall(result, expected):
         src_l = exp_src.lower()
         tgt_l = exp_tgt.lower()
         matched = any(
-            (src_l in fs and tgt_l in ft) or (tgt_l in fs and src_l in ft)
-            for fs, ft in found_pairs
+            (src_l in fs and tgt_l in ft) or (tgt_l in fs and src_l in ft) for fs, ft in found_pairs
         )
         if matched:
             found += 1
@@ -141,9 +149,15 @@ def check_relationship_recall(result, expected):
 def generate_graph_html(result, output_path):
     """Generate a force-directed graph visualization."""
     type_colors = {
-        "person": "#e74c3c", "organization": "#3498db", "location": "#2ecc71",
-        "money": "#f39c12", "date": "#9b59b6", "email": "#1abc9c",
-        "phone": "#e67e22", "document_id": "#95a5a6", "address": "#34495e",
+        "person": "#e74c3c",
+        "organization": "#3498db",
+        "location": "#2ecc71",
+        "money": "#f39c12",
+        "date": "#9b59b6",
+        "email": "#1abc9c",
+        "phone": "#e67e22",
+        "document_id": "#95a5a6",
+        "address": "#34495e",
     }
 
     nodes = []
@@ -151,12 +165,16 @@ def generate_graph_html(result, output_path):
     for i, ent in enumerate(result.entities):
         nid = f"n{i}"
         node_ids[ent.normalized_text.lower()] = nid
-        nodes.append({
-            "id": nid, "label": ent.normalized_text, "type": ent.entity_type.value,
-            "color": type_colors.get(ent.entity_type.value, "#bdc3c7"),
-            "confidence": ent.confidence,
-            "occurrences": ent.metadata.get("occurrence_count", 1),
-        })
+        nodes.append(
+            {
+                "id": nid,
+                "label": ent.normalized_text,
+                "type": ent.entity_type.value,
+                "color": type_colors.get(ent.entity_type.value, "#bdc3c7"),
+                "confidence": ent.confidence,
+                "occurrences": ent.metadata.get("occurrence_count", 1),
+            }
+        )
 
     edges = []
     for rel in result.relationships:
@@ -169,10 +187,14 @@ def generate_graph_html(result, output_path):
             if tgt in key or key in tgt:
                 tgt_id = nid
         if src_id and tgt_id and src_id != tgt_id:
-            edges.append({
-                "source": src_id, "target": tgt_id,
-                "label": rel.get("relation", ""), "confidence": rel.get("confidence", 0.5),
-            })
+            edges.append(
+                {
+                    "source": src_id,
+                    "target": tgt_id,
+                    "label": rel.get("relation", ""),
+                    "confidence": rel.get("confidence", 0.5),
+                }
+            )
 
     graph_data = json.dumps({"nodes": nodes, "edges": edges})
 
@@ -270,8 +292,10 @@ def main():
     print("OpenFOIA Entity Extraction Benchmark")
     print("=" * 70)
     print(f"\nDocument: {len(DOC)} chars")
-    print(f"Expected: {len(EXPECTED_PERSONS)} persons, {len(EXPECTED_ORGS)} orgs, "
-          f"{len(EXPECTED_MONEY)} money, {len(EXPECTED_RELATIONSHIPS)} relationships")
+    print(
+        f"Expected: {len(EXPECTED_PERSONS)} persons, {len(EXPECTED_ORGS)} orgs, "
+        f"{len(EXPECTED_MONEY)} money, {len(EXPECTED_RELATIONSHIPS)} relationships"
+    )
     print(f"Backends: {', '.join(b[0] for b in backends)}\n")
 
     best_result = None
@@ -291,21 +315,26 @@ def main():
         m_found, m_total, m_missed = check_recall(result, EXPECTED_MONEY, "money")
         r_found, r_total, r_missed = check_relationship_recall(result, EXPECTED_RELATIONSHIPS)
 
-        pr = p_found/p_total if p_total else 0
-        orr = o_found/o_total if o_total else 0
-        mr = m_found/m_total if m_total else 0
-        rr = r_found/r_total if r_total else 0
+        pr = p_found / p_total if p_total else 0
+        orr = o_found / o_total if o_total else 0
+        mr = m_found / m_total if m_total else 0
+        rr = r_found / r_total if r_total else 0
         overall = (pr + orr + mr + rr) / 4
 
         print(f"  Time:          {elapsed:.1f}s")
         print(f"  Entities:      {len(result.entities)} total")
         print(f"  Persons:       {p_found}/{p_total} ({pr:.0%})")
-        for m in p_missed: print(f"    MISSED: {m}")
+        for m in p_missed:
+            print(f"    MISSED: {m}")
         print(f"  Organizations: {o_found}/{o_total} ({orr:.0%})")
-        for m in o_missed: print(f"    MISSED: {m}")
+        for m in o_missed:
+            print(f"    MISSED: {m}")
         print(f"  Money:         {m_found}/{m_total} ({mr:.0%})")
-        print(f"  Relationships: {r_found}/{r_total} ({rr:.0%}) [{len(result.relationships)} total]")
-        for s, t in list(r_missed)[:5]: print(f"    MISSED: {s} <-> {t}")
+        print(
+            f"  Relationships: {r_found}/{r_total} ({rr:.0%}) [{len(result.relationships)} total]"
+        )
+        for s, t in list(r_missed)[:5]:
+            print(f"    MISSED: {s} <-> {t}")
         print(f"  OVERALL:       {overall:.0%}\n")
 
         if overall > best_score:

@@ -12,12 +12,11 @@ Allows an AI agent to drive the entire FOIA workflow:
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from .models import Agency, DeliveryMethod, Request, RequestStatus
+from .models import Agency, Request, RequestStatus
 
 
 @dataclass
@@ -32,7 +31,7 @@ class AgentAction:
 
 class OpenFOIAAgent:
     """Agent interface for AI-driven FOIA workflows.
-    
+
     Exposes a tool-calling interface that LLMs can use to:
     1. Search for agencies
     2. Draft FOIA requests
@@ -289,11 +288,11 @@ class OpenFOIAAgent:
             "search_entities": self._search_entities,
             "generate_report": self._generate_report,
         }
-        
+
         handler = handlers.get(name)
         if not handler:
             return {"error": f"Unknown tool: {name}"}
-        
+
         try:
             return await handler(params)
         except Exception as e:
@@ -311,6 +310,7 @@ class OpenFOIAAgent:
 
         if level and level != "all":
             from .models import AgencyLevel
+
             try:
                 agencies = agencies.filter(Agency.level == AgencyLevel(level))
             except ValueError:
@@ -335,9 +335,11 @@ class OpenFOIAAgent:
     async def _get_agency_info(self, params: dict[str, Any]) -> dict[str, Any]:
         """Get agency details."""
         agency_id = params.get("agency_id")
-        agency = self.db.query(Agency).filter(
-            (Agency.id == agency_id) | (Agency.abbreviation.ilike(agency_id))
-        ).first()
+        agency = (
+            self.db.query(Agency)
+            .filter((Agency.id == agency_id) | (Agency.abbreviation.ilike(agency_id)))
+            .first()
+        )
 
         if not agency:
             return {"error": f"Agency not found: {agency_id}"}
@@ -359,25 +361,26 @@ class OpenFOIAAgent:
         """Draft a FOIA request."""
         # Build request body
         records = params.get("records_requested", [])
-        records_text = "\n".join(f"{i+1}. {r}" for i, r in enumerate(records))
-        
+        records_text = "\n".join(f"{i + 1}. {r}" for i, r in enumerate(records))
+
         body = f"""This is a request under the Freedom of Information Act, 5 U.S.C. § 552.
 
 I request copies of the following records:
 
 {records_text}
 
-Date range: {params.get('date_range_start', 'earliest available')} to {params.get('date_range_end', 'present')}.
+Date range: {params.get("date_range_start", "earliest available")} to {params.get("date_range_end", "present")}.
 
 Fee Waiver Request:
-{params.get('fee_waiver_justification', 'I request a fee waiver as disclosure of this information is in the public interest.')}
+{params.get("fee_waiver_justification", "I request a fee waiver as disclosure of this information is in the public interest.")}
 
 Please contact me if you have questions about this request.
 """
-        
+
         import uuid
+
         request_id = str(uuid.uuid4())[:8]
-        
+
         return {
             "request_id": request_id,
             "status": "draft",
@@ -401,6 +404,7 @@ Please contact me if you have questions about this request.
         if not request.due_date:
             response_days = request.agency.typical_response_days if request.agency else 20
             from datetime import timedelta
+
             current = request.sent_at
             days_added = 0
             while days_added < response_days:
@@ -423,17 +427,23 @@ Please contact me if you have questions about this request.
     async def _check_request_status(self, params: dict[str, Any]) -> dict[str, Any]:
         """Check request status."""
         request_id = params.get("request_id")
-        request = self.db.query(Request).filter(
-            (Request.id == request_id) | (Request.request_number == request_id)
-        ).first()
+        request = (
+            self.db.query(Request)
+            .filter((Request.id == request_id) | (Request.request_number == request_id))
+            .first()
+        )
 
         if not request:
             return {"error": f"Request not found: {request_id}"}
 
         from .models import TimelineEvent
-        events = self.db.query(TimelineEvent).filter(
-            TimelineEvent.request_id == request.id
-        ).order_by(TimelineEvent.occurred_at).all()
+
+        events = (
+            self.db.query(TimelineEvent)
+            .filter(TimelineEvent.request_id == request.id)
+            .order_by(TimelineEvent.occurred_at)
+            .all()
+        )
 
         return {
             "request_id": request.id,
@@ -441,11 +451,17 @@ Please contact me if you have questions about this request.
             "status": request.status.value,
             "agency_tracking_number": request.agency_tracking_number,
             "sent_at": request.sent_at.isoformat() if request.sent_at else None,
-            "acknowledged_at": request.acknowledged_at.isoformat() if request.acknowledged_at else None,
+            "acknowledged_at": request.acknowledged_at.isoformat()
+            if request.acknowledged_at
+            else None,
             "days_pending": request.days_pending(),
             "is_overdue": request.is_overdue(),
             "timeline": [
-                {"event": e.event_type, "date": e.occurred_at.isoformat(), "description": e.description}
+                {
+                    "event": e.event_type,
+                    "date": e.occurred_at.isoformat(),
+                    "description": e.description,
+                }
                 for e in events
             ],
         }
@@ -486,12 +502,14 @@ Please contact me if you have questions about this request.
         """Process a document."""
         from pathlib import Path
         from .db import get_data_dir
+
         doc_path = params.get("document_path", "")
 
         if not Path(doc_path).exists():
             return {"error": f"File not found: {doc_path}"}
 
         from .pipeline.ingest import DocumentIngester
+
         storage_path = get_data_dir() / "docs"
         ingester = DocumentIngester(storage_path=storage_path)
         result = await ingester.ingest_file(Path(doc_path), request_id=params.get("request_id"))
@@ -507,6 +525,7 @@ Please contact me if you have questions about this request.
     async def _extract_entities(self, params: dict[str, Any]) -> dict[str, Any]:
         """Extract entities from a document."""
         from .models import Document
+
         doc_id = params.get("document_id")
         doc = self.db.query(Document).filter(Document.id == doc_id).first()
 
@@ -517,6 +536,7 @@ Please contact me if you have questions about this request.
             return {"error": "Document has no extracted text. Run OCR first."}
 
         from .pipeline.extract import EntityExtractor
+
         extractor = EntityExtractor()
         result = await extractor.extract(doc.extracted_text)
 
@@ -558,6 +578,7 @@ Please contact me if you have questions about this request.
     async def _search_entities(self, params: dict[str, Any]) -> dict[str, Any]:
         """Search entities."""
         from .models import Entity
+
         search = f"%{params.get('query', '')}%"
 
         query = self.db.query(Entity).filter(Entity.normalized_text.ilike(search))
@@ -565,6 +586,7 @@ Please contact me if you have questions about this request.
         entity_type = params.get("entity_type")
         if entity_type and entity_type != "all":
             from .models import EntityType
+
             try:
                 query = query.filter(Entity.entity_type == EntityType(entity_type))
             except ValueError:
@@ -601,7 +623,7 @@ Please contact me if you have questions about this request.
             for doc in req.documents:
                 all_entities.extend(doc.entities)
 
-        report = f"# FOIA Analysis Report\n\n"
+        report = "# FOIA Analysis Report\n\n"
         report += f"## Requests Analyzed: {len(requests)}\n\n"
         for req in requests:
             report += f"- **{req.request_number}**: {req.subject} ({req.status.value})\n"

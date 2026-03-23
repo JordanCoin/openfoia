@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
@@ -206,7 +206,7 @@ def _strip_trackers(html: str) -> str:
     )
     # Remove inline scripts containing tracker references
     html = re.sub(
-        rf'<script[^>]*>(?:[^<]*(?:{combined_pattern})[^<]*)</script>',
+        rf"<script[^>]*>(?:[^<]*(?:{combined_pattern})[^<]*)</script>",
         "",
         html,
         flags=re.DOTALL | re.IGNORECASE,
@@ -248,9 +248,7 @@ async def fetch_url(url: str, use_tor: bool = False) -> WebFetchResult:
 
     transport = None
     if use_tor:
-        transport = httpx.AsyncHTTPTransport(
-            proxy="socks5://127.0.0.1:9050"
-        )
+        transport = httpx.AsyncHTTPTransport(proxy="socks5://127.0.0.1:9050")
 
     async with httpx.AsyncClient(
         transport=transport,

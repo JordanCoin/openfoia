@@ -31,16 +31,36 @@ _ENTITY_TYPE_TO_FTM_SCHEMA: dict[str, str] = {
 
 # Map OpenFOIA relationship types to FtM interstitial schemas
 _RELATION_TO_FTM: dict[str, dict[str, str]] = {
-    "affiliated_with": {"schema": "Membership", "source_prop": "member", "target_prop": "organization"},
+    "affiliated_with": {
+        "schema": "Membership",
+        "source_prop": "member",
+        "target_prop": "organization",
+    },
     "works_for": {"schema": "Membership", "source_prop": "member", "target_prop": "organization"},
     "located_at": {"schema": "Address", "source_prop": "entity", "target_prop": "full"},
-    "communicated_with": {"schema": "Email", "source_prop": "emitters", "target_prop": "recipients"},
-    "financial_transaction": {"schema": "Payment", "source_prop": "payer", "target_prop": "beneficiary"},
+    "communicated_with": {
+        "schema": "Email",
+        "source_prop": "emitters",
+        "target_prop": "recipients",
+    },
+    "financial_transaction": {
+        "schema": "Payment",
+        "source_prop": "payer",
+        "target_prop": "beneficiary",
+    },
     "associated_amount": {"schema": "Payment", "source_prop": "payer", "target_prop": "amountUsd"},
     "related_to": {"schema": "UnknownLink", "source_prop": "subject", "target_prop": "object"},
     "dated_event": {"schema": "Event", "source_prop": "involved", "target_prop": "date"},
-    "supervised_by": {"schema": "Directorship", "source_prop": "director", "target_prop": "organization"},
-    "contracted_with": {"schema": "Contract", "source_prop": "authority", "target_prop": "contractor"},
+    "supervised_by": {
+        "schema": "Directorship",
+        "source_prop": "director",
+        "target_prop": "organization",
+    },
+    "contracted_with": {
+        "schema": "Contract",
+        "source_prop": "authority",
+        "target_prop": "contractor",
+    },
 }
 
 
@@ -48,6 +68,7 @@ def _try_ftm_available() -> bool:
     """Check if followthemoney library is installed."""
     try:
         import followthemoney  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -113,6 +134,7 @@ def entities_to_ftm_json(entities: list[Any], relationships: list[dict]) -> list
 
         # Generate a stable ID from entity text + type
         import hashlib
+
         ftm_id = hashlib.sha256(
             f"{ent.entity_type.value}:{ent.normalized_text}".encode()
         ).hexdigest()[:32]
@@ -137,11 +159,13 @@ def entities_to_ftm_json(entities: list[Any], relationships: list[dict]) -> list
         if ent.context:
             properties["notes"] = [ent.context[:500]]
 
-        ftm_lines.append({
-            "id": ftm_id,
-            "schema": schema,
-            "properties": properties,
-        })
+        ftm_lines.append(
+            {
+                "id": ftm_id,
+                "schema": schema,
+                "properties": properties,
+            }
+        )
 
     # Convert relationships to FtM interstitial entities
     for rel in relationships:
@@ -157,9 +181,8 @@ def entities_to_ftm_json(entities: list[Any], relationships: list[dict]) -> list
         ftm_rel = _RELATION_TO_FTM.get(relation, _RELATION_TO_FTM["related_to"])
 
         import hashlib
-        rel_id = hashlib.sha256(
-            f"{source_id}:{target_id}:{relation}".encode()
-        ).hexdigest()[:32]
+
+        rel_id = hashlib.sha256(f"{source_id}:{target_id}:{relation}".encode()).hexdigest()[:32]
 
         properties = {
             ftm_rel["source_prop"]: [source_id],
@@ -169,11 +192,13 @@ def entities_to_ftm_json(entities: list[Any], relationships: list[dict]) -> list
         if rel.get("evidence"):
             properties["summary"] = [rel["evidence"][:500]]
 
-        ftm_lines.append({
-            "id": rel_id,
-            "schema": ftm_rel["schema"],
-            "properties": properties,
-        })
+        ftm_lines.append(
+            {
+                "id": rel_id,
+                "schema": ftm_rel["schema"],
+                "properties": properties,
+            }
+        )
 
     return ftm_lines
 

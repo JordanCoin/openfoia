@@ -54,7 +54,11 @@ class SECEdgarAdapter(RecordAdapter):
             data = response.json()
 
         hits = data.get("hits", {})
-        total = hits.get("total", {}).get("value", 0) if isinstance(hits.get("total"), dict) else hits.get("total", 0)
+        total = (
+            hits.get("total", {}).get("value", 0)
+            if isinstance(hits.get("total"), dict)
+            else hits.get("total", 0)
+        )
         hit_list = hits.get("hits", [])
 
         entities: list[RecordEntity] = []
@@ -83,7 +87,6 @@ class SECEdgarAdapter(RecordAdapter):
             RecordEntity if found, None otherwise.
         """
         # Search by accession number
-        clean_id = identifier.replace("-", "")
         params = {"q": f'"{identifier}"', "size": 1}
 
         async with httpx.AsyncClient(

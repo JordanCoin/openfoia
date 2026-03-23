@@ -13,7 +13,6 @@ Tor daemon must be running locally on port 9050 when --tor is used.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -27,9 +26,7 @@ from rich import print as rprint
 TOR_SOCKS_PROXY = "socks5://127.0.0.1:9050"
 
 # A common, non-unique user-agent string to blend in
-_COMMON_UA = (
-    "Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0"
-)
+_COMMON_UA = "Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0"
 
 _TOR_WARNING = """
 [bold yellow]Tor Browsing Session[/bold yellow]
@@ -171,6 +168,7 @@ async def browse(
             # Save to file
             if save_dir is None:
                 from .db import get_data_dir
+
                 save_dir = get_data_dir() / "browse"
 
             save_dir.mkdir(parents=True, exist_ok=True)
@@ -179,7 +177,7 @@ async def browse(
             import re
             from datetime import datetime
 
-            safe_name = re.sub(r'[^\w\-.]', '_', url.split("//", 1)[-1][:60])
+            safe_name = re.sub(r"[^\w\-.]", "_", url.split("//", 1)[-1][:60])
             timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
             filename = f"{timestamp}_{safe_name}.txt"
             out_path = save_dir / filename
@@ -196,7 +194,9 @@ async def browse(
             rprint(f"[green]Saved to:[/green] {out_path}")
 
         if not headless:
-            rprint("\n[dim]Browser is open. Close the browser window or press Ctrl+C to exit.[/dim]")
+            rprint(
+                "\n[dim]Browser is open. Close the browser window or press Ctrl+C to exit.[/dim]"
+            )
             try:
                 await page.wait_for_event("close", timeout=0)
             except KeyboardInterrupt:
