@@ -54,6 +54,10 @@ htmlcov/
 *.key
 credentials.json
 
+# Agent/tool local state
+.codemap/
+.context/
+
 # OS
 .DS_Store
 Thumbs.db
