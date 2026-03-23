@@ -6,7 +6,8 @@ Local-first investigation toolkit for journalists. Python 3.11+, FastAPI, SQLAlc
 
 ```bash
 source /tmp/openfoia-venv/bin/activate  # or wherever your venv is
-pip install -e .
+pip install -e ".[dev]"
+git config core.hooksPath .githooks      # enables pre-commit lint + format
 openfoia init
 python -m pytest tests/ -v
 ```
