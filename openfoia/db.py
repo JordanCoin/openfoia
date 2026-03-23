@@ -138,15 +138,11 @@ def get_engine(db_path: Path | None = None, password: str | None = None) -> Engi
             echo=False,
         )
     elif password and not _HAS_SQLCIPHER:
-        import warnings
-        warnings.warn(
+        raise RuntimeError(
             "Database password is set but pysqlcipher3 is not installed. "
-            "Falling back to plain SQLite (UNENCRYPTED). "
-            "Install with: pip install 'openfoia[encryption]'",
-            stacklevel=2,
+            "Your data would be stored UNENCRYPTED. Refusing to continue. "
+            "Install encryption support: openfoia install-extras encryption"
         )
-        url = f"sqlite:///{db_path}"
-        engine = create_engine(url, echo=False)
     else:
         url = f"sqlite:///{db_path}"
         engine = create_engine(url, echo=False)
@@ -262,10 +258,19 @@ def encrypt_database(password: str) -> None:
         enc_conn.close()
         plain_conn.close()
 
-        # Backup original, swap in encrypted version
+        # Backup original, swap in encrypted version, then securely delete backup
         backup_path = db_path.with_suffix(".db.bak")
         shutil.copy2(db_path, backup_path)
         shutil.move(tmp_path, db_path)
+
+        # Remove the plaintext backup — don't leave unencrypted data on disk
+        try:
+            from .security import secure_delete
+            secure_delete(backup_path)
+        except Exception:
+            # If secure_delete isn't available, at least do a normal delete
+            if backup_path.exists():
+                backup_path.unlink()
     except Exception:
         # Clean up temp file on failure
         if Path(tmp_path).exists():

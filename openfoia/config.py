@@ -20,6 +20,13 @@ from pathlib import Path
 from typing import Any
 
 
+def _default_config_path() -> Path:
+    """Get config path respecting portable mode and OPENFOIA_DATA_DIR."""
+    from .db import get_data_dir
+    return get_data_dir() / "config.json"
+
+
+# Keep for backward compat but prefer _default_config_path()
 DEFAULT_CONFIG_PATH = Path.home() / ".openfoia" / "config.json"
 
 
@@ -176,7 +183,7 @@ def load_config(
     config = OpenFOIAConfig()
     
     # Load from file
-    path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
+    path = Path(config_path) if config_path else _default_config_path()
     if path.exists():
         try:
             with open(path) as f:
@@ -328,7 +335,7 @@ def _apply_env_overrides(config: OpenFOIAConfig, prefix: str) -> OpenFOIAConfig:
 
 def save_config(config: OpenFOIAConfig, config_path: Path | str | None = None) -> None:
     """Save configuration to file (excludes secrets)."""
-    path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
+    path = Path(config_path) if config_path else _default_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     
     data = {

@@ -574,8 +574,17 @@ class EntityExtractor:
         if self._backend is not None:
             return self._backend
 
-        # Try in order of quality
+        # Try in order of quality.
+        # Cloud providers (anthropic, openai) only used if explicitly configured —
+        # we don't silently send document text to external APIs.
         if _llm_available(self.provider, self.api_key, self.base_url):
+            if self.provider in ("anthropic", "openai"):
+                import sys
+                print(
+                    f"WARNING: Using cloud AI provider '{self.provider}'. "
+                    "Document text will be sent to external servers.",
+                    file=sys.stderr,
+                )
             self._backend = "llm"
         elif _gliner_available():
             self._backend = "gliner"
@@ -869,6 +878,35 @@ class EntityExtractor:
                         context=ctx,
                         page_number=page_num,
                     ))
+
+        # Custom patterns from config (so openfoia entities add actually works in regex mode)
+        for ct in self.entity_config.custom_types:
+            pattern_str = ct.get("pattern", "")
+            type_name = ct.get("name", "CUSTOM").upper()
+            if not pattern_str:
+                continue
+            try:
+                compiled = re.compile(pattern_str)
+            except re.error:
+                continue
+            try:
+                etype = EntityType(type_name.lower())
+            except ValueError:
+                etype = EntityType.DOCUMENT_ID
+            for match in compiled.finditer(text):
+                raw = match.group(0)
+                normalized = raw.strip()
+                key = (type_name.lower(), normalized.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                ctx = _get_context_window(text, match.start(), match.end())
+                entities.append(ExtractedEntity(
+                    entity_type=etype, raw_text=raw, normalized_text=normalized,
+                    confidence=0.6, context=ctx,
+                    page_number=page_numbers[0] if page_numbers else None,
+                    metadata={"custom_type": type_name},
+                ))
 
         # Co-occurrence relationships even in regex mode
         relationships = _extract_cooccurrence_relationships(entities, text) if entities else []

@@ -505,7 +505,9 @@ def get_index_html() -> str:
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OpenFOIA</title>
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <!-- NOTE: Tailwind CSS loaded from CDN for styling convenience.
+         For air-gapped/high-security deployments, pre-build Tailwind CSS
+         and serve from disk. See docs/AIRGAP.md -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .gradient-bg {

@@ -485,20 +485,22 @@ Please contact me if you have questions about this request.
     async def _process_document(self, params: dict[str, Any]) -> dict[str, Any]:
         """Process a document."""
         from pathlib import Path
+        from .db import get_data_dir
         doc_path = params.get("document_path", "")
 
         if not Path(doc_path).exists():
             return {"error": f"File not found: {doc_path}"}
 
         from .pipeline.ingest import DocumentIngester
-        ingester = DocumentIngester()
+        storage_path = get_data_dir() / "docs"
+        ingester = DocumentIngester(storage_path=storage_path)
         result = await ingester.ingest_file(Path(doc_path), request_id=params.get("request_id"))
 
         return {
             "document_id": result.document_id,
             "filename": result.filename,
             "pages": result.page_count,
-            "text_extracted": bool(result.extracted_text),
+            "text_extracted": result.page_count is not None and result.page_count > 0,
             "message": "Document processed. Use extract_entities to analyze.",
         }
 

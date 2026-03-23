@@ -1153,6 +1153,50 @@ def docs_ingest(
                     rprint(f"[red]✗[/red] {file.name}: {e}")
                 progress.advance(task)
     
+    # Persist Document rows to database
+    if results:
+        from .db import get_session
+        from .models import Document, DocumentType
+        from uuid import uuid4
+
+        with get_session() as session:
+            for r in results:
+                doc = Document(
+                    id=r.document_id,
+                    request_id=request_id or "",
+                    doc_type=DocumentType.FULL_RESPONSE,
+                    filename=r.filename,
+                    file_path=r.file_path,
+                    file_size=r.file_size,
+                    mime_type=r.mime_type,
+                    page_count=r.page_count,
+                )
+                # Check if request_id is valid, otherwise create without it
+                if not request_id:
+                    # Create a placeholder request for unassociated documents
+                    from .models import Request, User, RequestStatus, DeliveryMethod
+                    user = session.query(User).first()
+                    if not user:
+                        user = User(id=str(uuid4()), email="local@openfoia.local", name="Local User")
+                        session.add(user)
+                        session.flush()
+                    from .models import Agency
+                    agency = session.query(Agency).first()
+                    placeholder_req = Request(
+                        id=str(uuid4()),
+                        request_number=f"INGEST-{uuid4().hex[:6].upper()}",
+                        requester_id=user.id,
+                        agency_id=agency.id if agency else user.id,
+                        subject=f"Document ingest: {r.filename}",
+                        body="Auto-created from openfoia docs ingest",
+                        delivery_method=DeliveryMethod.EMAIL,
+                        status=RequestStatus.DRAFT,
+                    )
+                    session.add(placeholder_req)
+                    session.flush()
+                    doc.request_id = placeholder_req.id
+                session.add(doc)
+
     # Summary
     rprint(f"\n[green]✓ Ingested {len(results)} documents[/green]")
     
@@ -3858,7 +3902,15 @@ def crossref(
 
     source_list = sources.split(",") if sources else None
 
-    rprint(f"\n[bold]Cross-referencing {len(entities)} entities...[/bold]")
+    # Warn about network activity — crossref sends entity names to external APIs
+    network_sources = [s for s in (source_list or ["muckrock", "opencorporates", "sec", "opensanctions"]) if s != "icij"]
+    if network_sources:
+        rprint(f"\n[yellow]WARNING: Cross-reference will send entity names to external APIs:[/yellow]")
+        rprint(f"[yellow]  {', '.join(network_sources)}[/yellow]")
+        rprint(f"[dim]  Use --sources icij for offline-only (requires downloaded ICIJ CSVs)[/dim]")
+        rprint("")
+
+    rprint(f"[bold]Cross-referencing {len(entities)} entities...[/bold]")
 
     with Progress(
         SpinnerColumn(),
