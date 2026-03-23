@@ -640,6 +640,22 @@ class EntityExtractor:
 
         merged = self._merge_entities(all_entities)
 
+        # Validate: remove entities whose raw_text doesn't appear in the source.
+        # This mitigates prompt injection from adversarial documents that try to
+        # fabricate entities via instructions embedded in the text.
+        text_lower = text.lower()
+        validated = []
+        for ent in merged:
+            if ent.raw_text.lower() in text_lower:
+                validated.append(ent)
+            else:
+                # Entity text not found in source — likely hallucinated or injected
+                ent.confidence *= 0.3  # heavily penalize but don't discard
+                ent.metadata["validation"] = "not_found_in_source"
+                if ent.confidence >= 0.2:
+                    validated.append(ent)
+        merged = validated
+
         # Supplement with co-occurrence relationships
         cooccurrence_rels = _extract_cooccurrence_relationships(merged, text)
         # Merge, preferring LLM relationships (higher quality)
