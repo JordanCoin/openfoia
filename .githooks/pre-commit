@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -e
+
+# Find ruff — check venv first, then PATH
+RUFF=""
+if [ -f ".venv/bin/ruff" ]; then
+    RUFF=".venv/bin/ruff"
+elif command -v ruff &>/dev/null; then
+    RUFF="ruff"
+elif [ -f "$HOME/.openfoia-venv/bin/ruff" ]; then
+    RUFF="$HOME/.openfoia-venv/bin/ruff"
+fi
+
+if [ -z "$RUFF" ]; then
+    echo "ruff not found — skipping lint/format checks"
+    echo "Install with: pip install ruff"
+    exit 0
+fi
+
+# Lint check
+if ! $RUFF check openfoia/ tests/ 2>/dev/null; then
+    echo ""
+    echo "ruff lint failed. Auto-fixing..."
+    $RUFF check openfoia/ tests/ --fix
+    echo "Files fixed. Please stage the changes and commit again."
+    exit 1
+fi
+
+# Format check
+if ! $RUFF format --check openfoia/ tests/ 2>/dev/null; then
+    echo ""
+    echo "ruff format failed. Auto-formatting..."
+    $RUFF format openfoia/ tests/
+    echo "Files formatted. Please stage the changes and commit again."
+    exit 1
+fi
