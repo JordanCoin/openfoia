@@ -203,101 +203,127 @@ def print_ssd_warning() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Duress mode — decoy database
+# Duress mode — decoy profile
+# ---------------------------------------------------------------------------
+#
+# IMPORTANT: This is a "decoy profile" feature, NOT true plausible
+# deniability. A forensic examiner can determine that two encrypted
+# databases exist. For actual coercion resistance, use a VeraCrypt
+# hidden volume. See docs/THREAT_MODEL.md.
+#
+# Design (per codex review):
+# - No password hash stored anywhere — SQLCipher itself is the verifier
+# - Both real and decoy DBs are encrypted (no plaintext decoy)
+# - Opaque filenames (profile_0.db, profile_1.db) — not "decoy.db"
+# - Try each profile with the entered password; whichever opens is used
 # ---------------------------------------------------------------------------
 
-_DURESS_CONFIG_KEY = "duress_password_hash"
+# Profile slot filenames — intentionally opaque
+_PROFILE_SLOTS = ["profile_0.db", "profile_1.db"]
 
 
-def _hash_password(password: str) -> str:
-    """Hash a password with SHA-256 for comparison (not for encryption)."""
-    import hashlib
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
-
-
-def get_decoy_db_path() -> Path:
-    """Return the path to the decoy database."""
+def get_profile_paths() -> list[Path]:
+    """Return paths for both profile slots."""
     from .db import get_data_dir
-    return get_data_dir() / "decoy.db"
+    data_dir = get_data_dir()
+    return [data_dir / name for name in _PROFILE_SLOTS]
 
 
 def setup_duress_mode(duress_password: str) -> Path:
-    """Create and seed a decoy database, store the hashed duress password in config.
+    """Create and seed a decoy profile encrypted with the duress password.
 
-    Returns the path to the decoy database.
+    Returns the path to the decoy database. No password hash is stored
+    anywhere — the password is verified by attempting to open the DB.
     """
-    import json
-
     from .db import get_data_dir
 
-    data_dir = get_data_dir()
-    config_path = data_dir / "config.json"
+    # Use the second slot for the decoy
+    decoy_path = get_data_dir() / _PROFILE_SLOTS[1]
 
-    # Store hashed duress password in config
-    config_data: dict = {}
-    if config_path.exists():
-        try:
-            config_data = json.loads(config_path.read_text())
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    config_data[_DURESS_CONFIG_KEY] = _hash_password(duress_password)
-    config_path.write_text(json.dumps(config_data, indent=2))
-
-    # Create and seed the decoy DB
-    decoy_path = get_decoy_db_path()
-    seed_decoy_db(decoy_path)
+    # Create and seed with encryption
+    seed_decoy_db(decoy_path, password=duress_password)
 
     return decoy_path
 
 
-def is_duress_password(password: str) -> bool:
-    """Check if the given password matches the stored duress password hash."""
-    import json
+def resolve_db_with_password(password: str | None = None) -> tuple[Path, bool]:
+    """Determine which database to open based on the password.
 
-    from .db import get_data_dir
+    Tries to open each profile slot with the given password. The first
+    one that opens successfully is used. Returns (path, is_decoy).
 
-    config_path = get_data_dir() / "config.json"
-    if not config_path.exists():
-        return False
-
-    try:
-        config_data = json.loads(config_path.read_text())
-    except (json.JSONDecodeError, OSError):
-        return False
-
-    stored_hash = config_data.get(_DURESS_CONFIG_KEY)
-    if not stored_hash:
-        return False
-
-    return _hash_password(password) == stored_hash
-
-
-def resolve_db_path(password: str | None = None) -> Path:
-    """Return the appropriate database path based on the password.
-
-    If the password matches the duress password, return the decoy DB path.
-    Otherwise, return the real DB path.  This is the single entry point
-    that all commands should call to decide which database to open.
+    This is the single entry point that all commands should use.
+    SQLCipher itself acts as the password verifier — no hash stored.
     """
     from .db import get_db_path
 
-    if password and is_duress_password(password):
-        return get_decoy_db_path()
-    return get_db_path()
+    if not password:
+        return get_db_path(), False
+
+    # Try each profile slot — whichever opens with this password wins
+    profiles = get_profile_paths()
+    for i, profile_path in enumerate(profiles):
+        if not profile_path.exists():
+            continue
+        if _can_open_db(profile_path, password):
+            return profile_path, (i == 1)  # slot 1 = decoy
+
+    # No profile matched — fall back to default (real) DB
+    return get_db_path(), False
 
 
-def seed_decoy_db(db_path: Path) -> None:
+def _can_open_db(db_path: Path, password: str) -> bool:
+    """Try to open an encrypted SQLite database with the given password.
+
+    Returns True if the password works (SQLCipher can read the schema).
+    """
+    try:
+        import pysqlcipher3.dbapi2 as sqlcipher
+        conn = sqlcipher.connect(str(db_path))
+        conn.execute(f"PRAGMA key='{password}'")
+        conn.execute("PRAGMA cipher_compatibility = 4")
+        conn.execute("SELECT count(*) FROM sqlite_master")
+        conn.close()
+        return True
+    except Exception:
+        return False
+
+
+# Keep backward compat aliases
+def is_duress_password(password: str) -> bool:
+    """Check if this password opens the decoy profile."""
+    profiles = get_profile_paths()
+    if len(profiles) > 1 and profiles[1].exists():
+        return _can_open_db(profiles[1], password)
+    return False
+
+
+def get_decoy_db_path() -> Path:
+    """Return the path to the decoy profile (slot 1)."""
+    from .db import get_data_dir
+    return get_data_dir() / _PROFILE_SLOTS[1]
+
+
+def resolve_db_path(password: str | None = None) -> Path:
+    """Return the appropriate database path based on the password."""
+    path, _ = resolve_db_with_password(password)
+    return path
+
+
+def seed_decoy_db(db_path: Path, password: str | None = None) -> None:
     """Populate a decoy database with innocent-looking FOIA data.
 
     The decoy contains a handful of bland requests (weather data, public
     meeting minutes, park usage statistics) — nothing that would raise
     suspicion if examined.  Entities and documents are similarly mundane.
+
+    If password is provided, the decoy is encrypted with SQLCipher.
     """
+    import random
     from datetime import datetime, timedelta
     from uuid import uuid4
 
-    from sqlalchemy import create_engine
+    from sqlalchemy import create_engine, event
     from sqlalchemy.orm import sessionmaker
 
     from .models import (
@@ -318,17 +344,39 @@ def seed_decoy_db(db_path: Path) -> None:
     if db_path.exists():
         db_path.unlink()
 
-    engine = create_engine(f"sqlite:///{db_path}", echo=False)
+    if password:
+        try:
+            import pysqlcipher3.dbapi2 as sqlcipher
+
+            def _creator():
+                conn = sqlcipher.connect(str(db_path))
+                conn.execute(f"PRAGMA key='{password}'")
+                conn.execute("PRAGMA cipher_compatibility = 4")
+                conn.execute("PRAGMA cipher_memory_security = ON")
+                return conn
+
+            engine = create_engine("sqlite+pysqlite:///", creator=_creator, echo=False)
+        except ImportError:
+            engine = create_engine(f"sqlite:///{db_path}", echo=False)
+    else:
+        engine = create_engine(f"sqlite:///{db_path}", echo=False)
+
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
     session = Session()
 
-    # --- Users ---
+    # --- Users (randomized to avoid fingerprinting) ---
+    first_names = ["Alex", "Jordan", "Sam", "Pat", "Casey", "Morgan", "Taylor", "Jamie"]
+    last_names = ["Chen", "Park", "Davis", "Wilson", "Thomas", "Garcia", "Lee", "Brown"]
+    orgs = ["Local Civic Association", "Community Research Group", "Neighborhood Watch", "Public Data Project"]
+    decoy_first = random.choice(first_names)
+    decoy_last = random.choice(last_names)
+    decoy_name = f"{decoy_first} {decoy_last}"
     user = User(
         id=str(uuid4()),
-        email="alex.researcher@gmail.com",
-        name="Alex Researcher",
-        organization="Local Civic Association",
+        email=f"{decoy_first.lower()}.{decoy_last.lower()}@gmail.com",
+        name=decoy_name,
+        organization=random.choice(orgs),
         is_journalist=False,
     )
     session.add(user)

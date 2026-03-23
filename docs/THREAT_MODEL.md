@@ -114,3 +114,39 @@ your machine during normal operation.
   Or add `~/.openfoia` to System Settings > Siri & Spotlight > Privacy.
 - **Review shell history** periodically, or configure your shell to not record
   commands prefixed with a space (`HISTCONTROL=ignorespace`).
+
+## Duress Mode — Honest Limitations
+
+OpenFOIA includes a "decoy profile" feature: a second password opens an
+innocent-looking database. **This is NOT plausible deniability.** A forensic
+examiner can determine that two encrypted database files exist on the device.
+
+What the decoy profile provides:
+- Buys time during casual device inspections
+- No password hash stored anywhere — SQLCipher verifies the password directly
+- Both profiles encrypted (no plaintext decoy)
+- Opaque filenames (profile_0.db, profile_1.db)
+
+What it does NOT provide:
+- Protection against forensic analysis (two encrypted files are visible)
+- Protection if the real password is found in RAM, swap, or shell history
+- Believable cover under sustained interrogation
+
+**For real coercion resistance**, use one of these approaches:
+
+1. **VeraCrypt hidden volume** (best): Store your real `~/.openfoia/` inside
+   a VeraCrypt hidden volume. One password opens the outer volume (decoy),
+   another opens the hidden volume (real data). The hidden volume is
+   cryptographically indistinguishable from free space.
+
+2. **Encrypted USB + portable mode** (practical): Keep the real investigation
+   on an encrypted USB drive using `openfoia portable`. The host machine only
+   has the decoy profile. Unplug the USB and the real data is gone.
+   ```
+   cd /Volumes/ENCRYPTED_USB
+   openfoia portable
+   openfoia init --password <real-secret>
+   ```
+
+3. **Tails OS** (maximum): Boot from Tails USB, which is amnesic — forgets
+   everything on shutdown. See `docs/TAILS.md`.

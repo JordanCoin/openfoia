@@ -3451,7 +3451,7 @@ def purge(
         rprint("\n[bold red]This will permanently destroy:[/bold red]")
         rprint(f"  [red]{data_dir}/data.db[/red]     — all requests, entities, tracking")
         if has_decoy:
-            rprint(f"  [red]{data_dir}/decoy.db[/red]   — duress/decoy database")
+            rprint(f"  [red]{data_dir}/profile_*.db[/red] — all database profiles")
         rprint(f"  [red]{data_dir}/docs/[/red]       — all ingested documents")
         rprint(f"  [red]{data_dir}/exports/[/red]    — all generated reports")
         rprint(f"  [red]{data_dir}/config.json[/red] — your configuration")
