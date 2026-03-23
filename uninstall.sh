@@ -80,7 +80,7 @@ main() {
     fi
 
     echo ""
-    ok "OpenFOIA uninstalled. No traces left."
+    ok "OpenFOIA removed."
     info ""
 }
 

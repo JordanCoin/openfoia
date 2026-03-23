@@ -3410,7 +3410,7 @@ def purge(
     secure: bool = typer.Option(False, "--secure", "-s", help="Overwrite files 3x with random data before deletion (forensic)"),
     fill: bool = typer.Option(False, "--fill", help="Fill free disk space with random data after purge (slow)"),
 ):
-    """Destroy all OpenFOIA data. Everything. Gone.
+    """Remove all OpenFOIA data.
 
     Removes the database, all ingested documents, exports, config,
     and the entire ~/.openfoia/ directory. This cannot be undone.
@@ -3474,7 +3474,7 @@ def purge(
         print_ssd_warning()
         rprint("[bold]Secure-deleting all files (3-pass overwrite)...[/bold]")
         count = secure_delete_dir(data_dir)
-        rprint(f"[green]{count} file(s) securely destroyed.[/green]")
+        rprint(f"[green]{count} file(s) securely deleted.[/green]")
 
         rprint("[bold]Scrubbing shell history...[/bold]")
         modified = clear_shell_history()
@@ -3491,8 +3491,9 @@ def purge(
     else:
         shutil.rmtree(data_dir)
 
-    rprint(f"\n[green]{data_dir} destroyed.[/green]")
-    rprint("[dim]All OpenFOIA data has been removed from this machine.[/dim]\n")
+    rprint(f"\n[green]Data directory removed: {data_dir}[/green]")
+    rprint("[dim]Note: swap files, filesystem journals, browser caches, and OS-level caches are NOT affected.[/dim]")
+    rprint("[dim]For maximum safety, use full-disk encryption.[/dim]\n")
 
 
 # === Web Ingest Command ===

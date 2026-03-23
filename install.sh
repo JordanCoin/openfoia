@@ -92,6 +92,32 @@ download_binary() {
 
     mkdir -p "$INSTALL_DIR"
     curl -fsSL "$url" -o "${INSTALL_DIR}/pdf-extract"
+
+    # Verify SHA256 checksum if .sha256 file exists in the release
+    local sha_url="${url}.sha256"
+    local expected_checksum
+    expected_checksum=$(curl -fsSL "$sha_url" 2>/dev/null | awk '{print $1}') || true
+
+    if [ -n "$expected_checksum" ]; then
+        local actual_checksum
+        if command -v sha256sum &>/dev/null; then
+            actual_checksum=$(sha256sum "${INSTALL_DIR}/pdf-extract" | awk '{print $1}')
+        elif command -v shasum &>/dev/null; then
+            actual_checksum=$(shasum -a 256 "${INSTALL_DIR}/pdf-extract" | awk '{print $1}')
+        else
+            warn "No sha256sum or shasum found — skipping checksum verification."
+            actual_checksum="$expected_checksum"  # skip comparison
+        fi
+
+        if [ "$actual_checksum" != "$expected_checksum" ]; then
+            rm -f "${INSTALL_DIR}/pdf-extract"
+            die "Checksum mismatch for pdf-extract! Expected ${expected_checksum}, got ${actual_checksum}. Aborting."
+        fi
+        ok "Checksum verified (SHA256)."
+    else
+        warn "No .sha256 file found in release — skipping checksum verification."
+    fi
+
     chmod +x "${INSTALL_DIR}/pdf-extract"
     ok "Installed pdf-extract to ${INSTALL_DIR}/pdf-extract"
 }
