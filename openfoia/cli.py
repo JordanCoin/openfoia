@@ -4057,14 +4057,13 @@ def records_search(
     entities = result.entities[:limit]
 
     if source == "muckrock":
-        table = Table()
-        table.add_column("ID", style="dim", width=8)
-        table.add_column("Title", style="cyan", max_width=35)
-        table.add_column("By", width=14)
-        table.add_column("Status", width=10)
-        table.add_column("Files", width=6)
-        table.add_column("Types", width=12)
-        table.add_column("Date", width=12)
+        table = Table(expand=True)
+        table.add_column("ID", style="dim", width=7)
+        table.add_column("Title", style="cyan", ratio=3)
+        table.add_column("By", width=12)
+        table.add_column("Files", width=5)
+        table.add_column("Types", width=10)
+        table.add_column("Date", width=10)
 
         for e in entities:
             file_types = e.extra_data.get("file_types", [])
@@ -4073,7 +4072,6 @@ def records_search(
                 e.identifiers.get("muckrock_id", "-"),
                 e.name,
                 e.extra_data.get("username", "-"),
-                e.status or "-",
                 str(e.extra_data.get("files_count", 0)),
                 types_str,
                 (e.extra_data.get("completed") or e.extra_data.get("submitted") or "-")[:10],

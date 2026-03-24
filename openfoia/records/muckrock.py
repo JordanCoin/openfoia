@@ -78,40 +78,48 @@ class MuckRockAdapter(RecordAdapter):
         if status:
             params["status"] = status
 
-        # MuckRock's API has no full-text search. Available filters:
-        # title (exact), user, agency, jurisdiction, tags, embargo_status, status.
-        # Tags work best for topic-based search (e.g., "fbi", "epa", "surveillance").
-        # We use tags as primary search and fall back to client-side title filtering.
-        params["tags"] = query.lower().strip().replace(" ", "-")
+        # MuckRock's API has no full-text search. Multi-layer strategy:
+        # 1. Tags (best for topics: "surveillance", "foia")
+        # 2. Agency name → agency ID → FOIA requests (best for "FBI", "EPA")
+        # 3. User filter (for requester names)
+        # Each layer tried in order; first with results wins.
+
+        data: dict = {"count": 0, "results": []}
 
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(
-                f"{API_BASE}/foia/",
-                params=params,
-                headers=self._headers,
-            )
-            resp.raise_for_status()
-            data = resp.json()
+            # Layer 1: Tags
+            tag_params = {**params, "tags": query.lower().strip().replace(" ", "-")}
+            resp = await client.get(f"{API_BASE}/foia/", params=tag_params, headers=self._headers)
+            if resp.status_code == 200:
+                data = resp.json()
 
-            # If tags returned 0, try user filter (people often search by requester)
+            # Layer 2: Agency name lookup → filter by agency ID
             if data.get("count", 0) == 0:
-                fallback_params = {
-                    "format": "json",
-                    "page": page,
-                    "page_size": min(page_size, 100),
-                    "user": query,
-                }
-                if status:
-                    fallback_params["status"] = status
-                resp2 = await client.get(
+                agency_id = await self._resolve_agency_id(client, query)
+                if agency_id:
+                    agency_params = {**params, "agency": agency_id}
+                    resp2 = await client.get(
+                        f"{API_BASE}/foia/",
+                        params=agency_params,
+                        headers=self._headers,
+                    )
+                    if resp2.status_code == 200:
+                        agency_data = resp2.json()
+                        if agency_data.get("count", 0) > 0:
+                            data = agency_data
+
+            # Layer 3: User filter
+            if data.get("count", 0) == 0:
+                user_params = {**params, "user": query}
+                resp3 = await client.get(
                     f"{API_BASE}/foia/",
-                    params=fallback_params,
+                    params=user_params,
                     headers=self._headers,
                 )
-                if resp2.status_code == 200:
-                    fallback_data = resp2.json()
-                    if fallback_data.get("count", 0) > 0:
-                        data = fallback_data
+                if resp3.status_code == 200:
+                    user_data = resp3.json()
+                    if user_data.get("count", 0) > 0:
+                        data = user_data
 
         entities = []
         for req in data.get("results", []):
@@ -159,6 +167,58 @@ class MuckRockAdapter(RecordAdapter):
             page=page,
             per_page=page_size,
         )
+
+    # Common abbreviation → full agency name mapping
+    _AGENCY_NAMES: dict[str, str] = {
+        "fbi": "Federal Bureau of Investigation",
+        "cia": "Central Intelligence Agency",
+        "nsa": "National Security Agency",
+        "epa": "Environmental Protection Agency",
+        "doj": "Department of Justice",
+        "dod": "Department of Defense",
+        "dhs": "Department of Homeland Security",
+        "ice": "U.S. Immigration and Customs Enforcement",
+        "atf": "Bureau of Alcohol, Tobacco, Firearms and Explosives",
+        "dea": "Drug Enforcement Administration",
+        "sec": "Securities and Exchange Commission",
+        "fda": "Food and Drug Administration",
+        "cdc": "Centers for Disease Control and Prevention",
+        "irs": "Internal Revenue Service",
+        "usda": "Department of Agriculture",
+        "hud": "Department of Housing and Urban Development",
+        "dot": "Department of Transportation",
+        "faa": "Federal Aviation Administration",
+        "nasa": "National Aeronautics and Space Administration",
+        "usps": "U.S. Postal Service",
+    }
+
+    async def _resolve_agency_id(self, client: httpx.AsyncClient, query: str) -> int | None:
+        """Resolve a query to a MuckRock agency ID.
+
+        Tries abbreviation lookup first, then exact name match on the API.
+        """
+        q = query.strip().lower()
+
+        # Try abbreviation map
+        full_name = self._AGENCY_NAMES.get(q)
+        if not full_name:
+            # Try the query as a full name directly
+            full_name = query.strip()
+
+        try:
+            resp = await client.get(
+                f"{API_BASE}/agency/",
+                params={"format": "json", "name": full_name, "page_size": 1},
+                headers=self._headers,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("count", 0) > 0:
+                    return data["results"][0]["id"]
+        except Exception:
+            pass
+
+        return None
 
     async def _search_agencies(
         self,
