@@ -121,7 +121,7 @@ def get_engine(db_path: Path | None = None, password: str | None = None) -> Engi
     set, plain SQLite is used -- fully backwards-compatible.
     """
     if db_path is None:
-        db_path = get_db_path()
+        db_path = get_db_path(password=password)
 
     if password is None:
         password = get_db_password()

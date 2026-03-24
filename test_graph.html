@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>OpenFOIA Entity Graph</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#1a1a2e;color:#fff;font-family:system-ui;overflow:hidden}
+canvas{display:block}
+#info{position:fixed;top:20px;left:20px;background:rgba(0,0,0,.8);padding:15px;border-radius:8px;max-width:300px;font-size:13px}
+#legend{position:fixed;bottom:20px;left:20px;background:rgba(0,0,0,.8);padding:12px;border-radius:8px;font-size:12px}
+.li{display:flex;align-items:center;gap:6px;margin:3px 0}
+.ld{width:10px;height:10px;border-radius:50%}
+#sel{position:fixed;top:20px;right:20px;background:rgba(0,0,0,.9);padding:15px;border-radius:8px;max-width:400px;display:none;font-size:13px}
+</style></head><body>
+<canvas id="c"></canvas>
+<div id="info"><h3 style="margin-bottom:8px">OpenFOIA Entity Graph</h3><p id="stats"></p><p style="color:#888;margin-top:6px">Click node for details. Drag to rearrange.</p></div>
+<div id="legend">
+<div class="li"><div class="ld" style="background:#e74c3c"></div>Person</div>
+<div class="li"><div class="ld" style="background:#3498db"></div>Organization</div>
+<div class="li"><div class="ld" style="background:#2ecc71"></div>Location</div>
+<div class="li"><div class="ld" style="background:#f39c12"></div>Money</div>
+<div class="li"><div class="ld" style="background:#9b59b6"></div>Date</div>
+</div>
+<div id="sel"></div>
+<script>
+const D=JSON.parse('{"nodes": [{"id": "n0", "label": "Department of Justice, Office of Information Policy", "type": "organization", "color": "#3498db", "confidence": 1.0, "occurrences": 1}, {"id": "n1", "label": "DOJ-2026-001234", "type": "document_id", "color": "#95a5a6", "confidence": 1.0, "occurrences": 1}, {"id": "n2", "label": "Meridian Defense Systems", "type": "organization", "color": "#3498db", "confidence": 1.0, "occurrences": 1}, {"id": "n3", "label": "Department of Defense", "type": "organization", "color": "#3498db", "confidence": 1.0, "occurrences": 1}, {"id": "n4", "label": "Project ATLAS", "type": "organization", "color": "#3498db", "confidence": 1.0, "occurrences": 1}, {"id": "n5", "label": "Consolidated Federal Services LLC", "type": "organization", "color": "#3498db", "confidence": 1.0, "occurrences": 1}, {"id": "n6", "label": "James R. Whitfield", "type": "person", "color": "#e74c3c", "confidence": 1.0, "occurrences": 1}, {"id": "n7", "label": "Pentagon", "type": "location", "color": "#2ecc71", "confidence": 1.0, "occurrences": 1}, {"id": "n8", "label": "Robert Garrison", "type": "person", "color": "#e74c3c", "confidence": 1.0, "occurrences": 1}, {"id": "n9", "label": "Defense Intelligence Agency", "type": "organization", "color": "#3498db", "confidence": 1.0, "occurrences": 1}, {"id": "n10", "label": "Lisa Park", "type": "person", "color": "#e74c3c", "confidence": 1.0, "occurrences": 1}, {"id": "n11", "label": "$3,200,000", "type": "money", "color": "#f39c12", "confidence": 1.0, "occurrences": 1}, {"id": "n12", "label": "Maria Gonzalez", "type": "person", "color": "#e74c3c", "confidence": 1.0, "occurrences": 1}, {"id": "n13", "label": "Daniel Okoro", "type": "person", "color": "#e74c3c", "confidence": 1.0, "occurrences": 1}, {"id": "n14", "label": "$14,750,000", "type": "money", "color": "#f39c12", "confidence": 1.0, "occurrences": 1}, {"id": "n15", "label": "Michael Torres", "type": "person", "color": "#e74c3c", "confidence": 1.0, "occurrences": 1}, {"id": "n16", "label": "(202) 514-3642", "type": "phone", "color": "#e67e22", "confidence": 1.0, "occurrences": 1}, {"id": "n17", "label": "michael.torres@usdoj.gov", "type": "email", "color": "#1abc9c", "confidence": 1.0, "occurrences": 1}, {"id": "n18", "label": "March 15, 2026", "type": "date", "color": "#9b59b6", "confidence": 1.0, "occurrences": 1}], "edges": [{"source": "n6", "target": "n2", "label": "contracted_with", "confidence": 1.0}, {"source": "n6", "target": "n5", "label": "financial_transaction", "confidence": 1.0}, {"source": "n6", "target": "n9", "label": "affiliated_with", "confidence": 1.0}, {"source": "n12", "target": "n6", "label": "communicated_with", "confidence": 1.0}, {"source": "n13", "target": "n6", "label": "supervised_by", "confidence": 1.0}, {"source": "n0", "target": "n18", "label": "dated_event", "confidence": 0.89}, {"source": "n0", "target": "n2", "label": "related_to", "confidence": 0.7}, {"source": "n0", "target": "n3", "label": "related_to", "confidence": 0.64}, {"source": "n0", "target": "n4", "label": "related_to", "confidence": 0.58}, {"source": "n0", "target": "n14", "label": "financial_transaction", "confidence": 0.53}, {"source": "n0", "target": "n7", "label": "located_at", "confidence": 0.37}, {"source": "n0", "target": "n8", "label": "affiliated_with", "confidence": 0.3}, {"source": "n0", "target": "n9", "label": "related_to", "confidence": 0.3}, {"source": "n0", "target": "n10", "label": "affiliated_with", "confidence": 0.3}, {"source": "n18", "target": "n2", "label": "dated_event", "confidence": 0.81}, {"source": "n18", "target": "n3", "label": "dated_event", "confidence": 0.74}, {"source": "n18", "target": "n4", "label": "dated_event", "confidence": 0.69}, {"source": "n18", "target": "n14", "label": "dated_transaction", "confidence": 0.63}, {"source": "n18", "target": "n8", "label": "dated_event", "confidence": 0.32}, {"source": "n18", "target": "n9", "label": "dated_event", "confidence": 0.3}, {"source": "n18", "target": "n10", "label": "dated_event", "confidence": 0.3}, {"source": "n18", "target": "n11", "label": "dated_transaction", "confidence": 0.3}, {"source": "n18", "target": "n12", "label": "dated_event", "confidence": 0.3}, {"source": "n2", "target": "n3", "label": "related_to", "confidence": 0.93}, {"source": "n2", "target": "n4", "label": "related_to", "confidence": 0.88}, {"source": "n2", "target": "n14", "label": "financial_transaction", "confidence": 0.83}, {"source": "n2", "target": "n7", "label": "located_at", "confidence": 0.66}, {"source": "n2", "target": "n8", "label": "affiliated_with", "confidence": 0.51}, {"source": "n2", "target": "n9", "label": "related_to", "confidence": 0.42}, {"source": "n2", "target": "n10", "label": "affiliated_with", "confidence": 0.36}, {"source": "n2", "target": "n11", "label": "financial_transaction", "confidence": 0.3}, {"source": "n2", "target": "n12", "label": "affiliated_with", "confidence": 0.3}, {"source": "n2", "target": "n13", "label": "affiliated_with", "confidence": 0.3}, {"source": "n3", "target": "n4", "label": "related_to", "confidence": 0.95}, {"source": "n3", "target": "n14", "label": "financial_transaction", "confidence": 0.89}, {"source": "n3", "target": "n7", "label": "located_at", "confidence": 0.73}, {"source": "n3", "target": "n8", "label": "affiliated_with", "confidence": 0.57}, {"source": "n3", "target": "n9", "label": "related_to", "confidence": 0.48}, {"source": "n3", "target": "n10", "label": "affiliated_with", "confidence": 0.43}, {"source": "n3", "target": "n11", "label": "financial_transaction", "confidence": 0.33}, {"source": "n3", "target": "n12", "label": "affiliated_with", "confidence": 0.3}, {"source": "n3", "target": "n13", "label": "affiliated_with", "confidence": 0.3}, {"source": "n4", "target": "n14", "label": "financial_transaction", "confidence": 0.94}, {"source": "n4", "target": "n7", "label": "located_at", "confidence": 0.78}, {"source": "n4", "target": "n8", "label": "affiliated_with", "confidence": 0.63}, {"source": "n4", "target": "n9", "label": "related_to", "confidence": 0.54}, {"source": "n4", "target": "n10", "label": "affiliated_with", "confidence": 0.48}, {"source": "n4", "target": "n11", "label": "financial_transaction", "confidence": 0.38}, {"source": "n4", "target": "n12", "label": "affiliated_with", "confidence": 0.33}, {"source": "n4", "target": "n13", "label": "affiliated_with", "confidence": 0.3}, {"source": "n4", "target": "n15", "label": "affiliated_with", "confidence": 0.3}, {"source": "n14", "target": "n8", "label": "associated_amount", "confidence": 0.68}, {"source": "n14", "target": "n9", "label": "financial_transaction", "confidence": 0.59}, {"source": "n14", "target": "n10", "label": "associated_amount", "confidence": 0.53}, {"source": "n14", "target": "n12", "label": "associated_amount", "confidence": 0.39}, {"source": "n14", "target": "n13", "label": "associated_amount", "confidence": 0.3}, {"source": "n14", "target": "n15", "label": "associated_amount", "confidence": 0.3}, {"source": "n7", "target": "n8", "label": "located_at", "confidence": 0.84}, {"source": "n7", "target": "n9", "label": "located_at", "confidence": 0.75}, {"source": "n7", "target": "n10", "label": "located_at", "confidence": 0.7}, {"source": "n7", "target": "n12", "label": "located_at", "confidence": 0.55}, {"source": "n7", "target": "n13", "label": "located_at", "confidence": 0.35}, {"source": "n7", "target": "n15", "label": "located_at", "confidence": 0.3}, {"source": "n8", "target": "n9", "label": "affiliated_with", "confidence": 0.91}, {"source": "n8", "target": "n10", "label": "communicated_with", "confidence": 0.85}, {"source": "n8", "target": "n11", "label": "associated_amount", "confidence": 0.75}, {"source": "n8", "target": "n12", "label": "communicated_with", "confidence": 0.71}, {"source": "n8", "target": "n13", "label": "communicated_with", "confidence": 0.5}, {"source": "n8", "target": "n15", "label": "communicated_with", "confidence": 0.42}, {"source": "n9", "target": "n10", "label": "affiliated_with", "confidence": 0.94}, {"source": "n9", "target": "n11", "label": "financial_transaction", "confidence": 0.84}, {"source": "n9", "target": "n12", "label": "affiliated_with", "confidence": 0.8}, {"source": "n9", "target": "n13", "label": "affiliated_with", "confidence": 0.59}, {"source": "n9", "target": "n15", "label": "affiliated_with", "confidence": 0.51}, {"source": "n10", "target": "n11", "label": "associated_amount", "confidence": 0.9}, {"source": "n10", "target": "n12", "label": "communicated_with", "confidence": 0.86}, {"source": "n10", "target": "n13", "label": "communicated_with", "confidence": 0.65}, {"source": "n10", "target": "n15", "label": "communicated_with", "confidence": 0.56}, {"source": "n11", "target": "n12", "label": "associated_amount", "confidence": 0.96}, {"source": "n11", "target": "n13", "label": "associated_amount", "confidence": 0.75}, {"source": "n11", "target": "n15", "label": "associated_amount", "confidence": 0.66}, {"source": "n12", "target": "n13", "label": "communicated_with", "confidence": 0.79}, {"source": "n12", "target": "n15", "label": "communicated_with", "confidence": 0.71}, {"source": "n13", "target": "n15", "label": "communicated_with", "confidence": 0.91}]}');
+const N=D.nodes,E=D.edges;
+const cv=document.getElementById('c'),cx=cv.getContext('2d');
+let W,H;
+function rsz(){W=cv.width=innerWidth;H=cv.height=innerHeight}
+addEventListener('resize',rsz);rsz();
+document.getElementById('stats').textContent=N.length+' entities, '+E.length+' relationships';
+N.forEach((n,i)=>{const a=(i/N.length)*Math.PI*2,r=Math.min(W,H)*.3;
+n.x=W/2+Math.cos(a)*r+(Math.random()-.5)*100;
+n.y=H/2+Math.sin(a)*r+(Math.random()-.5)*100;
+n.vx=0;n.vy=0;n.r=Math.max(8,Math.min(20,8+(n.occurrences||1)*3))});
+const byId={};N.forEach(n=>byId[n.id]=n);
+let drag=null,sel=null;
+cv.onmousedown=e=>{const r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+for(const n of N)if(Math.hypot(n.x-mx,n.y-my)<n.r+5){drag=n;sel=n;showSel(n);break}};
+cv.onmousemove=e=>{if(!drag)return;const r=cv.getBoundingClientRect();drag.x=e.clientX-r.left;drag.y=e.clientY-r.top;drag.vx=0;drag.vy=0};
+cv.onmouseup=()=>{drag=null};
+function showSel(n){const p=document.getElementById('sel');
+const rels=E.filter(e=>e.source===n.id||e.target===n.id);
+const el=document.createElement('div');
+const h=document.createElement('h3');h.textContent=n.label;el.appendChild(h);
+const sub=document.createElement('p');sub.style.color='#888';
+sub.textContent=n.type+' | confidence: '+(n.confidence*100).toFixed(0)+'%';el.appendChild(sub);
+if(rels.length){const b=document.createElement('p');b.style.marginTop='8px';
+b.innerHTML='<b>Connections:</b>';el.appendChild(b);
+rels.forEach(r=>{const other=r.source===n.id?byId[r.target]:byId[r.source];
+if(other){const c=document.createElement('p');c.style.color='#ccc';
+c.textContent='→ '+r.label+' → '+other.label;el.appendChild(c)}})}
+p.replaceChildren(el);p.style.display='block'}
+function sim(){for(let i=0;i<N.length;i++)for(let j=i+1;j<N.length;j++){
+const a=N[i],b=N[j];let dx=b.x-a.x,dy=b.y-a.y,d=Math.max(1,Math.hypot(dx,dy)),f=800/(d*d);
+a.vx-=dx/d*f;a.vy-=dy/d*f;b.vx+=dx/d*f;b.vy+=dy/d*f}
+E.forEach(e=>{const a=byId[e.source],b=byId[e.target];if(!a||!b)return;
+let dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy),f=(d-150)*.01;
+a.vx+=dx/d*f;a.vy+=dy/d*f;b.vx-=dx/d*f;b.vy-=dy/d*f});
+N.forEach(n=>{n.vx+=(W/2-n.x)*.001;n.vy+=(H/2-n.y)*.001});
+N.forEach(n=>{if(n===drag)return;n.vx*=.9;n.vy*=.9;n.x+=n.vx;n.y+=n.vy;
+n.x=Math.max(n.r,Math.min(W-n.r,n.x));n.y=Math.max(n.r,Math.min(H-n.r,n.y))})}
+function draw(){cx.clearRect(0,0,W,H);
+E.forEach(e=>{const a=byId[e.source],b=byId[e.target];if(!a||!b)return;
+cx.beginPath();cx.moveTo(a.x,a.y);cx.lineTo(b.x,b.y);
+const hi=sel&&(e.source===sel.id||e.target===sel.id);
+cx.strokeStyle=hi?'rgba(255,255,255,.6)':'rgba(255,255,255,.15)';cx.lineWidth=hi?2:1;cx.stroke();
+if(e.label&&hi){cx.fillStyle='rgba(255,255,255,.7)';cx.font='10px system-ui';cx.textAlign='center';
+cx.fillText(e.label,(a.x+b.x)/2,(a.y+b.y)/2-5)}});
+N.forEach(n=>{cx.beginPath();cx.arc(n.x,n.y,n.r,0,Math.PI*2);cx.fillStyle=n.color;
+if(sel&&n.id===sel.id){cx.shadowColor=n.color;cx.shadowBlur=20}cx.fill();cx.shadowBlur=0;
+cx.fillStyle='#fff';cx.font=(n.r>12?'12':'10')+'px system-ui';cx.textAlign='center';
+cx.fillText(n.label,n.x,n.y+n.r+14)});
+sim();requestAnimationFrame(draw)}
+draw();
+</script></body></html>

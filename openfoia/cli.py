@@ -67,10 +67,10 @@ def init(
     rprint("─" * 50)
 
     if password and not has_sqlcipher():
-        rprint("[bold yellow]Warning:[/bold yellow] pysqlcipher3 is not installed.")
-        rprint("[yellow]Database will NOT be encrypted. Install with:[/yellow]")
-        rprint("[yellow]  pip install 'openfoia[encryption]'[/yellow]")
-        rprint("")
+        rprint("[bold red]ERROR: pysqlcipher3 is not installed.[/bold red]")
+        rprint("[red]Cannot create encrypted database without it.[/red]")
+        rprint("[yellow]Install with: openfoia install-extras encryption[/yellow]")
+        raise typer.Exit(1)
 
     if db_path.exists() and not force:
         rprint(f"[cyan]Database already exists:[/cyan] {db_path}")
@@ -2262,12 +2262,17 @@ def analyze_extract(
             rprint("[yellow]No entities found in document.[/yellow]")
             return
 
-        # Save to database
+        # Save entities to database
         from uuid import uuid4
+        from .models import entity_links
+
+        entity_id_map: dict[str, str] = {}  # normalized_text.lower() -> entity.id
 
         for ent in result.entities:
+            eid = str(uuid4())
+            entity_id_map[ent.normalized_text.lower()] = eid
             entity = Entity(
-                id=str(uuid4()),
+                id=eid,
                 document_id=doc.id,
                 entity_type=ent.entity_type,
                 raw_text=ent.raw_text,
@@ -2278,9 +2283,35 @@ def analyze_extract(
             )
             session.add(entity)
 
+        # Save relationships to entity_links
+        rels_saved = 0
+        for rel in result.relationships:
+            src = (rel.get("source") or "").lower()
+            tgt = (rel.get("target") or "").lower()
+            src_id = entity_id_map.get(src)
+            tgt_id = entity_id_map.get(tgt)
+            if not src_id or not tgt_id or src_id == tgt_id:
+                # Try substring match
+                for key, eid in entity_id_map.items():
+                    if not src_id and src in key:
+                        src_id = eid
+                    if not tgt_id and tgt in key:
+                        tgt_id = eid
+            if src_id and tgt_id and src_id != tgt_id:
+                session.execute(
+                    entity_links.insert().values(
+                        source_id=src_id,
+                        target_id=tgt_id,
+                        link_type=rel.get("relation", "related_to"),
+                    )
+                )
+                rels_saved += 1
+
         doc.entities_extracted = True
 
-        rprint(f"[green]Extracted {len(result.entities)} entities[/green]")
+        rprint(
+            f"[green]Extracted {len(result.entities)} entities, {rels_saved} relationships[/green]"
+        )
 
         table = Table(title="Extracted Entities")
         table.add_column("Type", style="cyan")
@@ -2413,7 +2444,13 @@ def analyze_graph(
         query = session.query(Entity)
 
         if request_id:
-            query = query.join(Document).filter(Document.request_id == request_id)
+            # Accept either UUID or request number (e.g., REQ-20260322-ABC)
+            from .models import Request as ReqModel
+
+            matching_req_ids = session.query(ReqModel.id).filter(
+                (ReqModel.id == request_id) | (ReqModel.request_number == request_id)
+            )
+            query = query.join(Document).filter(Document.request_id.in_(matching_req_ids))
         elif campaign_id:
             query = (
                 query.join(Document)

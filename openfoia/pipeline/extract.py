@@ -782,7 +782,8 @@ class EntityExtractor:
             try:
                 entity_type = EntityType(type_str.lower())
             except ValueError:
-                continue
+                # Custom type — store as DOCUMENT_ID with original type in metadata
+                entity_type = EntityType.DOCUMENT_ID
 
             entities.append(
                 ExtractedEntity(
@@ -792,6 +793,9 @@ class EntityExtractor:
                     confidence=float(e.get("confidence", 0.5)),
                     context=e.get("context", ""),
                     page_number=page_number,
+                    metadata={"custom_type": type_str}
+                    if type_str not in {t.value.upper() for t in EntityType}
+                    else {},
                 )
             )
 

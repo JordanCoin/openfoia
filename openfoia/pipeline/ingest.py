@@ -146,6 +146,9 @@ class DocumentIngester:
         if mime_type == "application/pdf":
             page_count = await self._get_pdf_page_count(dest_path)
 
+        # Auto-extract text
+        extracted_text = await self._extract_text(dest_path, mime_type)
+
         return IngestResult(
             document_id=doc_id,
             filename=filename,
@@ -153,6 +156,7 @@ class DocumentIngester:
             file_size=len(content),
             mime_type=mime_type,
             page_count=page_count,
+            extracted_text=extracted_text,
             checksum=checksum,
             metadata={
                 "ingested_at": datetime.utcnow().isoformat(),
