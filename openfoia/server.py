@@ -359,6 +359,17 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
             shutil.copyfileobj(file.file, f)
 
         file_size = dest.stat().st_size
+        mime = file.content_type or "application/octet-stream"
+
+        # Extract text from the uploaded file
+        from .pipeline.ingest import DocumentIngester
+
+        ingester = DocumentIngester(storage_path=docs_dir)
+        extracted_text = None
+        try:
+            extracted_text = await ingester._extract_text(dest, mime)
+        except Exception:
+            pass
 
         from .db import get_session
         from .models import Document, DocumentType
@@ -372,11 +383,18 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
                 filename=safe_name,
                 file_path=str(dest),
                 file_size=file_size,
-                mime_type=file.content_type or "application/octet-stream",
+                mime_type=mime,
+                extracted_text=extracted_text,
+                ocr_completed=bool(extracted_text),
             )
             session.add(doc)
 
-        return {"id": doc_id, "filename": safe_name, "status": "uploaded"}
+        return {
+            "id": doc_id,
+            "filename": safe_name,
+            "status": "uploaded",
+            "text_extracted": bool(extracted_text),
+        }
 
     @app.get("/api/entities")
     async def list_entities(

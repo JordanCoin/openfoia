@@ -199,7 +199,17 @@ def install_extras(
                 "[dim]Also install system packages: apt install tesseract-ocr poppler-utils (Linux) or brew install tesseract poppler (macOS)[/dim]"
             )
         elif extra == "ner-spacy":
-            rprint("[dim]Also download a model: python -m spacy download en_core_web_sm[/dim]")
+            rprint("[cyan]Downloading English language model...[/cyan]")
+            dl_result = subprocess.run(
+                [sys.executable, "-m", "spacy", "download", "en_core_web_sm"],
+                capture_output=False,
+            )
+            if dl_result.returncode == 0:
+                rprint("[green]spaCy model downloaded.[/green]")
+            else:
+                rprint(
+                    "[yellow]Model download failed. Run manually: python -m spacy download en_core_web_sm[/yellow]"
+                )
         elif extra == "browser":
             rprint("[dim]Also run: playwright install chromium[/dim]")
         elif extra == "encryption":
