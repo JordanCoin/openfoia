@@ -26,11 +26,13 @@ File FOIA requests. Analyze documents. Extract entities. Build relationship grap
 
 ```bash
 openfoia init                                          # 53 federal agencies pre-loaded
-openfoia records search "EPA water" --source muckrock  # search 46k+ completed FOIA requests
-openfoia records download 68490 --ingest               # download + ingest response documents
-openfoia analyze extract <doc-id>                      # extract people, orgs, money, dates
-openfoia analyze graph --name epa-water --view         # interactive relationship graph
-openfoia crossref                                      # check entities against 5 public databases
+openfoia records search "EPA water" --source muckrock       # search 46k+ completed FOIA requests
+openfoia records search "Palantir" --source documentcloud  # search 10M+ public documents
+openfoia records fetch 3411897 --source documentcloud      # pull full text into local database
+openfoia records download 68490 --ingest                   # download + ingest response documents
+openfoia analyze extract <doc-id>                          # extract people, orgs, money, dates
+openfoia analyze graph --name investigation --view         # interactive graph + document reader
+openfoia crossref                                          # check entities against 6 public databases
 ```
 
 ## Features
@@ -39,8 +41,8 @@ openfoia crossref                                      # check entities against 
 |---|---|
 | **PDF text extraction** | Compiled 1.1MB binary. 99.5% accuracy across 480K chars. Zero dependencies. |
 | **Entity extraction** | 4-tier: LLM → GLiNER → spaCy → Regex. 100% recall with a 2GB local model |
-| **Relationship graphs** | Interactive HTML visualization. Named investigations. Click to explore |
-| **Cross-reference** | MuckRock, OpenCorporates, SEC EDGAR, OpenSanctions, ICIJ Offshore Leaks |
+| **Relationship graphs** | Interactive graph with built-in document reader. Click entities to read source text with highlights |
+| **Cross-reference** | MuckRock, DocumentCloud, OpenCorporates, SEC EDGAR, OpenSanctions, ICIJ Offshore Leaks |
 | **File requests** | Email, fax (Twilio), physical mail (Lob) to 53 federal agencies |
 | **Data interchange** | Import/export FollowTheMoney format (Aleph, OpenAleph, OpenSanctions) |
 | **Encrypted storage** | SQLCipher AES-256. Decoy profile mode |
@@ -59,6 +61,7 @@ A compiled 1.1MB binary extracts text directly from PDF structures — no OCR ne
 | Source | What | Auth |
 |--------|------|------|
 | [MuckRock](https://www.muckrock.com/) | 46k+ completed FOIA requests with downloadable documents | Free |
+| [DocumentCloud](https://www.documentcloud.org/) | 10M+ public documents with pre-extracted text | Free |
 | [OpenCorporates](https://opencorporates.com/) | Global company ownership, directors, filings | Free |
 | [SEC EDGAR](https://www.sec.gov/edgar/) | US corporate filings | Free |
 | [OpenSanctions](https://opensanctions.org/) | Sanctions lists, politically exposed persons | Free (non-commercial) |
