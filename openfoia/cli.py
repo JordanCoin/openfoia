@@ -4129,15 +4129,64 @@ def records_download(
         ingester = DocumentIngester(storage_path=storage_path)
 
         ingested = 0
+        ingest_results = []
         for path in downloaded:
             try:
                 result = asyncio.run(ingester.ingest_file(Path(path)))
+                ingest_results.append(result)
                 ingested += 1
                 rprint(
                     f"  [green]Ingested:[/green] {Path(path).name} → {result.document_id[:8]}..."
                 )
             except Exception as e:
                 rprint(f"  [red]Failed:[/red] {Path(path).name}: {e}")
+
+        # Persist Document rows to database
+        if ingest_results:
+            from .db import get_session
+            from .models import Document, DocumentType, Request, User, RequestStatus, DeliveryMethod
+            from uuid import uuid4
+
+            with get_session() as session:
+                # Create a placeholder request for downloaded docs
+                user = session.query(User).first()
+                if not user:
+                    user = User(
+                        id=str(uuid4()),
+                        email="local@openfoia.local",
+                        name="Local User",
+                    )
+                    session.add(user)
+                    session.flush()
+
+                from .models import Agency
+
+                agency = session.query(Agency).first()
+                dl_req = Request(
+                    id=str(uuid4()),
+                    request_number=f"MUCKROCK-{request_id}",
+                    requester_id=user.id,
+                    agency_id=agency.id if agency else user.id,
+                    subject=entity.name if entity else f"MuckRock request {request_id}",
+                    body="Downloaded from MuckRock",
+                    delivery_method=DeliveryMethod.EMAIL,
+                    status=RequestStatus.COMPLETE,
+                )
+                session.add(dl_req)
+                session.flush()
+
+                for r in ingest_results:
+                    doc = Document(
+                        id=r.document_id,
+                        request_id=dl_req.id,
+                        doc_type=DocumentType.FULL_RESPONSE,
+                        filename=r.filename,
+                        file_path=r.file_path,
+                        file_size=r.file_size,
+                        mime_type=r.mime_type,
+                        page_count=r.page_count,
+                    )
+                    session.add(doc)
 
         rprint(f"\n[green]{ingested} file(s) ingested.[/green]")
         rprint("[dim]Run 'openfoia analyze extract --all' to extract entities.[/dim]")
