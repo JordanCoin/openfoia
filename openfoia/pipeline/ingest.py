@@ -25,6 +25,7 @@ class IngestResult:
     file_size: int
     mime_type: str
     page_count: int | None
+    extracted_text: str | None
     checksum: str
     metadata: dict[str, Any]
 
@@ -88,6 +89,9 @@ class DocumentIngester:
         if mime_type == "application/pdf":
             page_count = await self._get_pdf_page_count(dest_path)
 
+        # Auto-extract text based on file type
+        extracted_text = await self._extract_text(dest_path, mime_type)
+
         return IngestResult(
             document_id=doc_id,
             filename=file_path.name,
@@ -95,6 +99,7 @@ class DocumentIngester:
             file_size=file_size,
             mime_type=mime_type,
             page_count=page_count,
+            extracted_text=extracted_text,
             checksum=checksum,
             metadata={
                 "original_path": str(file_path),
@@ -240,6 +245,93 @@ class DocumentIngester:
             return sha256.hexdigest()
 
         return await asyncio.to_thread(_hash)
+
+    async def _extract_text(self, file_path: Path, mime_type: str) -> str | None:
+        """Auto-extract text from a file based on its type.
+
+        - PDFs: try pdf-extract binary first (fast, lossless), fall back to OCR
+        - DOCX: extract paragraphs + table text via python-docx
+        - Images (JPG, PNG, TIFF): OCR via tesseract if available
+        - Plain text: read directly
+        """
+        try:
+            if mime_type == "application/pdf":
+                return await self._extract_text_pdf(file_path)
+            elif mime_type in (
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "application/msword",
+            ):
+                return await asyncio.to_thread(self._extract_text_docx, file_path)
+            elif mime_type and mime_type.startswith("image/"):
+                return await self._extract_text_image(file_path)
+            elif mime_type and mime_type.startswith("text/"):
+                return await asyncio.to_thread(file_path.read_text, errors="replace")
+            return None
+        except Exception:
+            return None
+
+    async def _extract_text_pdf(self, pdf_path: Path) -> str | None:
+        """Extract text from PDF: try compiled binary first, fall back to OCR."""
+        # Try the fast pdf-extract binary
+        from .pdf_extract import extract_text
+
+        result = await extract_text(pdf_path)
+        if result and result.char_count > 50:
+            # Clean up form feeds
+            return "\n\n".join(p.strip() for p in result.text.split("\f") if p.strip())
+
+        # Fall back to OCR for scanned PDFs
+        try:
+            from .ocr import OCREngine
+
+            engine = OCREngine()
+            ocr_result = await engine.process_pdf(pdf_path)
+            if ocr_result.text and len(ocr_result.text.strip()) > 50:
+                return ocr_result.text
+        except (ImportError, Exception):
+            pass
+
+        return None
+
+    def _extract_text_docx(self, docx_path: Path) -> str | None:
+        """Extract text from DOCX including tables."""
+        try:
+            from docx import Document as DocxDocument
+
+            doc = DocxDocument(str(docx_path))
+            parts = []
+
+            # Paragraphs
+            for para in doc.paragraphs:
+                text = para.text.strip()
+                if text:
+                    parts.append(text)
+
+            # Tables (FOIA privilege logs, fee estimates, etc.)
+            for table in doc.tables:
+                for row in table.rows:
+                    cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                    if cells:
+                        parts.append(" | ".join(cells))
+
+            return "\n".join(parts) if parts else None
+        except Exception:
+            return None
+
+    async def _extract_text_image(self, image_path: Path) -> str | None:
+        """Extract text from image via OCR (tesseract)."""
+        try:
+            import pytesseract
+            from PIL import Image
+
+            def _ocr():
+                img = Image.open(image_path)
+                return pytesseract.image_to_string(img)
+
+            text = await asyncio.to_thread(_ocr)
+            return text.strip() if text and len(text.strip()) > 10 else None
+        except (ImportError, Exception):
+            return None
 
     async def _get_pdf_page_count(self, pdf_path: Path) -> int:
         """Get the number of pages in a PDF."""

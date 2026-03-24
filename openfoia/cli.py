@@ -1275,6 +1275,8 @@ def docs_ingest(
                     file_size=r.file_size,
                     mime_type=r.mime_type,
                     page_count=r.page_count,
+                    extracted_text=r.extracted_text,
+                    ocr_completed=bool(r.extracted_text),
                 )
                 # Check if request_id is valid, otherwise create without it
                 if not request_id:
@@ -4185,6 +4187,8 @@ def records_download(
                         file_size=r.file_size,
                         mime_type=r.mime_type,
                         page_count=r.page_count,
+                        extracted_text=r.extracted_text,
+                        ocr_completed=bool(r.extracted_text),
                     )
                     session.add(doc)
 
