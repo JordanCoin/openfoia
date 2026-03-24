@@ -4,6 +4,8 @@
 
 Your data never leaves your machine. Works offline. Works everywhere.
 
+*One real government document → 45 entities, 166 relationships, extracted locally in seconds. No cloud. No API keys.*
+
 ![Entity relationship graph — 45 entities, 166 relationships extracted from a Palantir police surveillance contract pulled from DocumentCloud](docs/entity-graph.png)
 
 ![Built-in document reader with entity highlighting — click any entity to jump to it in the source text, with a link to the original document](docs/document-reader.png)
