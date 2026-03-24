@@ -550,7 +550,9 @@ def config(
     show: bool = typer.Option(False, "--show", help="Show current configuration"),
 ):
     """Manage OpenFOIA configuration."""
-    config_path = Path.home() / ".openfoia" / "config.json"
+    from .db import get_data_dir
+
+    config_path = get_data_dir() / "config.json"
 
     if init:
         config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1033,7 +1035,9 @@ def request_send(
         return
 
     # Load config
-    config_path = Path.home() / ".openfoia" / "config.json"
+    from .db import get_data_dir
+
+    config_path = get_data_dir() / "config.json"
     import os
     import json
 
@@ -1149,6 +1153,40 @@ def request_send(
                     rprint(f"  Tracking #: {result.metadata['tracking_number']}")
                 if result.metadata.get("expected_delivery_date"):
                     rprint(f"  Expected delivery: {result.metadata['expected_delivery_date']}")
+
+        # Update the matching Request in the DB if one exists
+        from .db import get_session, get_db_path
+        from .models import Request as RequestModel, RequestStatus, Agency as AgencyModel
+        from datetime import timedelta
+
+        db_path = get_db_path()
+        if db_path.exists():
+            with get_session() as session:
+                # Find the draft request matching this agency + subject
+                req = (
+                    session.query(RequestModel)
+                    .join(AgencyModel)
+                    .filter(
+                        (AgencyModel.abbreviation.ilike(agency))
+                        | (AgencyModel.name.ilike(f"%{agency}%")),
+                        RequestModel.subject == subject,
+                        RequestModel.status == RequestStatus.DRAFT,
+                    )
+                    .first()
+                )
+                if req:
+                    req.status = RequestStatus.SENT
+                    req.sent_at = datetime.now()
+                    req.delivery_reference = result.reference_id
+                    # Auto-set due date
+                    response_days = req.agency.typical_response_days if req.agency else 20
+                    current = req.sent_at
+                    days_added = 0
+                    while days_added < response_days:
+                        current += timedelta(days=1)
+                        if current.weekday() < 5:
+                            days_added += 1
+                    req.due_date = current
 
         rprint("\n[dim]Save this reference to track your request.[/dim]")
     else:
@@ -2935,7 +2973,9 @@ draw();
 
 def _load_config_data() -> tuple[Path, dict]:
     """Load config.json as raw dict."""
-    config_path = Path.home() / ".openfoia" / "config.json"
+    from .db import get_data_dir
+
+    config_path = get_data_dir() / "config.json"
     if config_path.exists():
         data = json.loads(config_path.read_text())
     else:

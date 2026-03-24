@@ -378,8 +378,35 @@ Please contact me if you have questions about this request.
 """
 
         import uuid
+        from .models import DeliveryMethod, User
 
-        request_id = str(uuid.uuid4())[:8]
+        request_id = str(uuid.uuid4())
+
+        # Persist the draft to DB
+        agency_id = params.get("agency_id")
+        agency = (
+            self.db.query(Agency)
+            .filter((Agency.id == agency_id) | (Agency.abbreviation.ilike(agency_id or "")))
+            .first()
+        )
+
+        user = self.db.query(User).first()
+        if user and agency:
+            from datetime import datetime as dt
+
+            req_num = f"REQ-{dt.utcnow().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+            new_req = Request(
+                id=request_id,
+                request_number=req_num,
+                requester_id=user.id,
+                agency_id=agency.id,
+                subject=params.get("subject", ""),
+                body=body,
+                delivery_method=DeliveryMethod.EMAIL,
+                status=RequestStatus.DRAFT,
+            )
+            self.db.add(new_req)
+            self.db.commit()
 
         return {
             "request_id": request_id,
