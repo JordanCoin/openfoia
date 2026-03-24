@@ -2571,15 +2571,15 @@ def analyze_graph(
                     req = session.query(ReqModel).filter(ReqModel.id == doc.request_id).first()
                     if req and req.body:
                         # Extract URL from "Pulled from DocumentCloud: https://..."
-                        url_match = re_mod.search(r'https?://\S+', req.body)
+                        url_match = re_mod.search(r"https?://\S+", req.body)
                         if url_match:
                             source_url = url_match.group(0)
                 # Fallback: derive from filename pattern
                 if not source_url and doc.filename:
-                    dc_match = re_mod.match(r'documentcloud-(\d+)', doc.filename)
+                    dc_match = re_mod.match(r"documentcloud-(\d+)", doc.filename)
                     if dc_match:
                         source_url = f"https://www.documentcloud.org/documents/{dc_match.group(1)}/"
-                    mr_match = re_mod.match(r'muckrock-(\d+)', doc.filename or '')
+                    mr_match = re_mod.match(r"muckrock-(\d+)", doc.filename or "")
                     if mr_match:
                         source_url = f"https://www.muckrock.com/foi/{mr_match.group(1)}/"
 
@@ -3740,7 +3740,11 @@ def records_search(
 
         for e in entities:
             highlights = e.extra_data.get("highlights", [])
-            highlight_str = highlights[0][:120] + "…" if highlights and len(highlights[0]) > 120 else (highlights[0] if highlights else "-")
+            highlight_str = (
+                highlights[0][:120] + "…"
+                if highlights and len(highlights[0]) > 120
+                else (highlights[0] if highlights else "-")
+            )
             table.add_row(
                 e.identifiers.get("documentcloud_id", "-")[:10],
                 e.name,
@@ -3812,9 +3816,7 @@ def records_search(
 @records_app.command("fetch")
 def records_fetch(
     doc_id: str = typer.Argument(..., help="Document ID to fetch"),
-    source: str = typer.Option(
-        "documentcloud", "--source", "-s", help="Data source"
-    ),
+    source: str = typer.Option("documentcloud", "--source", "-s", help="Data source"),
 ):
     """Fetch a document's full text and save it to the local database.
 
@@ -3853,7 +3855,9 @@ def records_fetch(
         rprint(f"  Text length: {len(text):,} characters")
         rprint(f"\n[dim]Extract entities: openfoia analyze extract {result_id}[/dim]")
     else:
-        rprint(f"[yellow]Fetch not yet supported for '{source}'. Use 'records download' for MuckRock.[/yellow]")
+        rprint(
+            f"[yellow]Fetch not yet supported for '{source}'. Use 'records download' for MuckRock.[/yellow]"
+        )
         raise typer.Exit(1)
 
 
@@ -4106,7 +4110,9 @@ def crossref(
     # Warn about network activity — crossref sends entity names to external APIs
     network_sources = [
         s
-        for s in (source_list or ["muckrock", "opencorporates", "sec", "documentcloud", "opensanctions"])
+        for s in (
+            source_list or ["muckrock", "opencorporates", "sec", "documentcloud", "opensanctions"]
+        )
         if s != "icij"
     ]
     if network_sources:

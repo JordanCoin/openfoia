@@ -147,11 +147,7 @@ class DocumentCloudAdapter(RecordAdapter):
             if hl_data and isinstance(hl_data, dict):
                 for page_key in sorted(hl_data.keys()):
                     for text_snippet in hl_data[page_key]:
-                        clean = (
-                            text_snippet.replace("<em>", "")
-                            .replace("</em>", "")
-                            .strip()
-                        )
+                        clean = text_snippet.replace("<em>", "").replace("</em>", "").strip()
                         if clean:
                             highlights.append(clean)
                             if len(highlights) >= 3:
@@ -287,15 +283,11 @@ class DocumentCloudAdapter(RecordAdapter):
         with get_session() as session:
             # Check if already fetched — return existing record
             existing_req = (
-                session.query(Request)
-                .filter(Request.request_number == f"DC-{dc_id}")
-                .first()
+                session.query(Request).filter(Request.request_number == f"DC-{dc_id}").first()
             )
             if existing_req:
                 existing_doc = (
-                    session.query(Document)
-                    .filter(Document.request_id == existing_req.id)
-                    .first()
+                    session.query(Document).filter(Document.request_id == existing_req.id).first()
                 )
                 if existing_doc:
                     # Update text in case it changed
