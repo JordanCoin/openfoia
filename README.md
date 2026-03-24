@@ -35,7 +35,7 @@ openfoia crossref                                      # check entities against 
 
 | | |
 |---|---|
-| **PDF text extraction** | 7-level resolution cascade in a compiled 1.1MB binary. 99.5% accuracy across 480K chars. Zero dependencies. |
+| **PDF text extraction** | Compiled 1.1MB binary. 99.5% accuracy across 480K chars. Zero dependencies. |
 | **Entity extraction** | 4-tier: LLM → GLiNER → spaCy → Regex. 100% recall with a 2GB local model |
 | **Relationship graphs** | Interactive HTML visualization. Named investigations. Click to explore |
 | **Cross-reference** | MuckRock, OpenCorporates, SEC EDGAR, OpenSanctions, ICIJ Offshore Leaks |
@@ -48,18 +48,9 @@ openfoia crossref                                      # check entities against 
 
 ### PDF Extraction Engine
 
-The `pdf-extract` binary reads text directly from PDF structures — no OCR needed for born-digital documents. A 7-level resolution cascade handles broken fonts, missing encodings, and government form PDFs:
+A compiled 1.1MB binary extracts text directly from PDF structures — no OCR needed for born-digital documents. Uses a multi-level resolution cascade to handle broken fonts, missing encodings, and government form PDFs that other tools can't read.
 
-1. **ToUnicode CMap** — standard PDF text mapping
-2. **ActualText** — marked content spans
-3. **Byte-pair split** — packed ASCII in two-byte charcodes
-4. **Glyph name / ASCII heuristic** — Adobe Glyph List + fallbacks
-5. **Font internal cmap** — GID → Unicode from embedded font programs
-6. **Fingerprint DB** — 57 fonts, 51K glyph entries, geometric matching
-7. **Neural classifier** — 398KB MLP embedded in the binary
-8. **Context resolver** — frequency analysis, bigrams, dictionary lookup
-
-99.5% accuracy across 480K characters in 50 test PDFs. 100% on every FOIA document tested. 1.1MB binary, zero runtime dependencies. Falls back to OCR (Tesseract) for scanned documents.
+99.5% accuracy across 480K characters in 50 test PDFs. 100% on every FOIA document tested. Zero runtime dependencies. Falls back to OCR (Tesseract) for scanned documents.
 
 ## Data Sources
 
