@@ -41,11 +41,13 @@ ner-spacy = ["spacy>=3.7.0"]
 tor = ["socksio>=1.0.0"]
 # Browser automation
 browser = ["playwright>=1.40.0"]
+# Outlook MSG email files
+email-files = ["extract-msg>=0.48.0"]
 # Encrypted database
 encryption = ["pysqlcipher3>=1.2.0"]
 # Everything
 all = [
-    "openfoia[ocr,fax,mail,cloud-ai,ner,tor,browser,encryption]",
+    "openfoia[ocr,fax,mail,cloud-ai,ner,tor,browser,email-files,encryption]",
 ]
 # Development
 dev = [

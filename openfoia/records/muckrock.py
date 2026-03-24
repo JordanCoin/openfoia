@@ -139,6 +139,14 @@ class MuckRockAdapter(RecordAdapter):
                         "files_count": sum(
                             len(c.get("files", [])) for c in req.get("communications", [])
                         ),
+                        "file_types": list(
+                            {
+                                f.get("ffile", "").rsplit(".", 1)[-1].lower()
+                                for c in req.get("communications", [])
+                                for f in c.get("files", [])
+                                if "." in f.get("ffile", "")
+                            }
+                        ),
                     },
                 )
             )

@@ -1277,7 +1277,17 @@ def docs_ingest(
                 rprint(f"[red]✗[/red] {path.name}: {e}")
         else:
             # Directory
-            patterns = ["*.pdf", "*.PDF", "*.doc", "*.docx", "*.txt", "*.jpg", "*.png"]
+            patterns = [
+                "*.pdf",
+                "*.PDF",
+                "*.doc",
+                "*.docx",
+                "*.txt",
+                "*.jpg",
+                "*.png",
+                "*.tiff",
+                "*.msg",
+            ]
             files = []
             for pattern in patterns:
                 if recursive:
@@ -4049,19 +4059,23 @@ def records_search(
     if source == "muckrock":
         table = Table()
         table.add_column("ID", style="dim", width=8)
-        table.add_column("Title", style="cyan", max_width=40)
-        table.add_column("By", width=16)
+        table.add_column("Title", style="cyan", max_width=35)
+        table.add_column("By", width=14)
         table.add_column("Status", width=10)
         table.add_column("Files", width=6)
+        table.add_column("Types", width=12)
         table.add_column("Date", width=12)
 
         for e in entities:
+            file_types = e.extra_data.get("file_types", [])
+            types_str = ", ".join(sorted(file_types)) if file_types else "-"
             table.add_row(
                 e.identifiers.get("muckrock_id", "-"),
                 e.name,
                 e.extra_data.get("username", "-"),
                 e.status or "-",
                 str(e.extra_data.get("files_count", 0)),
+                types_str,
                 (e.extra_data.get("completed") or e.extra_data.get("submitted") or "-")[:10],
             )
         console.print(table)

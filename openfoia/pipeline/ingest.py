@@ -270,6 +270,8 @@ class DocumentIngester:
                 return await self._extract_text_image(file_path)
             elif mime_type and mime_type.startswith("text/"):
                 return await asyncio.to_thread(file_path.read_text, errors="replace")
+            elif mime_type == "application/vnd.ms-outlook" or file_path.suffix.lower() == ".msg":
+                return await asyncio.to_thread(self._extract_text_msg, file_path)
             return None
         except Exception:
             return None
@@ -334,6 +336,44 @@ class DocumentIngester:
 
             text = await asyncio.to_thread(_ocr)
             return text.strip() if text and len(text.strip()) > 10 else None
+        except (ImportError, Exception):
+            return None
+
+    def _extract_text_msg(self, msg_path: Path) -> str | None:
+        """Extract text from Outlook MSG files (email headers + body + attachment names)."""
+        try:
+            import extract_msg
+
+            msg = extract_msg.Message(str(msg_path))
+            parts = []
+
+            # Email headers
+            if msg.subject:
+                parts.append(f"Subject: {msg.subject}")
+            if msg.sender:
+                parts.append(f"From: {msg.sender}")
+            if msg.date:
+                parts.append(f"Date: {msg.date}")
+            if msg.to:
+                parts.append(f"To: {msg.to}")
+
+            parts.append("")
+
+            # Body
+            if msg.body:
+                parts.append(msg.body)
+
+            # Attachment names
+            if msg.attachments:
+                parts.append(f"\nAttachments ({len(msg.attachments)}):")
+                for att in msg.attachments:
+                    name = att.longFilename or att.shortFilename or "unnamed"
+                    size = len(att.data) if att.data else 0
+                    parts.append(f"  {name} ({size} bytes)")
+
+            msg.close()
+            text = "\n".join(parts)
+            return text if len(text.strip()) > 10 else None
         except (ImportError, Exception):
             return None
 
