@@ -48,6 +48,7 @@ class SearchResult:
     page: int = 1
     per_page: int = 25
     raw_response: dict[str, Any] | None = None
+    error: str | None = None  # non-None means API failed (vs genuine zero results)
 
 
 class RecordAdapter(ABC):

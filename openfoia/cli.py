@@ -2341,6 +2341,9 @@ def analyze_extract(
             )
             session.add(entity)
 
+        # Flush entities so FKs exist before inserting links
+        session.flush()
+
         # Save relationships to entity_links
         rels_saved = 0
         for rel in result.relationships:
@@ -2554,7 +2557,42 @@ def analyze_graph(
             for link in links_q.all()
         ]
 
-        graph_data = {"nodes": nodes, "edges": edges}
+        # Enrich with document metadata for the reader view
+        doc_ids = {e.document_id for e in entities if e.document_id}
+        documents = {}
+        if doc_ids:
+            from .models import Document as DocModel, Request as ReqModel
+            import re as re_mod
+
+            for doc in session.query(DocModel).filter(DocModel.id.in_(doc_ids)).all():
+                # Derive source URL from request body or filename
+                source_url = None
+                if doc.request_id:
+                    req = session.query(ReqModel).filter(ReqModel.id == doc.request_id).first()
+                    if req and req.body:
+                        # Extract URL from "Pulled from DocumentCloud: https://..."
+                        url_match = re_mod.search(r'https?://\S+', req.body)
+                        if url_match:
+                            source_url = url_match.group(0)
+                # Fallback: derive from filename pattern
+                if not source_url and doc.filename:
+                    dc_match = re_mod.match(r'documentcloud-(\d+)', doc.filename)
+                    if dc_match:
+                        source_url = f"https://www.documentcloud.org/documents/{dc_match.group(1)}/"
+                    mr_match = re_mod.match(r'muckrock-(\d+)', doc.filename or '')
+                    if mr_match:
+                        source_url = f"https://www.muckrock.com/foi/{mr_match.group(1)}/"
+
+                documents[doc.id] = {
+                    "id": doc.id,
+                    "filename": doc.filename or "Unknown",
+                    "page_count": doc.page_count,
+                    "text": doc.extracted_text or "",
+                    "request_id": doc.request_id,
+                    "source_url": source_url,
+                }
+
+        graph_data = {"nodes": nodes, "edges": edges, "documents": documents}
 
         import json as json_mod
 
@@ -2590,402 +2628,12 @@ def analyze_graph(
 
 
 def _generate_graph_html(graph_data: dict, output_path: Path) -> None:
-    """Generate a standalone HTML file with an interactive entity graph visualization.
-
-    Uses a canvas-based d3-force-style simulation. Nodes are colored by entity type,
-    edges are labeled with relationship type, and clicking a node shows its
-    occurrences across documents.
-    """
+    """Generate a standalone HTML file with an interactive entity graph visualization."""
     import json as json_mod
 
-    graph_json = json_mod.dumps(graph_data)
+    from .graph_template import render
 
-    # The HTML is a self-contained page with inline JS for the force graph.
-    # All entity data from the user's own local database is embedded as JSON.
-    # The escapeHtml() function in the JS sanitizes all text before display.
-    html_content = _GRAPH_HTML_TEMPLATE.replace("__GRAPH_DATA__", graph_json)
-    output_path.write_text(html_content)
-
-
-_GRAPH_HTML_TEMPLATE = r"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>OpenFOIA Entity Graph</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e0e0e0; overflow: hidden; }
-  #graph { width: 100vw; height: 100vh; }
-  #info-panel {
-    position: fixed; top: 16px; right: 16px; width: 340px;
-    background: rgba(20, 20, 20, 0.95); border: 1px solid #333;
-    border-radius: 8px; padding: 16px; display: none;
-    max-height: 80vh; overflow-y: auto; z-index: 10;
-  }
-  #info-panel h2 { font-size: 16px; margin-bottom: 8px; color: #fff; }
-  #info-panel .label { color: #888; font-size: 12px; text-transform: uppercase; margin-top: 10px; }
-  #info-panel .value { font-size: 14px; margin-bottom: 4px; }
-  #info-panel .occurrence { background: #1a1a2e; border-radius: 4px; padding: 8px; margin: 4px 0; font-size: 13px; }
-  #info-panel .close { position: absolute; top: 8px; right: 12px; cursor: pointer; color: #888; font-size: 18px; }
-  #legend {
-    position: fixed; bottom: 16px; left: 16px;
-    background: rgba(20, 20, 20, 0.95); border: 1px solid #333;
-    border-radius: 8px; padding: 12px 16px; z-index: 10;
-  }
-  #legend h3 { font-size: 13px; margin-bottom: 8px; color: #aaa; }
-  .legend-item { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 12px; }
-  .legend-dot { width: 12px; height: 12px; border-radius: 50%; }
-  #title {
-    position: fixed; top: 16px; left: 16px;
-    background: rgba(20, 20, 20, 0.95); border: 1px solid #333;
-    border-radius: 8px; padding: 12px 16px; z-index: 10;
-  }
-  #title h1 { font-size: 16px; color: #fff; }
-  #title p { font-size: 12px; color: #888; margin-top: 4px; }
-</style>
-</head>
-<body>
-<div id="title">
-  <h1>OpenFOIA Entity Graph</h1>
-  <p id="stats"></p>
-</div>
-<div id="legend"></div>
-<div id="info-panel">
-  <span class="close" onclick="document.getElementById('info-panel').style.display='none'">&times;</span>
-  <div id="info-content"></div>
-</div>
-<canvas id="graph"></canvas>
-
-<script>
-(function() {
-"use strict";
-var graphData = __GRAPH_DATA__;
-
-var TYPE_COLORS = {
-  person: '#e74c3c',
-  organization: '#3498db',
-  location: '#2ecc71',
-  date: '#f39c12',
-  money: '#9b59b6',
-  document_id: '#1abc9c',
-  phone: '#e67e22',
-  email: '#e91e63',
-  address: '#00bcd4'
-};
-
-// Stats
-var nodeCount = graphData.nodes.length;
-var edgeCount = graphData.edges.length;
-var typesSet = {};
-graphData.nodes.forEach(function(n) { typesSet[n.type] = true; });
-var types = Object.keys(typesSet).sort();
-document.getElementById('stats').textContent = nodeCount + ' entities, ' + edgeCount + ' relationships';
-
-// Legend
-var legendEl = document.getElementById('legend');
-var legendHTML = '<h3>Entity Types</h3>';
-types.forEach(function(t) {
-  var color = TYPE_COLORS[t] || '#999';
-  legendHTML += '<div class="legend-item"><div class="legend-dot" style="background:' + color + '"></div>' + t + '</div>';
-});
-legendEl.innerHTML = legendHTML;
-
-// Build occurrence index: normalized_text -> list of occurrences
-var occurrenceIndex = {};
-graphData.nodes.forEach(function(n) {
-  var key = n.label;
-  if (!occurrenceIndex[key]) occurrenceIndex[key] = [];
-  occurrenceIndex[key].push(n);
-});
-
-// Deduplicate nodes by label for cleaner visualization
-var uniqueNodes = {};
-graphData.nodes.forEach(function(n) {
-  if (!uniqueNodes[n.label] || n.confidence > uniqueNodes[n.label].confidence) {
-    var existing = uniqueNodes[n.label];
-    uniqueNodes[n.label] = {
-      id: n.id, label: n.label, type: n.type, confidence: n.confidence,
-      count: (existing ? (existing.count || 1) : 0) + 1
-    };
-  } else {
-    uniqueNodes[n.label].count = (uniqueNodes[n.label].count || 1) + 1;
-  }
-});
-var displayNodes = Object.keys(uniqueNodes).map(function(k) { return uniqueNodes[k]; });
-var nodeIdToLabel = {};
-graphData.nodes.forEach(function(n) { nodeIdToLabel[n.id] = n.label; });
-
-// Canvas setup
-var canvas = document.getElementById('graph');
-var ctx = canvas.getContext('2d');
-var W, H;
-function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
-resize();
-window.addEventListener('resize', resize);
-
-// Physics simulation
-var SIM_NODES = displayNodes.map(function(n) {
-  return {
-    label: n.label, type: n.type, confidence: n.confidence, count: n.count || 1,
-    x: W / 2 + (Math.random() - 0.5) * W * 0.6,
-    y: H / 2 + (Math.random() - 0.5) * H * 0.6,
-    vx: 0, vy: 0,
-    radius: Math.min(8 + (n.count || 1) * 2, 24)
-  };
-});
-
-// Map edges to display nodes
-var labelToIdx = {};
-SIM_NODES.forEach(function(n, i) { labelToIdx[n.label] = i; });
-var SIM_EDGES = [];
-graphData.edges.forEach(function(e) {
-  var srcLabel = nodeIdToLabel[e.source];
-  var tgtLabel = nodeIdToLabel[e.target];
-  if (srcLabel && tgtLabel && labelToIdx[srcLabel] !== undefined && labelToIdx[tgtLabel] !== undefined) {
-    SIM_EDGES.push({ source: labelToIdx[srcLabel], target: labelToIdx[tgtLabel], type: e.type || '' });
-  }
-});
-
-// Force simulation constants
-var REPULSION = 3000;
-var ATTRACTION = 0.005;
-var DAMPING = 0.85;
-var CENTER_GRAVITY = 0.01;
-var LINK_DISTANCE = 120;
-
-function simulate() {
-  var i, j, dx, dy, dist, force, fx, fy, a, b;
-  // Repulsion
-  for (i = 0; i < SIM_NODES.length; i++) {
-    for (j = i + 1; j < SIM_NODES.length; j++) {
-      dx = SIM_NODES[j].x - SIM_NODES[i].x;
-      dy = SIM_NODES[j].y - SIM_NODES[i].y;
-      dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      force = REPULSION / (dist * dist);
-      fx = (dx / dist) * force; fy = (dy / dist) * force;
-      SIM_NODES[i].vx -= fx; SIM_NODES[i].vy -= fy;
-      SIM_NODES[j].vx += fx; SIM_NODES[j].vy += fy;
-    }
-  }
-  // Attraction along edges
-  for (i = 0; i < SIM_EDGES.length; i++) {
-    a = SIM_NODES[SIM_EDGES[i].source]; b = SIM_NODES[SIM_EDGES[i].target];
-    dx = b.x - a.x; dy = b.y - a.y;
-    dist = Math.sqrt(dx * dx + dy * dy) || 1;
-    force = (dist - LINK_DISTANCE) * ATTRACTION;
-    fx = (dx / dist) * force; fy = (dy / dist) * force;
-    a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
-  }
-  // Center gravity
-  for (i = 0; i < SIM_NODES.length; i++) {
-    SIM_NODES[i].vx += (W / 2 - SIM_NODES[i].x) * CENTER_GRAVITY;
-    SIM_NODES[i].vy += (H / 2 - SIM_NODES[i].y) * CENTER_GRAVITY;
-  }
-  // Apply velocity
-  for (i = 0; i < SIM_NODES.length; i++) {
-    var n = SIM_NODES[i];
-    n.vx *= DAMPING; n.vy *= DAMPING;
-    n.x += n.vx; n.y += n.vy;
-    n.x = Math.max(n.radius, Math.min(W - n.radius, n.x));
-    n.y = Math.max(n.radius, Math.min(H - n.radius, n.y));
-  }
-}
-
-// Pan and zoom state
-var offsetX = 0, offsetY = 0, scale = 1;
-var isPanning = false, lastMX = 0, lastMY = 0;
-var dragNode = null;
-
-canvas.addEventListener('wheel', function(e) {
-  e.preventDefault();
-  var zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-  var mx = e.clientX, my = e.clientY;
-  offsetX = mx - (mx - offsetX) * zoomFactor;
-  offsetY = my - (my - offsetY) * zoomFactor;
-  scale *= zoomFactor;
-});
-
-function screenToWorld(sx, sy) {
-  return [(sx - offsetX) / scale, (sy - offsetY) / scale];
-}
-
-canvas.addEventListener('mousedown', function(e) {
-  var wc = screenToWorld(e.clientX, e.clientY);
-  var wx = wc[0], wy = wc[1];
-  for (var i = SIM_NODES.length - 1; i >= 0; i--) {
-    var n = SIM_NODES[i];
-    var ddx = wx - n.x, ddy = wy - n.y;
-    if (ddx * ddx + ddy * ddy < n.radius * n.radius * 1.5) {
-      dragNode = n;
-      return;
-    }
-  }
-  isPanning = true;
-  lastMX = e.clientX; lastMY = e.clientY;
-});
-
-canvas.addEventListener('mousemove', function(e) {
-  if (dragNode) {
-    var wc = screenToWorld(e.clientX, e.clientY);
-    dragNode.x = wc[0]; dragNode.y = wc[1];
-    dragNode.vx = 0; dragNode.vy = 0;
-  } else if (isPanning) {
-    offsetX += e.clientX - lastMX;
-    offsetY += e.clientY - lastMY;
-    lastMX = e.clientX; lastMY = e.clientY;
-  }
-});
-
-canvas.addEventListener('mouseup', function() {
-  isPanning = false; dragNode = null;
-});
-
-canvas.addEventListener('click', function(e) {
-  var wc = screenToWorld(e.clientX, e.clientY);
-  var wx = wc[0], wy = wc[1];
-  for (var i = SIM_NODES.length - 1; i >= 0; i--) {
-    var n = SIM_NODES[i];
-    var ddx = wx - n.x, ddy = wy - n.y;
-    if (ddx * ddx + ddy * ddy < n.radius * n.radius * 1.5) {
-      showNodeInfo(n);
-      return;
-    }
-  }
-});
-
-function escapeHtml(text) {
-  var div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-function showNodeInfo(node) {
-  var panel = document.getElementById('info-panel');
-  var content = document.getElementById('info-content');
-  var color = TYPE_COLORS[node.type] || '#999';
-  var occurrences = occurrenceIndex[node.label] || [];
-
-  // Build info panel using DOM methods for safety
-  content.textContent = '';
-
-  var h2 = document.createElement('h2');
-  h2.style.color = color;
-  h2.textContent = node.label;
-  content.appendChild(h2);
-
-  var typeLabel = document.createElement('div');
-  typeLabel.className = 'label';
-  typeLabel.textContent = 'Type';
-  content.appendChild(typeLabel);
-  var typeValue = document.createElement('div');
-  typeValue.className = 'value';
-  typeValue.textContent = node.type;
-  content.appendChild(typeValue);
-
-  var confLabel = document.createElement('div');
-  confLabel.className = 'label';
-  confLabel.textContent = 'Confidence';
-  content.appendChild(confLabel);
-  var confValue = document.createElement('div');
-  confValue.className = 'value';
-  confValue.textContent = (node.confidence * 100).toFixed(0) + '%';
-  content.appendChild(confValue);
-
-  var occLabel = document.createElement('div');
-  occLabel.className = 'label';
-  occLabel.textContent = 'Occurrences (' + occurrences.length + ')';
-  content.appendChild(occLabel);
-
-  occurrences.forEach(function(occ) {
-    var occDiv = document.createElement('div');
-    occDiv.className = 'occurrence';
-
-    var docInfo = document.createElement('div');
-    docInfo.style.fontSize = '11px';
-    docInfo.style.color = '#888';
-    docInfo.textContent = 'Document: ' + occ.document_id.substring(0, 8) + '...';
-    occDiv.appendChild(docInfo);
-
-    if (occ.page_number) {
-      var pageInfo = document.createElement('div');
-      pageInfo.style.fontSize = '11px';
-      pageInfo.style.color = '#888';
-      pageInfo.textContent = 'Page: ' + occ.page_number;
-      occDiv.appendChild(pageInfo);
-    }
-
-    if (occ.context) {
-      var ctxInfo = document.createElement('div');
-      ctxInfo.style.marginTop = '4px';
-      ctxInfo.style.fontSize = '12px';
-      ctxInfo.style.color = '#ccc';
-      ctxInfo.textContent = '"' + occ.context.substring(0, 200) + '"';
-      occDiv.appendChild(ctxInfo);
-    }
-
-    content.appendChild(occDiv);
-  });
-
-  panel.style.display = 'block';
-}
-
-function draw() {
-  simulate();
-  ctx.clearRect(0, 0, W, H);
-  ctx.save();
-  ctx.translate(offsetX, offsetY);
-  ctx.scale(scale, scale);
-
-  // Draw edges
-  ctx.lineWidth = 1;
-  var i, e, a, b, mx, my, n, color;
-  for (i = 0; i < SIM_EDGES.length; i++) {
-    e = SIM_EDGES[i];
-    a = SIM_NODES[e.source]; b = SIM_NODES[e.target];
-    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
-    if (e.type) {
-      mx = (a.x + b.x) / 2; my = (a.y + b.y) / 2;
-      ctx.fillStyle = 'rgba(255,255,255,0.35)';
-      ctx.font = '9px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(e.type, mx, my - 3);
-    }
-  }
-
-  // Draw nodes
-  for (i = 0; i < SIM_NODES.length; i++) {
-    n = SIM_NODES[i];
-    color = TYPE_COLORS[n.type] || '#999';
-    ctx.beginPath();
-    ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
-    ctx.fillStyle = color;
-    ctx.globalAlpha = 0.85;
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.fillStyle = '#fff';
-    ctx.font = '11px sans-serif';
-    ctx.textAlign = 'center';
-    var lbl = n.label.length > 20 ? n.label.substring(0, 18) + '...' : n.label;
-    ctx.fillText(lbl, n.x, n.y + n.radius + 14);
-  }
-
-  ctx.restore();
-  requestAnimationFrame(draw);
-}
-
-draw();
-})();
-</script>
-</body>
-</html>"""
+    render(json_mod.dumps(graph_data), output_path)
 
 
 # === Entity Type Commands ===
@@ -4048,7 +3696,10 @@ def records_search(
         return
 
     if not result.entities:
-        rprint(f"[yellow]No results found for '{query}' on {source}.[/yellow]")
+        if result.error:
+            rprint(f"[red]Search error ({source}): {result.error}[/red]")
+        else:
+            rprint(f"[yellow]No results found for '{query}' on {source}.[/yellow]")
         return
 
     rprint(f"\n[bold]{source}[/bold]: {result.total_results} total results for '{query}'")
@@ -4078,6 +3729,27 @@ def records_search(
             )
         console.print(table)
         rprint("\n[dim]Download documents: openfoia records download <ID> --source muckrock[/dim]")
+
+    elif source == "documentcloud":
+        table = Table(expand=True)
+        table.add_column("ID", style="dim", width=10)
+        table.add_column("Title", style="cyan", ratio=2)
+        table.add_column("Pages", width=5)
+        table.add_column("Source", width=15)
+        table.add_column("Highlight", ratio=3, style="yellow")
+
+        for e in entities:
+            highlights = e.extra_data.get("highlights", [])
+            highlight_str = highlights[0][:120] + "…" if highlights and len(highlights[0]) > 120 else (highlights[0] if highlights else "-")
+            table.add_row(
+                e.identifiers.get("documentcloud_id", "-")[:10],
+                e.name,
+                str(e.extra_data.get("pages") or "-"),
+                e.extra_data.get("source", "-") or "-",
+                highlight_str,
+            )
+        console.print(table)
+        rprint("\n[dim]Fetch full text: openfoia records fetch <ID> --source documentcloud[/dim]")
 
     elif source == "opencorporates":
         table = Table()
@@ -4135,6 +3807,54 @@ def records_search(
         console.print(table)
 
     rprint(f"\n[dim]Showing {len(entities)} of {result.total_results} results.[/dim]")
+
+
+@records_app.command("fetch")
+def records_fetch(
+    doc_id: str = typer.Argument(..., help="Document ID to fetch"),
+    source: str = typer.Option(
+        "documentcloud", "--source", "-s", help="Data source"
+    ),
+):
+    """Fetch a document's full text and save it to the local database.
+
+    Pulls pre-extracted text from the source (no local OCR needed for
+    DocumentCloud). The document is immediately ready for entity extraction.
+
+    Examples:
+        openfoia records fetch 2090186 --source documentcloud
+        openfoia records fetch 2090186
+    """
+    import asyncio
+
+    if source == "documentcloud":
+        from .records.documentcloud import DocumentCloudAdapter
+
+        adapter = DocumentCloudAdapter()
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            progress.add_task(f"Fetching document {doc_id} from DocumentCloud...", total=None)
+            try:
+                result_id, text = asyncio.run(adapter.pull_text(doc_id))
+            except Exception as e:
+                rprint(f"[red]Fetch failed: {e}[/red]")
+                raise typer.Exit(1)
+
+        if not result_id or not text:
+            rprint(f"[red]Could not fetch text for document {doc_id}.[/red]")
+            rprint("[dim]The document may not exist or may not have extracted text.[/dim]")
+            raise typer.Exit(1)
+
+        rprint(f"\n[green]Saved to database:[/green] {result_id[:8]}...")
+        rprint(f"  Text length: {len(text):,} characters")
+        rprint(f"\n[dim]Extract entities: openfoia analyze extract {result_id}[/dim]")
+    else:
+        rprint(f"[yellow]Fetch not yet supported for '{source}'. Use 'records download' for MuckRock.[/yellow]")
+        raise typer.Exit(1)
 
 
 @records_app.command("download")
@@ -4309,7 +4029,7 @@ def crossref(
     sources: Optional[str] = typer.Option(
         None,
         "--sources",
-        help="Comma-separated sources (muckrock,opencorporates,sec,opensanctions)",
+        help="Comma-separated sources (muckrock,opencorporates,sec,opensanctions,documentcloud)",
     ),
     icij_data: Optional[Path] = typer.Option(
         None, "--icij-data", help="Path to downloaded ICIJ CSV data"
@@ -4322,8 +4042,8 @@ def crossref(
     """Cross-reference extracted entities against external databases.
 
     Checks every person and organization from your documents against
-    MuckRock, OpenCorporates, SEC EDGAR, OpenSanctions, and ICIJ
-    Offshore Leaks. Flags entities that appear in multiple sources.
+    MuckRock, OpenCorporates, SEC EDGAR, DocumentCloud, OpenSanctions,
+    and ICIJ Offshore Leaks. Flags entities that appear in multiple sources.
 
     This is the free, local version of what Maltego charges $999/year for.
 
@@ -4386,7 +4106,7 @@ def crossref(
     # Warn about network activity — crossref sends entity names to external APIs
     network_sources = [
         s
-        for s in (source_list or ["muckrock", "opencorporates", "sec", "opensanctions"])
+        for s in (source_list or ["muckrock", "opencorporates", "sec", "documentcloud", "opensanctions"])
         if s != "icij"
     ]
     if network_sources:

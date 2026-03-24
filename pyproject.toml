@@ -43,6 +43,8 @@ tor = ["socksio>=1.0.0"]
 browser = ["playwright>=1.40.0"]
 # Outlook MSG email files
 email-files = ["extract-msg>=0.48.0"]
+# DocumentCloud integration
+documentcloud = ["documentcloud>=4.0.0"]
 # Encrypted database
 encryption = ["pysqlcipher3>=1.2.0"]
 # Everything

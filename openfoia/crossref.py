@@ -142,6 +142,9 @@ def _get_available_sources(icij_data_dir: str | None = None) -> dict[str, Any]:
         if Path(icij_data_dir).exists():
             sources["icij"] = lambda name, etype: _check_icij(name, etype, icij_data_dir)
 
+    # DocumentCloud — always available (public API, no key)
+    sources["documentcloud"] = _check_documentcloud
+
     # OpenSanctions — available if data downloaded or API key set
     sources["opensanctions"] = _check_opensanctions
 
@@ -311,6 +314,46 @@ async def _check_icij(name: str, entity_type: EntityType, data_dir: str) -> list
             logger.warning("Failed to search ICIJ file %s: %s", csv_file, e)
 
     return hits[:10]  # cap to avoid flooding
+
+
+async def _check_documentcloud(name: str, entity_type: EntityType) -> list[CrossRefHit]:
+    """Search DocumentCloud's 10M+ public document archive."""
+    from .records.documentcloud import DocumentCloudAdapter
+
+    adapter = DocumentCloudAdapter()
+    try:
+        result = await adapter.search(name, page_size=5)
+    except Exception:
+        return []
+
+    hits = []
+    for doc in result.entities:
+        # Only count if the name actually appears in the title or highlights
+        title_match = name.lower() in doc.name.lower()
+        highlights = doc.extra_data.get("highlights", [])
+        highlight_match = any(name.lower() in h.lower() for h in highlights)
+
+        if title_match or highlight_match:
+            detail = f"Document: {doc.name}"
+            pages = doc.extra_data.get("pages")
+            if pages:
+                detail += f" ({pages} pages)"
+            source_org = doc.extra_data.get("source")
+            if source_org:
+                detail += f" — {source_org}"
+
+            hits.append(
+                CrossRefHit(
+                    source="documentcloud",
+                    entity_name=name,
+                    match_type="partial",
+                    details=detail,
+                    url=doc.source_url,
+                    extra={"documentcloud_id": doc.identifiers.get("documentcloud_id")},
+                )
+            )
+
+    return hits
 
 
 async def _check_opensanctions(name: str, entity_type: EntityType) -> list[CrossRefHit]:

@@ -4,7 +4,9 @@
 
 Your data never leaves your machine. Works offline. Works everywhere.
 
-![Entity relationship graph extracted from a single FOIA document — 19 entities, 84 relationships, generated locally with a 2GB model](docs/entity-graph.png)
+![Entity relationship graph — 45 entities, 166 relationships extracted from a Palantir police surveillance contract pulled from DocumentCloud](docs/entity-graph.png)
+
+![Built-in document reader with entity highlighting — click any entity to jump to it in the source text, with a link to the original document](docs/document-reader.png)
 
 ---
 
