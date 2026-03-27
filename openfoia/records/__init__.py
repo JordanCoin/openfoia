@@ -44,12 +44,14 @@ def _auto_register() -> None:
     from .muckrock import MuckRockAdapter
     from .documentcloud import DocumentCloudAdapter
     from .usaspending import USASpendingAdapter
+    from .propublica_nonprofit import ProPublicaNonprofitAdapter
 
     register("opencorporates", OpenCorporatesAdapter)
     register("sec", SECEdgarAdapter)
     register("muckrock", MuckRockAdapter)
     register("documentcloud", DocumentCloudAdapter)
     register("usaspending", USASpendingAdapter)
+    register("nonprofits", ProPublicaNonprofitAdapter)
 
 
 _auto_register()

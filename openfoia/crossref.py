@@ -148,6 +148,9 @@ def _get_available_sources(icij_data_dir: str | None = None) -> dict[str, Any]:
     # USAspending — always available (no key, no rate limit)
     sources["usaspending"] = _check_usaspending
 
+    # ProPublica Nonprofit — always available (no key)
+    sources["nonprofits"] = _check_nonprofits
+
     # OpenSanctions — available if data downloaded or API key set
     sources["opensanctions"] = _check_opensanctions
 
@@ -317,6 +320,45 @@ async def _check_icij(name: str, entity_type: EntityType, data_dir: str) -> list
             logger.warning("Failed to search ICIJ file %s: %s", csv_file, e)
 
     return hits[:10]  # cap to avoid flooding
+
+
+async def _check_nonprofits(name: str, entity_type: EntityType) -> list[CrossRefHit]:
+    """Search ProPublica for nonprofit organizations matching this entity."""
+    if entity_type == EntityType.PERSON:
+        return []
+
+    from .records.propublica_nonprofit import ProPublicaNonprofitAdapter
+
+    adapter = ProPublicaNonprofitAdapter()
+    try:
+        result = await adapter.search(name, page_size=5)
+    except Exception:
+        return []
+
+    hits = []
+    for org in result.entities:
+        if name.lower() not in org.name.lower():
+            continue
+        detail = f"Nonprofit: {org.name}"
+        subsection = org.extra_data.get("subsection")
+        if subsection:
+            detail += f" ({subsection})"
+        location = org.extra_data.get("location")
+        if location:
+            detail += f" — {location}"
+
+        hits.append(
+            CrossRefHit(
+                source="nonprofits",
+                entity_name=name,
+                match_type="partial",
+                details=detail,
+                url=org.source_url,
+                extra={"ein": org.identifiers.get("ein")},
+            )
+        )
+
+    return hits
 
 
 async def _check_usaspending(name: str, entity_type: EntityType) -> list[CrossRefHit]:

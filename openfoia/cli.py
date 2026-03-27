@@ -3774,6 +3774,23 @@ def records_search(
         console.print(table)
         rprint("\n[dim]View on USAspending.gov: click award URLs in the table[/dim]")
 
+    elif source == "nonprofits":
+        table = Table(expand=True)
+        table.add_column("EIN", style="dim", width=12)
+        table.add_column("Name", style="cyan", ratio=3)
+        table.add_column("Location", width=18)
+        table.add_column("Type", width=12)
+
+        for e in entities:
+            table.add_row(
+                e.identifiers.get("strein", "-"),
+                e.name,
+                e.extra_data.get("location", "-") or "-",
+                e.extra_data.get("subsection", "-") or "-",
+            )
+        console.print(table)
+        rprint("\n[dim]View details: openfoia records fetch <EIN> --source nonprofits[/dim]")
+
     elif source == "opencorporates":
         table = Table()
         table.add_column("Name", style="cyan", max_width=30)
@@ -4137,6 +4154,7 @@ def crossref(
                 "sec",
                 "documentcloud",
                 "usaspending",
+                "nonprofits",
                 "opensanctions",
             ]
         )
