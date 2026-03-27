@@ -113,7 +113,9 @@ _TEMPLATE = r"""<!DOCTYPE html>
     border-radius: 8px; padding: 12px 16px; z-index: 10;
   }
   #legend h3 { font-size: 12px; margin-bottom: 8px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
-  .legend-item { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 12px; color: #94a3b8; }
+  .legend-item { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 12px; color: #94a3b8; cursor: pointer; user-select: none; }
+  .legend-item:hover { color: #e2e8f0; }
+  .legend-item.hidden { opacity: 0.3; text-decoration: line-through; }
   .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
   #title {
     position: fixed; top: 16px; left: 16px;
@@ -123,6 +125,41 @@ _TEMPLATE = r"""<!DOCTYPE html>
   #title h1 { font-size: 16px; color: #fff; font-weight: 600; }
   #title p { font-size: 12px; color: #64748b; margin-top: 4px; }
   #title .hint { font-size: 11px; color: #475569; margin-top: 6px; }
+
+  #search-box {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+    z-index: 10; display: flex; gap: 0;
+  }
+  #search-box input {
+    background: rgba(15, 15, 20, 0.95); border: 1px solid #333; border-radius: 8px;
+    padding: 8px 14px; color: #e2e8f0; font-size: 13px; width: 280px; outline: none;
+  }
+  #search-box input:focus { border-color: #3b82f6; }
+  #search-box .search-results {
+    position: absolute; top: 40px; left: 0; width: 100%; max-height: 240px;
+    overflow-y: auto; background: rgba(15, 15, 20, 0.97); border: 1px solid #333;
+    border-radius: 8px; display: none;
+  }
+  #search-box .search-result {
+    padding: 8px 14px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 8px;
+  }
+  #search-box .search-result:hover { background: rgba(255,255,255,0.05); }
+  #search-box .search-result .sr-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  #focus-bar {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    background: rgba(15, 15, 20, 0.95); border: 1px solid #333;
+    border-radius: 8px; padding: 10px 20px; z-index: 10; display: none;
+    align-items: center; gap: 16px; font-size: 13px;
+  }
+  #focus-bar .focus-label { color: #94a3b8; }
+  #focus-bar .focus-depth { color: #e2e8f0; font-weight: 600; }
+  #focus-bar input[type=range] { width: 120px; accent-color: #3b82f6; }
+  #focus-bar button {
+    background: #1e293b; border: 1px solid #334155; color: #e2e8f0;
+    padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 12px;
+  }
+  #focus-bar button:hover { background: #334155; }
 </style>
 </head>
 <body>
@@ -131,7 +168,17 @@ _TEMPLATE = r"""<!DOCTYPE html>
   <p id="stats"></p>
   <div class="hint">Click node to inspect &middot; Double-click to zoom &middot; Scroll to zoom &middot; Drag to pan</div>
 </div>
+<div id="search-box">
+  <input type="text" placeholder="Search entities..." id="search-input" autocomplete="off">
+  <div class="search-results" id="search-results"></div>
+</div>
 <div id="legend"></div>
+<div id="focus-bar">
+  <span class="focus-label">Focus mode:</span>
+  <span class="focus-depth" id="focus-depth-label">1-hop</span>
+  <input type="range" min="1" max="4" value="1" id="focus-depth">
+  <button onclick="exitFocusMode()">Back to full graph</button>
+</div>
 <div id="info-panel">
   <span class="close" onclick="document.getElementById('info-panel').style.display='none'">&times;</span>
   <div id="info-content"></div>
@@ -167,12 +214,43 @@ graphData.nodes.forEach(function(n) { typesSet[n.type] = true; });
 var types = Object.keys(typesSet).sort();
 document.getElementById('stats').textContent = nodeCount + ' entities, ' + edgeCount + ' relationships';
 
+// Type filter state
+var hiddenTypes = {};
+// Focus mode state
+var focusMode = false;
+var focusVisible = {};
+var focusDepth = 1;
+
 var legendEl = document.getElementById('legend');
-var legendHTML = '<h3>Entity Types</h3>';
-types.forEach(function(t) {
-  legendHTML += '<div class="legend-item"><div class="legend-dot" style="background:' + (TYPE_COLORS[t]||'#999') + '"></div>' + t + '</div>';
-});
-legendEl.innerHTML = legendHTML;
+function renderLegend() {
+  // Build legend using DOM methods for safety (all data is from local DB)
+  legendEl.textContent = '';
+  var h3 = document.createElement('h3');
+  h3.textContent = 'Entity Types';
+  legendEl.appendChild(h3);
+  types.forEach(function(t) {
+    var item = document.createElement('div');
+    item.className = 'legend-item' + (hiddenTypes[t] ? ' hidden' : '');
+    item.setAttribute('data-type', t);
+    var dot = document.createElement('div');
+    dot.className = 'legend-dot';
+    dot.style.background = TYPE_COLORS[t] || '#999';
+    item.appendChild(dot);
+    item.appendChild(document.createTextNode(t));
+    item.onclick = function() {
+      if (hiddenTypes[t]) delete hiddenTypes[t]; else hiddenTypes[t] = true;
+      renderLegend();
+    };
+    legendEl.appendChild(item);
+  });
+}
+renderLegend();
+
+function isNodeVisible(n) {
+  if (hiddenTypes[n.type]) return false;
+  if (focusMode && !focusVisible[n.label]) return false;
+  return true;
+}
 
 // Occurrence index: label -> [{document_id, context, page_number, ...}]
 var occurrenceIndex = {};
@@ -285,6 +363,77 @@ function zoomToNode(node) {
   if (!animating) animateZoom();
 }
 
+// --- Search ---
+var searchInput = document.getElementById('search-input');
+var searchResults = document.getElementById('search-results');
+searchInput.addEventListener('input', function() {
+  var q = searchInput.value.toLowerCase().trim();
+  searchResults.textContent = '';
+  if (q.length < 2) { searchResults.style.display = 'none'; return; }
+  var matches = SIM_NODES.filter(function(n) { return n.label.toLowerCase().indexOf(q) >= 0; }).slice(0, 8);
+  if (matches.length === 0) { searchResults.style.display = 'none'; return; }
+  matches.forEach(function(n) {
+    var div = document.createElement('div');
+    div.className = 'search-result';
+    var dot = document.createElement('div');
+    dot.className = 'sr-dot';
+    dot.style.background = TYPE_COLORS[n.type] || '#999';
+    div.appendChild(dot);
+    div.appendChild(document.createTextNode(n.label));
+    div.onclick = function() {
+      selectedNode = n; showNodeInfo(n); zoomToNode(n);
+      searchInput.value = ''; searchResults.style.display = 'none';
+    };
+    searchResults.appendChild(div);
+  });
+  searchResults.style.display = 'block';
+});
+searchInput.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') { searchInput.value = ''; searchResults.style.display = 'none'; searchInput.blur(); }
+});
+document.addEventListener('click', function(e) {
+  if (!document.getElementById('search-box').contains(e.target)) searchResults.style.display = 'none';
+});
+
+// --- Focus Mode ---
+function enterFocusMode(centerLabel, depth) {
+  focusMode = true;
+  focusDepth = depth || 1;
+  focusVisible = {};
+  // BFS from center node
+  var queue = [centerLabel];
+  var visited = {};
+  visited[centerLabel] = 0;
+  while (queue.length > 0) {
+    var current = queue.shift();
+    var d = visited[current];
+    focusVisible[current] = true;
+    if (d < focusDepth) {
+      (adjacency[current] || []).forEach(function(c) {
+        if (visited[c.label] === undefined) {
+          visited[c.label] = d + 1;
+          queue.push(c.label);
+        }
+      });
+    }
+  }
+  document.getElementById('focus-bar').style.display = 'flex';
+  document.getElementById('focus-depth').value = focusDepth;
+  document.getElementById('focus-depth-label').textContent = focusDepth + '-hop';
+}
+
+window.exitFocusMode = function() {
+  focusMode = false; focusVisible = {};
+  document.getElementById('focus-bar').style.display = 'none';
+};
+
+document.getElementById('focus-depth').addEventListener('input', function() {
+  var val = parseInt(this.value);
+  if (selectedNode && focusMode) {
+    enterFocusMode(selectedNode.label, val);
+  }
+});
+
 canvas.addEventListener('wheel', function(e) {
   e.preventDefault();
   var f = e.deltaY>0?0.92:1.08;
@@ -297,7 +446,9 @@ function screenToWorld(sx,sy) { return [(sx-offsetX)/scale,(sy-offsetY)/scale]; 
 function findNodeAt(sx,sy) {
   var wc=screenToWorld(sx,sy), wx=wc[0], wy=wc[1];
   for (var i=SIM_NODES.length-1;i>=0;i--) {
-    var n=SIM_NODES[i], dx=wx-n.x, dy=wy-n.y;
+    var n=SIM_NODES[i];
+    if (!isNodeVisible(n)) continue;
+    var dx=wx-n.x, dy=wy-n.y;
     if (dx*dx+dy*dy < n.radius*n.radius*1.5) return n;
   }
   return null;
@@ -484,6 +635,16 @@ function showNodeInfo(node) {
   badge.textContent = node.type + '  \u00b7  ' + (node.confidence*100).toFixed(0) + '% confidence';
   content.appendChild(badge);
 
+  // Focus mode button
+  var focusBtn = document.createElement('button');
+  focusBtn.style.cssText = 'background:#1e293b;border:1px solid #334155;color:#93c5fd;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:11px;margin-bottom:8px;';
+  focusBtn.textContent = focusMode ? '\u2715 Exit focus' : '\u26b2 Focus on this entity';
+  focusBtn.onclick = function() {
+    if (focusMode) { window.exitFocusMode(); } else { enterFocusMode(node.label, 1); }
+    showNodeInfo(node);
+  };
+  content.appendChild(focusBtn);
+
   // Connected entities
   var connected = adjacency[node.label] || [];
   if (connected.length > 0) {
@@ -594,9 +755,10 @@ function draw() {
     (adjacency[selectedNode.label]||[]).forEach(function(c) { connectedLabels[c.label] = true; });
   }
 
-  // Edges — curved to avoid overlap, labels hidden when busy
+  // Edges — curved to avoid overlap, respect visibility filters
   for (var i=0; i<SIM_EDGES.length; i++) {
     var e=SIM_EDGES[i], a=SIM_NODES[e.source], b=SIM_NODES[e.target];
+    if (!isNodeVisible(a) || !isNodeVisible(b)) continue;
     var edgeHighlight = selectedNode && (connectedLabels[a.label] && connectedLabels[b.label]);
     var directEdge = selectedNode && (a.label===selectedNode.label || b.label===selectedNode.label);
     ctx.strokeStyle = directEdge ? 'rgba(255,255,255,0.45)' : (edgeHighlight ? 'rgba(255,255,255,0.2)' : (selectedNode ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.1)'));
@@ -609,9 +771,10 @@ function draw() {
     ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.quadraticCurveTo(cpx,cpy,b.x,b.y); ctx.stroke();
   }
 
-  // Nodes
+  // Nodes — skip hidden types and focus-filtered
   for (var i=0; i<SIM_NODES.length; i++) {
     var n=SIM_NODES[i], color=TYPE_COLORS[n.type]||'#999';
+    if (!isNodeVisible(n)) continue;
     var isSelected = selectedNode && n.label === selectedNode.label;
     var isConnected = selectedNode && connectedLabels[n.label];
     var dimmed = selectedNode && !isConnected;
