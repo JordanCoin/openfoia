@@ -55,6 +55,16 @@ class ProPublicaNonprofitAdapter(RecordAdapter):
         try:
             async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.get(f"{API_BASE}/search.json", params=params)
+                if resp.status_code == 404:
+                    # ProPublica returns 404 for some queries with special chars
+                    return SearchResult(
+                        source="propublica_nonprofit",
+                        query=query,
+                        total_results=0,
+                        entities=[],
+                        page=page,
+                        per_page=page_size,
+                    )
                 resp.raise_for_status()
                 data = resp.json()
         except httpx.TimeoutException:

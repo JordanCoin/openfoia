@@ -62,6 +62,65 @@ class CrossRefReport:
 # Entity types worth cross-referencing (skip dates, money, etc.)
 _CROSSREF_TYPES = {EntityType.PERSON, EntityType.ORGANIZATION}
 
+# Minimum confidence to crossref (skip low-confidence regex guesses)
+_MIN_CONFIDENCE = 0.5
+
+# Rate limits per source (seconds between requests) — based on documented API limits
+_SOURCE_DELAYS: dict[str, float] = {
+    "muckrock": 1.0,  # 1 req/sec average, 20 burst
+    "documentcloud": 0.5,  # 10 req/sec, but 500/day anonymous
+    "opencorporates": 1.0,  # ~1 req/sec free tier
+    "sec": 0.5,  # 10 req/sec with User-Agent
+    "usaspending": 0.2,  # no documented limit
+    "nonprofits": 0.5,  # not documented, be conservative
+    "govinfo": 1.0,  # DEMO_KEY shared pool — be conservative
+    "fec": 1.0,  # DEMO_KEY shared pool — be conservative
+    "regulations": 1.0,  # DEMO_KEY shared pool — be conservative
+    "opensanctions": 0.5,  # ~5 req/sec free
+    "icij": 0.0,  # local CSV, no API
+}
+_DEFAULT_DELAY = 0.5
+
+
+class _RateLimited(BaseException):
+    """Raised when a source hits its rate limit.
+
+    Inherits from BaseException (not Exception) so generic except clauses
+    in individual checkers don't swallow it — the crossref loop catches it.
+    """
+
+    pass
+
+
+def _check_rate_limit(result: Any) -> None:
+    """Raise _RateLimited if the search result indicates a rate limit error."""
+    err = getattr(result, "error", None)
+    if err and ("rate limit" in err.lower() or "429" in err.lower()):
+        raise _RateLimited(err)
+
+
+def _deduplicate_entities(entities: list[Any]) -> list[Any]:
+    """Deduplicate entities by normalized name (case-insensitive).
+
+    Keeps the highest-confidence version of each name.
+    Also merges near-duplicates like 'Clearview AI' and 'Clearview Ai Inc.'
+    """
+    seen: dict[str, Any] = {}
+    for e in entities:
+        key = e.normalized_text.lower().strip().rstrip(".")
+        # Strip common suffixes for dedup: Inc, LLC, Corp, Ltd
+        base_key = key
+        for suffix in [" inc", " llc", " corp", " ltd", " co", " lp"]:
+            if base_key.endswith(suffix):
+                base_key = base_key[: -len(suffix)].rstrip(",. ")
+                break
+
+        # Use base_key for dedup, but keep the full name
+        if base_key not in seen or e.confidence > seen[base_key].confidence:
+            seen[base_key] = e
+
+    return list(seen.values())
+
 
 async def crossref_entities(
     entities: list[Any],
@@ -69,6 +128,9 @@ async def crossref_entities(
     icij_data_dir: str | None = None,
 ) -> CrossRefReport:
     """Cross-reference extracted entities against all available sources.
+
+    Filters to PERSON and ORGANIZATION types, deduplicates by name,
+    skips low-confidence entities, and rate-limits API calls.
 
     Args:
         entities: ExtractedEntity objects from the extraction pipeline
@@ -78,28 +140,51 @@ async def crossref_entities(
     Returns:
         CrossRefReport with all hits
     """
-    # Filter to cross-referable entity types
-    targets = [e for e in entities if e.entity_type in _CROSSREF_TYPES]
+    import asyncio
+
+    # Filter to cross-referable entity types and confidence threshold
+    targets = [
+        e for e in entities if e.entity_type in _CROSSREF_TYPES and e.confidence >= _MIN_CONFIDENCE
+    ]
+
+    # Deduplicate — "Clearview AI" and "Clearview Ai Inc." become one lookup
+    targets = _deduplicate_entities(targets)
 
     available_sources = _get_available_sources(icij_data_dir)
     if sources:
         available_sources = {k: v for k, v in available_sources.items() if k in sources}
 
     results: list[CrossRefResult] = []
+    # Track sources that hit rate limits — skip them for remaining entities
+    exhausted_sources: set[str] = set()
 
     for entity in targets:
         hits: list[CrossRefHit] = []
         sources_checked: list[str] = []
 
         for source_name, checker in available_sources.items():
+            if source_name in exhausted_sources:
+                continue
             sources_checked.append(source_name)
             try:
                 source_hits = await checker(entity.normalized_text, entity.entity_type)
                 hits.extend(source_hits)
+            except _RateLimited:
+                logger.warning(
+                    "CrossRef %s rate limited — skipping for remaining entities",
+                    source_name,
+                )
+                exhausted_sources.add(source_name)
             except Exception as e:
                 logger.warning(
-                    "CrossRef %s failed for '%s': %s", source_name, entity.normalized_text, e
+                    "CrossRef %s failed for '%s': %s",
+                    source_name,
+                    entity.normalized_text,
+                    e,
                 )
+
+            # Rate limit: respect each API's documented limits
+            await asyncio.sleep(_SOURCE_DELAYS.get(source_name, _DEFAULT_DELAY))
 
         results.append(
             CrossRefResult(
@@ -178,6 +263,7 @@ async def _check_muckrock(name: str, entity_type: EntityType) -> list[CrossRefHi
     adapter = MuckRockAdapter()
     try:
         result = await adapter.search(name, page_size=5)
+        _check_rate_limit(result)
     except Exception:
         return []
 
@@ -222,6 +308,7 @@ async def _check_opencorporates(name: str, entity_type: EntityType) -> list[Cros
     adapter = OpenCorporatesAdapter()
     try:
         result = await adapter.search(name, page_size=5)
+        _check_rate_limit(result)
     except Exception:
         return []
 
@@ -262,6 +349,7 @@ async def _check_sec(name: str, entity_type: EntityType) -> list[CrossRefHit]:
     adapter = SECEdgarAdapter()
     try:
         result = await adapter.search(name, page_size=5)
+        _check_rate_limit(result)
     except Exception:
         return []
 
@@ -338,6 +426,7 @@ async def _check_fec(name: str, entity_type: EntityType) -> list[CrossRefHit]:
     adapter = FECAdapter()
     try:
         result = await adapter.search(name, page_size=5)
+        _check_rate_limit(result)
     except Exception:
         return []
 
@@ -368,6 +457,7 @@ async def _check_regulations(name: str, entity_type: EntityType) -> list[CrossRe
     adapter = RegulationsGovAdapter()
     try:
         result = await adapter.search(name, page_size=5)
+        _check_rate_limit(result)
     except Exception:
         return []
 
@@ -400,6 +490,7 @@ async def _check_govinfo(name: str, entity_type: EntityType) -> list[CrossRefHit
     adapter = GovInfoAdapter()
     try:
         result = await adapter.search(name, page_size=5)
+        _check_rate_limit(result)
     except Exception:
         return []
 
@@ -437,6 +528,7 @@ async def _check_nonprofits(name: str, entity_type: EntityType) -> list[CrossRef
     adapter = ProPublicaNonprofitAdapter()
     try:
         result = await adapter.search(name, page_size=5)
+        _check_rate_limit(result)
     except Exception:
         return []
 
@@ -476,6 +568,7 @@ async def _check_usaspending(name: str, entity_type: EntityType) -> list[CrossRe
     adapter = USASpendingAdapter()
     try:
         result = await adapter.search(name, page_size=5)
+        _check_rate_limit(result)
     except Exception:
         return []
 
@@ -514,6 +607,7 @@ async def _check_documentcloud(name: str, entity_type: EntityType) -> list[Cross
     adapter = DocumentCloudAdapter()
     try:
         result = await adapter.search(name, page_size=5)
+        _check_rate_limit(result)
     except Exception:
         return []
 

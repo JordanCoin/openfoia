@@ -2285,7 +2285,19 @@ def analyze_extract(
             return
 
         if doc.entities_extracted and force:
-            # Remove existing entities before re-extracting
+            # Remove entity links first (FK constraint), then entities
+            existing_ids = [
+                e.id for e in session.query(Entity).filter(Entity.document_id == doc.id).all()
+            ]
+            if existing_ids:
+                from .models import entity_links as el_table
+
+                session.execute(
+                    el_table.delete().where(
+                        el_table.c.source_id.in_(existing_ids)
+                        | el_table.c.target_id.in_(existing_ids)
+                    )
+                )
             session.query(Entity).filter(Entity.document_id == doc.id).delete()
 
         rprint(f"[cyan]Extracting entities from {doc.filename}...[/cyan]")
@@ -2359,14 +2371,17 @@ def analyze_extract(
                     if not tgt_id and tgt in key:
                         tgt_id = eid
             if src_id and tgt_id and src_id != tgt_id:
-                session.execute(
-                    entity_links.insert().values(
-                        source_id=src_id,
-                        target_id=tgt_id,
-                        link_type=rel.get("relation", "related_to"),
+                try:
+                    session.execute(
+                        entity_links.insert().values(
+                            source_id=src_id,
+                            target_id=tgt_id,
+                            link_type=rel.get("relation", "related_to"),
+                        )
                     )
-                )
-                rels_saved += 1
+                    rels_saved += 1
+                except Exception:
+                    pass  # duplicate link, skip
 
         doc.entities_extracted = True
 
