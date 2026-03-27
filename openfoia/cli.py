@@ -3791,6 +3791,22 @@ def records_search(
         console.print(table)
         rprint("\n[dim]View details: openfoia records fetch <EIN> --source nonprofits[/dim]")
 
+    elif source == "govinfo":
+        table = Table(expand=True)
+        table.add_column("Collection", width=18)
+        table.add_column("Title", style="cyan", ratio=3)
+        table.add_column("Author", ratio=2)
+        table.add_column("Date", width=12)
+
+        for e in entities:
+            table.add_row(
+                e.extra_data.get("collection", "-"),
+                e.name[:80],
+                e.extra_data.get("government_author", "-") or "-",
+                e.extra_data.get("date_issued", "-") or "-",
+            )
+        console.print(table)
+
     elif source == "opencorporates":
         table = Table()
         table.add_column("Name", style="cyan", max_width=30)
@@ -4155,6 +4171,7 @@ def crossref(
                 "documentcloud",
                 "usaspending",
                 "nonprofits",
+                "govinfo",
                 "opensanctions",
             ]
         )

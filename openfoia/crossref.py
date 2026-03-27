@@ -151,6 +151,9 @@ def _get_available_sources(icij_data_dir: str | None = None) -> dict[str, Any]:
     # ProPublica Nonprofit — always available (no key)
     sources["nonprofits"] = _check_nonprofits
 
+    # GovInfo — court opinions, congressional reports, Federal Register (DEMO_KEY)
+    sources["govinfo"] = _check_govinfo
+
     # OpenSanctions — available if data downloaded or API key set
     sources["opensanctions"] = _check_opensanctions
 
@@ -320,6 +323,40 @@ async def _check_icij(name: str, entity_type: EntityType, data_dir: str) -> list
             logger.warning("Failed to search ICIJ file %s: %s", csv_file, e)
 
     return hits[:10]  # cap to avoid flooding
+
+
+async def _check_govinfo(name: str, entity_type: EntityType) -> list[CrossRefHit]:
+    """Search GovInfo for court opinions, congressional reports, and federal rules."""
+    from .records.govinfo import GovInfoAdapter
+
+    adapter = GovInfoAdapter()
+    try:
+        result = await adapter.search(name, page_size=5)
+    except Exception:
+        return []
+
+    hits = []
+    for doc in result.entities:
+        if name.lower() not in doc.name.lower():
+            continue
+        collection = doc.extra_data.get("collection", "")
+        author = doc.extra_data.get("government_author", "")
+        detail = f"{collection}: {doc.name[:80]}"
+        if author:
+            detail += f" — {author}"
+
+        hits.append(
+            CrossRefHit(
+                source="govinfo",
+                entity_name=name,
+                match_type="partial",
+                details=detail,
+                url=doc.source_url,
+                extra={"package_id": doc.identifiers.get("package_id")},
+            )
+        )
+
+    return hits
 
 
 async def _check_nonprofits(name: str, entity_type: EntityType) -> list[CrossRefHit]:

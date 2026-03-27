@@ -45,6 +45,7 @@ def _auto_register() -> None:
     from .documentcloud import DocumentCloudAdapter
     from .usaspending import USASpendingAdapter
     from .propublica_nonprofit import ProPublicaNonprofitAdapter
+    from .govinfo import GovInfoAdapter
 
     register("opencorporates", OpenCorporatesAdapter)
     register("sec", SECEdgarAdapter)
@@ -52,6 +53,7 @@ def _auto_register() -> None:
     register("documentcloud", DocumentCloudAdapter)
     register("usaspending", USASpendingAdapter)
     register("nonprofits", ProPublicaNonprofitAdapter)
+    register("govinfo", GovInfoAdapter)
 
 
 _auto_register()
