@@ -4235,22 +4235,22 @@ def crossref(
         rprint("[dim]  Use --sources icij for offline-only (requires downloaded ICIJ CSVs)[/dim]")
         rprint("")
 
-    rprint(f"[bold]Cross-referencing {len(entities)} entities...[/bold]")
+    rprint("[bold]Cross-referencing entities...[/bold]")
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
-        progress.add_task("Checking sources...", total=None)
+    def _progress(event: str, msg: str) -> None:
+        if event == "start":
+            rprint(f"[dim]  {msg}[/dim]")
+        elif event == "entity":
+            rprint(f"[dim]  {msg}[/dim]")
 
-        report = asyncio.run(
-            crossref_entities(
-                entities,
-                sources=source_list,
-                icij_data_dir=str(icij_data) if icij_data else None,
-            )
+    report = asyncio.run(
+        crossref_entities(
+            entities,
+            sources=source_list,
+            icij_data_dir=str(icij_data) if icij_data else None,
+            on_progress=_progress,
         )
+    )
 
     # Display results
     rprint("\n[bold]Cross-Reference Report[/bold]")

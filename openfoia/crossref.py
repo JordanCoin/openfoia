@@ -126,6 +126,7 @@ async def crossref_entities(
     entities: list[Any],
     sources: list[str] | None = None,
     icij_data_dir: str | None = None,
+    on_progress: Any | None = None,
 ) -> CrossRefReport:
     """Cross-reference extracted entities against all available sources.
 
@@ -154,13 +155,26 @@ async def crossref_entities(
     if sources:
         available_sources = {k: v for k, v in available_sources.items() if k in sources}
 
+    if on_progress:
+        on_progress(
+            "start",
+            f"Checking {len(targets)} entities (filtered from {len(entities)}, "
+            f"deduped, ≥{_MIN_CONFIDENCE:.0%} confidence) across {len(available_sources)} sources",
+        )
+
     results: list[CrossRefResult] = []
     # Track sources that hit rate limits — skip them for remaining entities
     exhausted_sources: set[str] = set()
 
-    for entity in targets:
+    for idx, entity in enumerate(targets):
         hits: list[CrossRefHit] = []
         sources_checked: list[str] = []
+
+        if on_progress:
+            on_progress(
+                "entity",
+                f"[{idx + 1}/{len(targets)}] {entity.normalized_text}",
+            )
 
         for source_name, checker in available_sources.items():
             if source_name in exhausted_sources:
