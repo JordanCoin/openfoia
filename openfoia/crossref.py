@@ -145,6 +145,9 @@ def _get_available_sources(icij_data_dir: str | None = None) -> dict[str, Any]:
     # DocumentCloud — always available (public API, no key)
     sources["documentcloud"] = _check_documentcloud
 
+    # USAspending — always available (no key, no rate limit)
+    sources["usaspending"] = _check_usaspending
+
     # OpenSanctions — available if data downloaded or API key set
     sources["opensanctions"] = _check_opensanctions
 
@@ -314,6 +317,47 @@ async def _check_icij(name: str, entity_type: EntityType, data_dir: str) -> list
             logger.warning("Failed to search ICIJ file %s: %s", csv_file, e)
 
     return hits[:10]  # cap to avoid flooding
+
+
+async def _check_usaspending(name: str, entity_type: EntityType) -> list[CrossRefHit]:
+    """Search USAspending for federal contracts and grants involving this entity."""
+    if entity_type == EntityType.PERSON:
+        return []  # USAspending tracks organizations, not individuals
+
+    from .records.usaspending import USASpendingAdapter
+
+    adapter = USASpendingAdapter()
+    try:
+        result = await adapter.search(name, page_size=5)
+    except Exception:
+        return []
+
+    hits = []
+    for award in result.entities:
+        # Only count if name appears in recipient
+        if name.lower() not in award.name.lower():
+            continue
+
+        amount = award.extra_data.get("amount_formatted", "")
+        agency = award.extra_data.get("awarding_agency", "")
+        award_type = award.extra_data.get("award_type", "")
+        detail = f"{award_type}: {amount} from {agency}" if agency else f"{award_type}: {amount}"
+
+        hits.append(
+            CrossRefHit(
+                source="usaspending",
+                entity_name=name,
+                match_type="partial",
+                details=detail,
+                url=award.source_url,
+                extra={
+                    "award_id": award.identifiers.get("award_id"),
+                    "amount": award.extra_data.get("award_amount"),
+                },
+            )
+        )
+
+    return hits
 
 
 async def _check_documentcloud(name: str, entity_type: EntityType) -> list[CrossRefHit]:

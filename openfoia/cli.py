@@ -3755,6 +3755,25 @@ def records_search(
         console.print(table)
         rprint("\n[dim]Fetch full text: openfoia records fetch <ID> --source documentcloud[/dim]")
 
+    elif source == "usaspending":
+        table = Table(expand=True)
+        table.add_column("Recipient", style="cyan", ratio=2)
+        table.add_column("Amount", width=12, justify="right", style="green")
+        table.add_column("Agency", ratio=2)
+        table.add_column("Type", width=10)
+        table.add_column("Description", ratio=3)
+
+        for e in entities:
+            table.add_row(
+                e.name,
+                e.extra_data.get("amount_formatted", "-"),
+                e.extra_data.get("awarding_agency", "-") or "-",
+                e.extra_data.get("award_type", "-") or "-",
+                (e.extra_data.get("description") or "-")[:80],
+            )
+        console.print(table)
+        rprint("\n[dim]View on USAspending.gov: click award URLs in the table[/dim]")
+
     elif source == "opencorporates":
         table = Table()
         table.add_column("Name", style="cyan", max_width=30)
@@ -4111,7 +4130,15 @@ def crossref(
     network_sources = [
         s
         for s in (
-            source_list or ["muckrock", "opencorporates", "sec", "documentcloud", "opensanctions"]
+            source_list
+            or [
+                "muckrock",
+                "opencorporates",
+                "sec",
+                "documentcloud",
+                "usaspending",
+                "opensanctions",
+            ]
         )
         if s != "icij"
     ]

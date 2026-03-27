@@ -43,11 +43,13 @@ def _auto_register() -> None:
     from .sec_edgar import SECEdgarAdapter
     from .muckrock import MuckRockAdapter
     from .documentcloud import DocumentCloudAdapter
+    from .usaspending import USASpendingAdapter
 
     register("opencorporates", OpenCorporatesAdapter)
     register("sec", SECEdgarAdapter)
     register("muckrock", MuckRockAdapter)
     register("documentcloud", DocumentCloudAdapter)
+    register("usaspending", USASpendingAdapter)
 
 
 _auto_register()
