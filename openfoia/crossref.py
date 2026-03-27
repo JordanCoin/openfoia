@@ -154,6 +154,12 @@ def _get_available_sources(icij_data_dir: str | None = None) -> dict[str, Any]:
     # GovInfo — court opinions, congressional reports, Federal Register (DEMO_KEY)
     sources["govinfo"] = _check_govinfo
 
+    # FEC — campaign finance contributions (DEMO_KEY)
+    sources["fec"] = _check_fec
+
+    # Regulations.gov — federal rulemaking documents (DEMO_KEY)
+    sources["regulations"] = _check_regulations
+
     # OpenSanctions — available if data downloaded or API key set
     sources["opensanctions"] = _check_opensanctions
 
@@ -323,6 +329,68 @@ async def _check_icij(name: str, entity_type: EntityType, data_dir: str) -> list
             logger.warning("Failed to search ICIJ file %s: %s", csv_file, e)
 
     return hits[:10]  # cap to avoid flooding
+
+
+async def _check_fec(name: str, entity_type: EntityType) -> list[CrossRefHit]:
+    """Search FEC for campaign finance contributions involving this entity."""
+    from .records.fec import FECAdapter
+
+    adapter = FECAdapter()
+    try:
+        result = await adapter.search(name, page_size=5)
+    except Exception:
+        return []
+
+    hits = []
+    for contrib in result.entities:
+        amount = contrib.extra_data.get("amount_formatted", "")
+        committee = contrib.extra_data.get("committee_name", "")
+        detail = f"{amount} to {committee}" if committee else amount
+
+        hits.append(
+            CrossRefHit(
+                source="fec",
+                entity_name=name,
+                match_type="partial",
+                details=detail,
+                url=contrib.source_url,
+                extra={"amount": contrib.extra_data.get("amount")},
+            )
+        )
+
+    return hits[:5]
+
+
+async def _check_regulations(name: str, entity_type: EntityType) -> list[CrossRefHit]:
+    """Search Regulations.gov for federal rulemaking mentioning this entity."""
+    from .records.regulations import RegulationsGovAdapter
+
+    adapter = RegulationsGovAdapter()
+    try:
+        result = await adapter.search(name, page_size=5)
+    except Exception:
+        return []
+
+    hits = []
+    for doc in result.entities:
+        if name.lower() not in doc.name.lower():
+            continue
+        agency = doc.extra_data.get("agency", "")
+        doc_type = doc.extra_data.get("document_type", "")
+        detail = f"{agency} {doc_type}: {doc.name[:60]}"
+
+        hits.append(
+            CrossRefHit(
+                source="regulations",
+                entity_name=name,
+                match_type="partial",
+                details=detail,
+                url=doc.source_url,
+                extra={"document_id": doc.identifiers.get("document_id")},
+            )
+        )
+
+    return hits
 
 
 async def _check_govinfo(name: str, entity_type: EntityType) -> list[CrossRefHit]:

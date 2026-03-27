@@ -46,6 +46,8 @@ def _auto_register() -> None:
     from .usaspending import USASpendingAdapter
     from .propublica_nonprofit import ProPublicaNonprofitAdapter
     from .govinfo import GovInfoAdapter
+    from .fec import FECAdapter
+    from .regulations import RegulationsGovAdapter
 
     register("opencorporates", OpenCorporatesAdapter)
     register("sec", SECEdgarAdapter)
@@ -54,6 +56,8 @@ def _auto_register() -> None:
     register("usaspending", USASpendingAdapter)
     register("nonprofits", ProPublicaNonprofitAdapter)
     register("govinfo", GovInfoAdapter)
+    register("fec", FECAdapter)
+    register("regulations", RegulationsGovAdapter)
 
 
 _auto_register()

@@ -3807,6 +3807,39 @@ def records_search(
             )
         console.print(table)
 
+    elif source == "fec":
+        table = Table(expand=True)
+        table.add_column("Contributor", style="cyan", ratio=2)
+        table.add_column("Amount", width=10, justify="right", style="green")
+        table.add_column("To", ratio=2)
+        table.add_column("Date", width=12)
+
+        for e in entities:
+            table.add_row(
+                e.name,
+                e.extra_data.get("amount_formatted", "-"),
+                e.extra_data.get("committee_name", "-") or "-",
+                (e.extra_data.get("date") or "-")[:10],
+            )
+        console.print(table)
+        rprint("\n[dim]View on FEC.gov: openfoia records fetch <name> --source fec[/dim]")
+
+    elif source == "regulations":
+        table = Table(expand=True)
+        table.add_column("Agency", width=10)
+        table.add_column("Title", style="cyan", ratio=3)
+        table.add_column("Type", width=16)
+        table.add_column("Date", width=12)
+
+        for e in entities:
+            table.add_row(
+                e.extra_data.get("agency", "-") or "-",
+                e.name[:80],
+                e.extra_data.get("document_type", "-") or "-",
+                e.extra_data.get("posted_date", "-") or "-",
+            )
+        console.print(table)
+
     elif source == "opencorporates":
         table = Table()
         table.add_column("Name", style="cyan", max_width=30)
@@ -4172,6 +4205,8 @@ def crossref(
                 "usaspending",
                 "nonprofits",
                 "govinfo",
+                "fec",
+                "regulations",
                 "opensanctions",
             ]
         )
