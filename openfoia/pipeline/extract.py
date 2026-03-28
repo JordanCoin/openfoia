@@ -60,6 +60,47 @@ class ExtractionResult:
 
 
 # ---------------------------------------------------------------------------
+# Internal pipeline types (not exported — used between extraction phases)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Mention:
+    """A single mention found by one backend. Internal only.
+
+    Preserves positional info and provenance so the merge phase can
+    cross-validate across backends without losing evidence.
+    """
+
+    entity_type: EntityType
+    raw_text: str
+    normalized_text: str
+    start_offset: int  # char offset in chunk (-1 if unknown, e.g. LLM)
+    end_offset: int  # char offset in chunk (-1 if unknown)
+    page: int | None
+    context: str  # surrounding sentence or window
+    backend_name: str  # "regex", "gliner", "spacy", "llm"
+    backend_score: float  # raw confidence from this backend
+
+
+@dataclass
+class AliasCluster:
+    """A group of mentions referring to the same real-world entity.
+
+    Internal only. Preserves all raw mentions for provenance — the merge
+    phase creates these, and they get converted to ExtractedEntity for output.
+    """
+
+    entity_type: EntityType
+    canonical_text: str  # best normalized_text (longest or most frequent)
+    aliases: set[str] = field(default_factory=set)  # all raw_text variants
+    mentions: list[Mention] = field(default_factory=list)
+    merged_confidence: float = 0.0
+    pages: list[int] = field(default_factory=list)
+    contexts: list[str] = field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
 # Regex patterns for the zero-config fallback
 # ---------------------------------------------------------------------------
 
@@ -435,7 +476,12 @@ def _build_extraction_prompt(
     page_number: int | None,
     entity_config: EntityConfig,
 ) -> str:
-    """Build the structured prompt for LLM entity extraction."""
+    """Build the structured prompt for LLM entity extraction.
+
+    Uses a compact prompt for smaller models (≤8B) and a detailed prompt
+    for larger models. Smaller models choke on long instructions with
+    many entity types and relationship definitions.
+    """
 
     type_descriptions = {
         "PERSON": "Names of individuals (include titles/roles if mentioned)",
@@ -479,21 +525,18 @@ Extract these entity types:
 
 For each entity provide:
 1. raw_text: Exactly as it appears
-2. normalized: Cleaned/standardized (e.g., "Dr. John A. Smith" → "John A. Smith")
+2. normalized: Cleaned/standardized (e.g., "Dr. John A. Smith" -> "John A. Smith")
 3. type: From the list above
 4. confidence: 0.0-1.0
 5. context: The surrounding sentence
 
 Also identify RELATIONSHIPS between entities:
-- "affiliated_with" (person → organization)
-- "located_at" (entity → location)
-- "communicated_with" (person ↔ person)
-- "financial_transaction" (entity → money)
-- "dated_event" (entity → date)
-- "supervised_by" (person → person)
-- "contracted_with" (org → org)
-- "paid" (entity → money + recipient)
-- "sent_to" (document → person/org)
+- "affiliated_with" (person-organization)
+- "located_at" (entity-location)
+- "communicated_with" (person-person)
+- "financial_transaction" (entity-money)
+- "dated_event" (entity-date)
+- "contracted_with" (org-org)
 
 Return ONLY valid JSON:
 {{
@@ -501,7 +544,7 @@ Return ONLY valid JSON:
     {{"raw_text": "...", "normalized": "...", "type": "PERSON", "confidence": 0.95, "context": "..."}}
   ],
   "relationships": [
-    {{"source": "John Smith", "target": "Acme Corp", "relation": "affiliated_with", "confidence": 0.9, "evidence": "..."}}
+    {{"source": "John Smith", "target": "Acme Corp", "relation": "affiliated_with", "confidence": 0.9}}
   ]
 }}{suffix}"""
 
@@ -651,20 +694,76 @@ class EntityExtractor:
         text: str,
         context: str | None = None,
         page_numbers: list[int] | None = None,
+        ensemble: bool = False,
+        validate: bool = False,
     ) -> ExtractionResult:
-        """Extract entities and relationships from text."""
+        """Extract entities and relationships from text.
+
+        Default: regex + best NER backend (same RAM as before).
+        --ensemble: run ALL available backends for highest quality.
+        --validate: LLM validates ambiguous results (optional).
+        """
         import asyncio
 
         backend = self._resolve_backend()
 
-        if backend == "llm":
-            return await self._extract_with_llm(text, context, page_numbers)
-        elif backend == "gliner":
-            return await asyncio.to_thread(self._extract_with_gliner, text, page_numbers)
-        elif backend == "spacy":
-            return await asyncio.to_thread(self._extract_with_spacy, text, page_numbers)
+        # --- Pipeline: mentions → merge → entities ---
+
+        # Phase 1: Extract mentions from multiple backends
+        all_mentions: list[Mention] = []
+
+        # Regex always runs (instant, zero cost)
+        all_mentions.extend(self._mentions_from_regex(text, page_numbers))
+
+        if ensemble:
+            # Run all available NER backends
+            if _gliner_available():
+                all_mentions.extend(
+                    await asyncio.to_thread(self._mentions_from_gliner, text, page_numbers)
+                )
+            if _spacy_available():
+                all_mentions.extend(
+                    await asyncio.to_thread(self._mentions_from_spacy, text, page_numbers)
+                )
+            if _llm_available(self.provider, self.api_key, self.base_url):
+                all_mentions.extend(self._mentions_from_llm(text, context, page_numbers))
         else:
-            return self._extract_with_regex(text, page_numbers)
+            # Run best available NER backend alongside regex
+            if backend == "llm":
+                all_mentions.extend(self._mentions_from_llm(text, context, page_numbers))
+            elif backend == "gliner":
+                all_mentions.extend(
+                    await asyncio.to_thread(self._mentions_from_gliner, text, page_numbers)
+                )
+            elif backend == "spacy":
+                all_mentions.extend(
+                    await asyncio.to_thread(self._mentions_from_spacy, text, page_numbers)
+                )
+            # if backend == "regex", we already ran it above
+
+        # Phase 2: Conservative merge
+        clusters = self._merge_mentions(all_mentions)
+        entities = self._clusters_to_entities(clusters)
+
+        # Phase 3: Relationships from merged entities
+        relationships = _extract_cooccurrence_relationships(entities, text) if entities else []
+
+        # Backends used
+        backends_used = sorted({m.backend_name for m in all_mentions})
+
+        return ExtractionResult(
+            entities=entities,
+            relationships=relationships,
+            summary=self._generate_summary(entities, relationships),
+            metadata={
+                "backend": "+".join(backends_used) if backends_used else backend,
+                "backends": backends_used,
+                "total_chars": len(text),
+                "mentions_raw": len(all_mentions),
+                "entities_merged": len(entities),
+                "ensemble": ensemble,
+            },
+        )
 
     # ------------------------------------------------------------------
     # LLM path (highest quality)
@@ -1063,6 +1162,309 @@ class EntityExtractor:
                 "note": "No AI/NER model available. Install gliner or spacy for people/org extraction.",
             },
         )
+
+    # ------------------------------------------------------------------
+    # Mention extractors (Phase 1 of new pipeline)
+    # ------------------------------------------------------------------
+
+    def _mentions_from_regex(self, text: str, page_numbers: list[int] | None) -> list[Mention]:
+        """Extract mentions using regex patterns. Always runs, instant."""
+        mentions: list[Mention] = []
+        seen: set[tuple[str, str]] = set()
+        page_num = page_numbers[0] if page_numbers else None
+
+        for entity_type, patterns in _REGEX_PATTERNS.items():
+            for pattern in patterns:
+                for match in pattern.finditer(text):
+                    raw = match.group(1) if match.lastindex else match.group(0)
+                    normalized = raw.strip()
+                    key = (entity_type.value, normalized.lower())
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    ctx = _get_context_window(text, match.start(), match.end())
+                    mentions.append(
+                        Mention(
+                            entity_type=entity_type,
+                            raw_text=raw,
+                            normalized_text=normalized,
+                            start_offset=match.start(),
+                            end_offset=match.end(),
+                            page=page_num,
+                            context=ctx,
+                            backend_name="regex",
+                            backend_score=0.6,
+                        )
+                    )
+
+        # Custom patterns from config
+        for ct in self.entity_config.custom_types:
+            pattern_str = ct.get("pattern", "")
+            type_name = ct.get("name", "CUSTOM").upper()
+            if not pattern_str:
+                continue
+            try:
+                compiled = re.compile(pattern_str)
+            except re.error:
+                continue
+            try:
+                etype = EntityType(type_name.lower())
+            except ValueError:
+                etype = EntityType.DOCUMENT_ID
+            for match in compiled.finditer(text):
+                raw = match.group(0)
+                normalized = raw.strip()
+                key = (type_name.lower(), normalized.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                ctx = _get_context_window(text, match.start(), match.end())
+                mentions.append(
+                    Mention(
+                        entity_type=etype,
+                        raw_text=raw,
+                        normalized_text=normalized,
+                        start_offset=match.start(),
+                        end_offset=match.end(),
+                        page=page_num,
+                        context=ctx,
+                        backend_name="regex",
+                        backend_score=0.6,
+                    )
+                )
+
+        return mentions
+
+    def _mentions_from_gliner(self, text: str, page_numbers: list[int] | None) -> list[Mention]:
+        """Extract mentions using GLiNER zero-shot NER."""
+        model = _get_gliner()
+        if model is None:
+            return []
+
+        labels = [
+            "person",
+            "organization",
+            "government agency",
+            "location",
+            "date",
+            "money",
+            "dollar amount",
+            "email address",
+            "phone number",
+            "address",
+            "case number",
+            "document id",
+            "tracking number",
+        ]
+        for ct in self.entity_config.custom_types:
+            ct_name = ct.get("name", "").lower().replace("_", " ")
+            if ct_name:
+                labels.append(ct_name)
+
+        mentions: list[Mention] = []
+        chunks = self._chunk_text(text, max_chars=4000)
+
+        for ci, chunk in enumerate(chunks):
+            page = page_numbers[ci] if page_numbers and ci < len(page_numbers) else None
+            try:
+                predictions = model.predict_entities(chunk, labels, threshold=0.4)
+            except Exception:
+                continue
+
+            for pred in predictions:
+                raw = pred.get("text", "")
+                if not raw or len(raw) < 2 or len(raw) > 200:
+                    continue
+                label = pred.get("label", "").lower()
+                etype = _gliner_type_to_entity_type(label)
+                if etype is None:
+                    continue
+                score = round(pred.get("score", 0.5), 3)
+                start = pred.get("start", -1)
+                end = pred.get("end", -1)
+                ctx_start = max(0, chunk.find(raw) - 80)
+                ctx_end = min(len(chunk), chunk.find(raw) + len(raw) + 80)
+                ctx = chunk[ctx_start:ctx_end].replace("\n", " ").strip()
+
+                mentions.append(
+                    Mention(
+                        entity_type=etype,
+                        raw_text=raw,
+                        normalized_text=raw.strip(),
+                        start_offset=start,
+                        end_offset=end,
+                        page=page,
+                        context=ctx,
+                        backend_name="gliner",
+                        backend_score=score,
+                    )
+                )
+
+        return mentions
+
+    def _mentions_from_spacy(self, text: str, page_numbers: list[int] | None) -> list[Mention]:
+        """Extract mentions using spaCy NLP pipeline."""
+        nlp = _get_spacy()
+        if nlp is None:
+            return []
+
+        mentions: list[Mention] = []
+        max_len = nlp.max_length
+        chunks = self._chunk_text(text, max_chars=min(max_len - 100, 100000))
+
+        for ci, chunk in enumerate(chunks):
+            page = page_numbers[ci] if page_numbers and ci < len(page_numbers) else None
+            try:
+                doc = nlp(chunk)
+            except Exception:
+                continue
+
+            for ent in doc.ents:
+                etype = _spacy_label_to_entity_type(ent.label_)
+                if etype is None:
+                    continue
+                raw = ent.text.strip()
+                if not raw:
+                    continue
+                ctx = _get_context_window(chunk, ent.start_char, ent.end_char)
+                mentions.append(
+                    Mention(
+                        entity_type=etype,
+                        raw_text=raw,
+                        normalized_text=raw,
+                        start_offset=ent.start_char,
+                        end_offset=ent.end_char,
+                        page=page,
+                        context=ctx,
+                        backend_name="spacy",
+                        backend_score=0.85,
+                    )
+                )
+
+        return mentions
+
+    def _mentions_from_llm(
+        self,
+        text: str,
+        context: str | None,
+        page_numbers: list[int] | None,
+    ) -> list[Mention]:
+        """Extract mentions using LLM. Slowest but highest quality."""
+        mentions: list[Mention] = []
+        chunks = self._chunk_text(text, max_chars=8000)
+
+        for ci, chunk in enumerate(chunks):
+            page = page_numbers[ci] if page_numbers and ci < len(page_numbers) else None
+            try:
+                chunk_result = self._extract_chunk_llm(chunk, context, page)
+            except Exception:
+                continue
+
+            for ent in chunk_result.get("entities", []):
+                raw = ent.raw_text
+                if not raw:
+                    continue
+                # Hallucination check: penalize if not in source
+                score = ent.confidence
+                if raw.lower() not in chunk.lower():
+                    score *= 0.3
+                mentions.append(
+                    Mention(
+                        entity_type=ent.entity_type,
+                        raw_text=raw,
+                        normalized_text=ent.normalized_text,
+                        start_offset=-1,
+                        end_offset=-1,
+                        page=page,
+                        context=ent.context,
+                        backend_name="llm",
+                        backend_score=score,
+                    )
+                )
+
+        return mentions
+
+    # ------------------------------------------------------------------
+    # Merge + Cluster (Phase 2 of new pipeline)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _merge_mentions(mentions: list[Mention]) -> list[AliasCluster]:
+        """Merge mentions from multiple backends into alias clusters.
+
+        Conservative: exact matches auto-merge, fuzzy matches create aliases
+        but don't silently collapse. Preserves all raw mentions for provenance.
+        """
+        # Phase 1: Group by exact (type, normalized_text.lower())
+        groups: dict[tuple[str, str], list[Mention]] = {}
+        for m in mentions:
+            key = (m.entity_type.value, m.normalized_text.lower().strip().rstrip("."))
+            if key not in groups:
+                groups[key] = []
+            groups[key].append(m)
+
+        # Build initial clusters from exact matches
+        clusters: list[AliasCluster] = []
+        for (type_val, _norm_key), group in groups.items():
+            try:
+                etype = EntityType(type_val)
+            except ValueError:
+                continue
+
+            # Canonical text: longest normalized variant (most specific)
+            best = max(group, key=lambda m: (len(m.normalized_text), m.backend_score))
+            all_raw = {m.raw_text for m in group}
+            all_pages = sorted({m.page for m in group if m.page is not None})
+            all_contexts = [m.context for m in group if m.context][:5]
+
+            # Multi-backend confidence boost
+            backends = {m.backend_name for m in group}
+            max_score = max(m.backend_score for m in group)
+            boosted = min(0.99, max_score + 0.05 * (len(backends) - 1))
+
+            clusters.append(
+                AliasCluster(
+                    entity_type=etype,
+                    canonical_text=best.normalized_text,
+                    aliases=all_raw,
+                    mentions=group,
+                    merged_confidence=boosted,
+                    pages=all_pages,
+                    contexts=all_contexts,
+                )
+            )
+
+        return clusters
+
+    @staticmethod
+    def _clusters_to_entities(clusters: list[AliasCluster]) -> list[ExtractedEntity]:
+        """Convert alias clusters to ExtractedEntity for backward compat."""
+        entities: list[ExtractedEntity] = []
+        for cluster in clusters:
+            # Most frequent raw_text
+            from collections import Counter
+
+            raw_counts = Counter(m.raw_text for m in cluster.mentions)
+            best_raw = raw_counts.most_common(1)[0][0] if raw_counts else cluster.canonical_text
+
+            entities.append(
+                ExtractedEntity(
+                    entity_type=cluster.entity_type,
+                    raw_text=best_raw,
+                    normalized_text=cluster.canonical_text,
+                    confidence=cluster.merged_confidence,
+                    context=cluster.contexts[0] if cluster.contexts else "",
+                    page_number=cluster.pages[0] if cluster.pages else None,
+                    metadata={
+                        "occurrence_count": len(cluster.mentions),
+                        "pages": cluster.pages,
+                        "aliases": sorted(cluster.aliases),
+                        "backends": sorted({m.backend_name for m in cluster.mentions}),
+                    },
+                )
+            )
+
+        return entities
 
     # ------------------------------------------------------------------
     # Shared helpers

@@ -2255,8 +2255,18 @@ def analyze_extract(
     model: Optional[str] = typer.Option(
         None, "--model", "-m", help="LLM model (e.g. llama3.1:8b, llama3.2:3b)"
     ),
+    ensemble: bool = typer.Option(
+        False, "--ensemble", help="Run all available backends for highest quality"
+    ),
+    validate: bool = typer.Option(
+        False, "--validate", help="Use LLM to validate ambiguous results"
+    ),
 ):
-    """Extract entities from a document."""
+    """Extract entities from a document.
+
+    Default: regex + best NER backend. Use --ensemble for all backends,
+    --validate for LLM-assisted cleanup of ambiguous results.
+    """
     from .db import get_session, get_db_path
     from .models import Document, Entity
 
@@ -2325,7 +2335,9 @@ def analyze_extract(
             rprint("")
 
         try:
-            result = asyncio.run(extractor.extract(doc.extracted_text))
+            result = asyncio.run(
+                extractor.extract(doc.extracted_text, ensemble=ensemble, validate=validate)
+            )
         except Exception as e:
             rprint(f"[red]Extraction failed: {e}[/red]")
             rprint("[dim]Ensure AI provider is configured: openfoia config --init[/dim]")

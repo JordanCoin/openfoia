@@ -340,7 +340,7 @@ class TestRegexExtraction:
             backend="regex",
             doc_name="FOIA Letter",
         )
-        assert result.metadata["backend"] == "regex"
+        assert "regex" in result.metadata["backend"]
 
     def test_financial_memo_structured_entities(self):
         ext = self._make_extractor()
@@ -417,7 +417,7 @@ class TestGLiNERExtraction:
             backend="gliner",
             doc_name="FOIA Letter",
         )
-        assert result.metadata["backend"] == "gliner"
+        assert "gliner" in result.metadata["backend"]
 
     def test_financial_memo_all_entities(self):
         ext = self._make_extractor()
@@ -605,7 +605,7 @@ class TestBackendSelection:
         ext = EntityExtractor()
         ext._backend = "regex"
         result = asyncio.run(ext.extract("John Smith paid $500 on 2024-01-15"))
-        assert result.metadata["backend"] == "regex"
+        assert "regex" in result.metadata["backend"]
 
     def test_auto_fallback(self):
         """With no config, should fall back to gliner → spacy → regex."""
