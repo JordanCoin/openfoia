@@ -695,21 +695,23 @@ class EntityExtractor:
         context: str | None = None,
         page_numbers: list[int] | None = None,
         ensemble: bool = False,
-        validate: bool = False,
     ) -> ExtractionResult:
         """Extract entities and relationships from text.
 
-        Default: regex + best NER backend (same RAM as before).
-        --ensemble: run ALL available backends for highest quality.
-        --validate: LLM validates ambiguous results (optional).
+        Pipeline:
+        1. Fast extraction: regex (always) + NER backends (GLiNER/spaCy)
+        2. Merge: deduplicate, boost multi-backend agreement
+        3. LLM cleanup: if available, validate and clean the merged list
+        4. Relationships: co-occurrence from validated entities
+
+        Default: regex + best NER. --ensemble: all NER backends.
+        LLM always runs as step 3 validator if available (not as extractor).
         """
         import asyncio
 
         backend = self._resolve_backend()
 
-        # --- Pipeline: mentions → merge → entities ---
-
-        # Phase 1: Extract mentions from multiple backends
+        # --- Phase 1: Fast extraction (NER + regex) ---
         all_mentions: list[Mention] = []
 
         # Regex always runs (instant, zero cost)
@@ -725,31 +727,34 @@ class EntityExtractor:
                 all_mentions.extend(
                     await asyncio.to_thread(self._mentions_from_spacy, text, page_numbers)
                 )
-            if _llm_available(self.provider, self.api_key, self.base_url):
-                all_mentions.extend(self._mentions_from_llm(text, context, page_numbers))
         else:
             # Run best available NER backend alongside regex
-            if backend == "llm":
-                all_mentions.extend(self._mentions_from_llm(text, context, page_numbers))
-            elif backend == "gliner":
+            # LLM is NOT here — it runs in Phase 3 as validator
+            if backend in ("gliner", "llm") and _gliner_available():
                 all_mentions.extend(
                     await asyncio.to_thread(self._mentions_from_gliner, text, page_numbers)
                 )
-            elif backend == "spacy":
+            elif backend in ("spacy", "llm") and _spacy_available():
                 all_mentions.extend(
                     await asyncio.to_thread(self._mentions_from_spacy, text, page_numbers)
                 )
-            # if backend == "regex", we already ran it above
 
-        # Phase 2: Conservative merge
+        # --- Phase 2: Merge + deduplicate ---
         clusters = self._merge_mentions(all_mentions)
         entities = self._clusters_to_entities(clusters)
 
-        # Phase 3: Relationships from merged entities
+        # --- Phase 3: LLM validates the merged entity list ---
+        # Sends ~2K chars (entity list), NOT 78K chars (full document)
+        llm_available = _llm_available(self.provider, self.api_key, self.base_url)
+        if llm_available and entities:
+            entities = await self._llm_validate_entities(entities, text)
+
+        # --- Phase 4: Relationships from validated entities ---
         relationships = _extract_cooccurrence_relationships(entities, text) if entities else []
 
-        # Backends used
         backends_used = sorted({m.backend_name for m in all_mentions})
+        if llm_available:
+            backends_used.append("llm-validator")
 
         return ExtractionResult(
             entities=entities,
@@ -762,11 +767,82 @@ class EntityExtractor:
                 "mentions_raw": len(all_mentions),
                 "entities_merged": len(entities),
                 "ensemble": ensemble,
+                "llm_validated": llm_available,
             },
         )
 
     # ------------------------------------------------------------------
-    # LLM path (highest quality)
+    # LLM validation (Phase 3 — reviews entity list, not document)
+    # ------------------------------------------------------------------
+
+    async def _llm_validate_entities(
+        self, entities: list[ExtractedEntity], source_text: str
+    ) -> list[ExtractedEntity]:
+        """LLM reviews the merged entity list. Fast because input is ~2K, not 78K."""
+        import asyncio
+
+        # Build compact entity list for LLM
+        entity_lines = []
+        for e in entities:
+            entity_lines.append(
+                f'- {e.entity_type.value}: "{e.raw_text}" (confidence: {e.confidence:.0%})'
+            )
+        entity_list = "\n".join(entity_lines[:200])  # cap to keep prompt manageable
+
+        prompt = f"""Review this entity list extracted from a government document.
+
+TASKS:
+1. Remove junk entries (boilerplate like "To:", "APPROVED", job titles, sentence fragments)
+2. Flag OCR errors in names (e.g. "KIRKLAND 8. ELLIS" should be "Kirkland & Ellis")
+3. Mark low-quality entries with confidence 0.1
+4. Keep all legitimate people, organizations, locations, dates, money amounts
+
+ENTITIES:
+{entity_list}
+
+Return JSON: {{"keep": [{{"raw_text": "...", "confidence": 0.95, "corrected": "..."}}], "remove": ["junk entry 1", "junk entry 2"]}}"""
+
+        try:
+            raw = await asyncio.to_thread(
+                _call_ollama, prompt, self.model, self.base_url, 0.1, 4000
+            )
+        except Exception:
+            return entities  # LLM failed, return unmodified
+
+        # Parse LLM response
+        try:
+            json_match = re.search(r"\{[\s\S]*\}", raw)
+            if not json_match:
+                return entities
+            data = json.loads(json_match.group())
+        except (json.JSONDecodeError, AttributeError):
+            return entities
+
+        # Apply LLM decisions
+        remove_set = {r.lower().strip() for r in data.get("remove", [])}
+        corrections = {
+            k.get("raw_text", "").lower(): k for k in data.get("keep", []) if isinstance(k, dict)
+        }
+
+        validated = []
+        for ent in entities:
+            raw_lower = ent.raw_text.lower().strip()
+            if raw_lower in remove_set:
+                continue  # LLM said remove
+            if raw_lower in corrections:
+                corr = corrections[raw_lower]
+                # Apply correction
+                if corr.get("corrected"):
+                    ent.normalized_text = corr["corrected"]
+                if corr.get("confidence") is not None:
+                    ent.confidence = float(corr["confidence"])
+                ent.metadata["llm_validated"] = True
+            validated.append(ent)
+
+        return validated
+
+    # ------------------------------------------------------------------
+    # LLM extraction (legacy, used by _mentions_from_llm)
     # ------------------------------------------------------------------
 
     async def _extract_with_llm(
@@ -1433,6 +1509,36 @@ class EntityExtractor:
                     contexts=all_contexts,
                 )
             )
+
+        # Phase 2: Merge clusters where one name contains the other (same type)
+        # e.g. "Paul Clement" and "Paul D. Clement" → keep the longer one
+        merged: list[AliasCluster] = []
+        used: set[int] = set()
+        sorted_clusters = sorted(clusters, key=lambda c: len(c.canonical_text), reverse=True)
+        for i, c1 in enumerate(sorted_clusters):
+            if i in used:
+                continue
+            for j, c2 in enumerate(sorted_clusters):
+                if j <= i or j in used:
+                    continue
+                if c1.entity_type != c2.entity_type:
+                    continue
+                # Check if shorter name is substring of longer
+                short = c2.canonical_text.lower()
+                long = c1.canonical_text.lower()
+                if short in long or long in short:
+                    # Absorb c2 into c1
+                    c1.aliases.update(c2.aliases)
+                    c1.mentions.extend(c2.mentions)
+                    c1.pages = sorted(set(c1.pages + c2.pages))
+                    c1.contexts.extend(c2.contexts[:3])
+                    backends = {m.backend_name for m in c1.mentions}
+                    max_score = max(m.backend_score for m in c1.mentions)
+                    c1.merged_confidence = min(0.99, max_score + 0.05 * (len(backends) - 1))
+                    used.add(j)
+            merged.append(c1)
+
+        return merged
 
         return clusters
 
