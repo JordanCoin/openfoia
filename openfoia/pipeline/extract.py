@@ -965,8 +965,12 @@ class EntityExtractor:
         entities = self._clusters_to_entities(clusters)
 
         # --- Phase 3: LLM validates the merged entity list ---
-        # Sends ~2K chars (entity list), NOT 78K chars (full document)
-        llm_available = _llm_available(self.provider, self.api_key, self.base_url)
+        # Only runs when NER backends produced entities worth validating.
+        # Skip if only regex ran (no NER entities to validate) or backend was forced.
+        has_ner_mentions = any(m.backend_name != "regex" for m in all_mentions)
+        llm_available = has_ner_mentions and _llm_available(
+            self.provider, self.api_key, self.base_url
+        )
         if llm_available and entities:
             entities = await self._llm_validate_entities(entities, text)
 
@@ -1039,8 +1043,13 @@ Return JSON: {{"keep": [{{"raw_text": "...", "confidence": 0.95, "corrected": ".
         except (json.JSONDecodeError, AttributeError):
             return entities
 
-        # Apply LLM decisions
-        remove_set = {r.lower().strip() for r in data.get("remove", [])}
+        # Apply LLM decisions — handle both strings and dicts in remove list
+        remove_set: set[str] = set()
+        for r in data.get("remove", []):
+            if isinstance(r, str):
+                remove_set.add(r.lower().strip())
+            elif isinstance(r, dict):
+                remove_set.add(r.get("raw_text", "").lower().strip())
         corrections = {
             k.get("raw_text", "").lower(): k for k in data.get("keep", []) if isinstance(k, dict)
         }
