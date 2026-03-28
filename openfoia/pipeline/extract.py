@@ -532,7 +532,7 @@ def _call_ollama(
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=120) as resp:
+    with urllib.request.urlopen(req, timeout=300) as resp:
         body = json.loads(resp.read())
     return body.get("response", "")
 
@@ -785,11 +785,14 @@ class EntityExtractor:
                 # Custom type — store as DOCUMENT_ID with original type in metadata
                 entity_type = EntityType.DOCUMENT_ID
 
+            raw = e.get("raw_text") or e.get("text") or e.get("name", "")
+            if not raw:
+                continue
             entities.append(
                 ExtractedEntity(
                     entity_type=entity_type,
-                    raw_text=e.get("raw_text", ""),
-                    normalized_text=e.get("normalized", e.get("raw_text", "")),
+                    raw_text=raw,
+                    normalized_text=e.get("normalized") or raw,
                     confidence=float(e.get("confidence", 0.5)),
                     context=e.get("context", ""),
                     page_number=page_number,

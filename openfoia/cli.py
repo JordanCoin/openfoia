@@ -2252,6 +2252,9 @@ def analyze_extract(
     document_id: str = typer.Argument(..., help="Document ID to analyze"),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file"),
     force: bool = typer.Option(False, "--force", help="Re-extract even if already done"),
+    model: Optional[str] = typer.Option(
+        None, "--model", "-m", help="LLM model (e.g. llama3.1:8b, llama3.2:3b)"
+    ),
 ):
     """Extract entities from a document."""
     from .db import get_session, get_db_path
@@ -2306,7 +2309,7 @@ def analyze_extract(
         import asyncio
         from .pipeline.extract import EntityExtractor
 
-        extractor = EntityExtractor()
+        extractor = EntityExtractor(model=model) if model else EntityExtractor()
         backend = extractor._resolve_backend()
 
         if backend == "regex":
