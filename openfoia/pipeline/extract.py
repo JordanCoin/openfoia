@@ -60,6 +60,227 @@ class ExtractionResult:
 
 
 # ---------------------------------------------------------------------------
+# Mention scoring and junk filtering (Phase 2 helpers)
+# ---------------------------------------------------------------------------
+
+# Entities that are obviously not named entities — document boilerplate
+_HARD_BLOCK = {
+    "to",
+    "from",
+    "cc",
+    "bcc",
+    "date",
+    "subject",
+    "subj",
+    "re",
+    "approved",
+    "denied",
+    "signature",
+    "signed",
+    "page",
+    "pages",
+    "bill to",
+    "ship to",
+    "sold to",
+    "remit to",
+    "invoice",
+    "invoice no",
+    "invoice number",
+    "qty",
+    "quantity",
+    "subtotal",
+    "total",
+    "amount due",
+    "description",
+    "n/a",
+    "none",
+    "unknown",
+    "other",
+    "misc",
+    "various",
+}
+
+# Generic roles/titles — penalize, don't hard-drop (might be real in some contexts)
+_WEAK_GENERIC = {
+    "seller",
+    "buyer",
+    "contractor",
+    "subcontractor",
+    "vendor",
+    "supplier",
+    "requester",
+    "recipient",
+    "witness",
+    "agent",
+    "special agent",
+    "director",
+    "manager",
+    "officer",
+    "ceo",
+    "cfo",
+    "counsel",
+    "attorney",
+    "office",
+    "department",
+    "bureau",
+    "division",
+    "committee",
+    "board",
+    "agency",
+}
+
+# Concepts that NER models sometimes tag as entities
+_CONCEPTS = {
+    "human trafficking",
+    "trafficking",
+    "narcotics",
+    "bribery",
+    "corruption",
+    "fraud",
+    "money laundering",
+    "kickbacks",
+    "child exploitation",
+    "terrorism",
+    "espionage",
+}
+
+# Short all-caps acronyms that MUST survive filtering
+_KEEP_ACRONYMS = {
+    "FBI",
+    "CIA",
+    "DOJ",
+    "DHS",
+    "DOD",
+    "DOS",
+    "EPA",
+    "IRS",
+    "DEA",
+    "ICE",
+    "CBP",
+    "TSA",
+    "SEC",
+    "FTC",
+    "FCC",
+    "OIG",
+    "NYC",
+    "DC",
+    "NYPD",
+    "LAPD",
+    "ATF",
+    "NSA",
+    "NEC",
+    "APD",
+    "FOIA",
+    "OMB",
+    "GAO",
+    "NIST",
+    "BIS",
+    "LBPD",
+    "LASD",
+}
+
+_ORG_SUFFIXES = {
+    "inc",
+    "llc",
+    "corp",
+    "corporation",
+    "co",
+    "company",
+    "ltd",
+    "limited",
+    "lp",
+    "llp",
+    "pllc",
+    "plc",
+}
+
+_NER_TYPES = {EntityType.PERSON, EntityType.ORGANIZATION, EntityType.LOCATION}
+
+
+def _surface_clean(text: str) -> str:
+    """Normalize whitespace and strip trailing punctuation."""
+    import unicodedata
+
+    t = unicodedata.normalize("NFKC", text or "").replace("\u00a0", " ")
+    return re.sub(r"\s+", " ", t).strip(" \t\r\n,;:")
+
+
+def _is_protected_acronym(raw: str) -> bool:
+    """Check if this is a known government/org acronym."""
+    s = _surface_clean(raw)
+    return s in _KEEP_ACRONYMS or (s.isupper() and 2 <= len(s) <= 6 and s.isalpha())
+
+
+def _mention_score(m: "Mention") -> float:
+    """Score a mention for quality. 0.0 = definitely junk, should be dropped."""
+    s = _surface_clean(m.normalized_text)
+    k = s.lower().rstrip(".")
+
+    if not s:
+        return 0.0
+
+    # Protected acronyms always survive
+    if _is_protected_acronym(m.raw_text):
+        return max(0.7, m.backend_score)
+
+    # Hard blocks
+    if k in _HARD_BLOCK or s.endswith(":"):
+        return 0.0
+
+    # NER types that are just numbers
+    if m.entity_type in _NER_TYPES and re.fullmatch(r"\d+(?:\.\d+)?", s):
+        return 0.0
+
+    # NER types with ≤2 letters (not an acronym)
+    if m.entity_type in _NER_TYPES and len(re.sub(r"[^A-Za-z]", "", s)) <= 2:
+        return 0.0
+
+    # Calibrate backend scores
+    if m.backend_name == "spacy":
+        base = 0.55  # spaCy's fixed 0.85 is inflated
+    elif m.backend_name == "gliner":
+        base = 0.15 + 0.85 * m.backend_score
+    elif m.backend_name == "regex":
+        base = (
+            0.92
+            if m.entity_type in {EntityType.EMAIL, EntityType.PHONE, EntityType.DOCUMENT_ID}
+            else 0.78
+        )
+    else:
+        base = m.backend_score
+
+    # Soft penalties
+    if k in _WEAK_GENERIC:
+        base -= 0.45
+    if k in _CONCEPTS:
+        base -= 0.60
+    # No uppercase at all in a NER entity is suspicious
+    if m.entity_type in _NER_TYPES and not re.search(r"[A-Z]", s):
+        base -= 0.35
+    # Single short word (non-acronym)
+    if m.entity_type in _NER_TYPES and len(s.split()) == 1 and len(s) <= 3:
+        base -= 0.45
+
+    return max(0.0, min(0.99, base))
+
+
+def _ocr_fold(text: str) -> str:
+    """Fold OCR-common substitutions for fuzzy comparison."""
+    t = _surface_clean(text).lower().replace("&", " and ")
+    t = re.sub(r"\b8\b", " and ", t)  # OCR: '&' -> '8'
+    t = t.translate(str.maketrans({"0": "o", "1": "i", "l": "i", "5": "s"}))
+    return re.sub(r"[^a-z0-9 ]+", "", t)
+
+
+def _core_tokens(text: str, etype: "EntityType") -> list[str]:
+    """Extract meaningful tokens, stripping org suffixes."""
+    toks = re.findall(r"[a-z0-9]+", _ocr_fold(text))
+    if etype == EntityType.ORGANIZATION:
+        toks = [t for t in toks if t not in _ORG_SUFFIXES and t != "the"]
+    return toks
+
+
+# ---------------------------------------------------------------------------
 # Internal pipeline types (not exported — used between extraction phases)
 # ---------------------------------------------------------------------------
 
@@ -1468,18 +1689,43 @@ Return JSON: {{"keep": [{{"raw_text": "...", "confidence": 0.95, "corrected": ".
     def _merge_mentions(mentions: list[Mention]) -> list[AliasCluster]:
         """Merge mentions from multiple backends into alias clusters.
 
-        Conservative: exact matches auto-merge, fuzzy matches create aliases
-        but don't silently collapse. Preserves all raw mentions for provenance.
+        Three phases:
+        1. Score and filter: drop obvious junk, recalibrate confidence
+        2. Exact grouping: same type + normalized text
+        3. Fuzzy merge: substring match, OCR fold, token overlap
         """
-        # Phase 1: Group by exact (type, normalized_text.lower())
-        groups: dict[tuple[str, str], list[Mention]] = {}
+        from difflib import SequenceMatcher
+
+        # --- Phase 1: Score and filter junk ---
+        scored: list[Mention] = []
         for m in mentions:
-            key = (m.entity_type.value, m.normalized_text.lower().strip().rstrip("."))
+            score = _mention_score(m)
+            if score <= 0.0:
+                continue  # hard drop
+            m.backend_score = score  # recalibrated
+            scored.append(m)
+
+        # --- Phase 2: Exact grouping ---
+        # For orgs, strip legal suffixes from the key
+        def _group_key(m: Mention) -> tuple[str, str]:
+            norm = m.normalized_text.lower().strip().rstrip(".")
+            if m.entity_type == EntityType.ORGANIZATION:
+                for suffix in _ORG_SUFFIXES:
+                    if norm.endswith(f" {suffix}"):
+                        norm = norm[: -(len(suffix) + 1)].rstrip(",. ")
+                        break
+                    if norm.endswith(f" {suffix}."):
+                        norm = norm[: -(len(suffix) + 2)].rstrip(",. ")
+                        break
+            return (m.entity_type.value, norm)
+
+        groups: dict[tuple[str, str], list[Mention]] = {}
+        for m in scored:
+            key = _group_key(m)
             if key not in groups:
                 groups[key] = []
             groups[key].append(m)
 
-        # Build initial clusters from exact matches
         clusters: list[AliasCluster] = []
         for (type_val, _norm_key), group in groups.items():
             try:
@@ -1487,16 +1733,20 @@ Return JSON: {{"keep": [{{"raw_text": "...", "confidence": 0.95, "corrected": ".
             except ValueError:
                 continue
 
-            # Canonical text: longest normalized variant (most specific)
             best = max(group, key=lambda m: (len(m.normalized_text), m.backend_score))
             all_raw = {m.raw_text for m in group}
             all_pages = sorted({m.page for m in group if m.page is not None})
             all_contexts = [m.context for m in group if m.context][:5]
 
-            # Multi-backend confidence boost
             backends = {m.backend_name for m in group}
             max_score = max(m.backend_score for m in group)
-            boosted = min(0.99, max_score + 0.05 * (len(backends) - 1))
+            boosted = min(
+                0.99,
+                max_score
+                + 0.10 * (len(backends) - 1)
+                + 0.05 * min(3, len(group) - 1)
+                + (0.05 if len(all_pages) > 1 else 0),
+            )
 
             clusters.append(
                 AliasCluster(
@@ -1510,37 +1760,65 @@ Return JSON: {{"keep": [{{"raw_text": "...", "confidence": 0.95, "corrected": ".
                 )
             )
 
-        # Phase 2: Merge clusters where one name contains the other (same type)
-        # e.g. "Paul Clement" and "Paul D. Clement" → keep the longer one
+        # --- Phase 3: Fuzzy merge ---
         merged: list[AliasCluster] = []
         used: set[int] = set()
-        sorted_clusters = sorted(clusters, key=lambda c: len(c.canonical_text), reverse=True)
+        sorted_clusters = sorted(clusters, key=lambda c: len(c.mentions), reverse=True)
+
         for i, c1 in enumerate(sorted_clusters):
             if i in used:
                 continue
             for j, c2 in enumerate(sorted_clusters):
-                if j <= i or j in used:
+                if j <= i or j in used or c1.entity_type != c2.entity_type:
                     continue
-                if c1.entity_type != c2.entity_type:
-                    continue
-                # Check if shorter name is substring of longer
-                short = c2.canonical_text.lower()
-                long = c1.canonical_text.lower()
-                if short in long or long in short:
-                    # Absorb c2 into c1
+
+                should_merge = False
+                a, b = c1.canonical_text, c2.canonical_text
+
+                # Substring match
+                if a.lower() in b.lower() or b.lower() in a.lower():
+                    should_merge = True
+                # OCR-fold similarity
+                elif SequenceMatcher(None, _ocr_fold(a), _ocr_fold(b)).ratio() >= 0.90:
+                    should_merge = True
+                # Token Jaccard for orgs
+                elif c1.entity_type == EntityType.ORGANIZATION:
+                    ta = set(_core_tokens(a, c1.entity_type))
+                    tb = set(_core_tokens(b, c2.entity_type))
+                    if ta and tb and len(ta & tb) / len(ta | tb) >= 0.80:
+                        should_merge = True
+                # Person: same last name + first initial
+                elif c1.entity_type == EntityType.PERSON:
+                    ta = _core_tokens(a, c1.entity_type)
+                    tb = _core_tokens(b, c2.entity_type)
+                    if (
+                        len(ta) >= 2
+                        and len(tb) >= 2
+                        and ta[-1] == tb[-1]
+                        and ta[0][:1] == tb[0][:1]
+                    ):
+                        should_merge = True
+
+                if should_merge:
                     c1.aliases.update(c2.aliases)
                     c1.mentions.extend(c2.mentions)
                     c1.pages = sorted(set(c1.pages + c2.pages))
                     c1.contexts.extend(c2.contexts[:3])
+                    # Pick canonical: most mentions + highest score
+                    if len(c2.mentions) > len(c1.mentions):
+                        c1.canonical_text = c2.canonical_text
                     backends = {m.backend_name for m in c1.mentions}
                     max_score = max(m.backend_score for m in c1.mentions)
-                    c1.merged_confidence = min(0.99, max_score + 0.05 * (len(backends) - 1))
+                    c1.merged_confidence = min(
+                        0.99,
+                        max_score
+                        + 0.10 * (len(backends) - 1)
+                        + 0.05 * min(3, len(c1.mentions) - 1),
+                    )
                     used.add(j)
             merged.append(c1)
 
         return merged
-
-        return clusters
 
     @staticmethod
     def _clusters_to_entities(clusters: list[AliasCluster]) -> list[ExtractedEntity]:
