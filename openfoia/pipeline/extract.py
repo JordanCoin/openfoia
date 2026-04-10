@@ -885,17 +885,26 @@ class EntityExtractor:
             return self._backend
 
         # Try in order of quality.
-        # Cloud providers (anthropic, openai) only used if explicitly configured —
-        # we don't silently send document text to external APIs.
         if _llm_available(self.provider, self.api_key, self.base_url):
             if self.provider in ("anthropic", "openai"):
                 import sys
 
-                print(
-                    f"WARNING: Using cloud AI provider '{self.provider}'. "
-                    "Document text will be sent to external servers.",
-                    file=sys.stderr,
+                is_local = self.base_url and (
+                    "localhost" in self.base_url
+                    or "127.0.0.1" in self.base_url
+                    or "0.0.0.0" in self.base_url
                 )
+                if is_local:
+                    print(
+                        f"Using local AI provider ({self.model} via {self.base_url})",
+                        file=sys.stderr,
+                    )
+                else:
+                    print(
+                        f"WARNING: Using cloud AI provider '{self.provider}'. "
+                        "Document text will be sent to external servers.",
+                        file=sys.stderr,
+                    )
             self._backend = "llm"
         elif _gliner_available():
             self._backend = "gliner"
