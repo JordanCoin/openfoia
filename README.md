@@ -58,6 +58,11 @@ A compiled 1.1MB binary extracts text directly from PDF structures — no OCR ne
 
 99.5% accuracy across 480K characters in 50 test PDFs. 100% on every FOIA document tested. Zero runtime dependencies. Falls back to OCR (Tesseract) for scanned documents.
 
+OpenFOIA calls the extractor with the large-document runtime profile by default (`--profile large`).
+To control concurrency per process, set:
+- `OPENFOIA_PDF_EXTRACT_MAX_WORKERS` (for example `4` or `8`)
+- Optional profile override: `OPENFOIA_PDF_EXTRACT_PROFILE=standard|large`
+
 ## Data Sources
 
 | Source | What | Auth |

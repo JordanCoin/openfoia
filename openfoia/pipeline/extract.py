@@ -1028,9 +1028,14 @@ ENTITIES:
 Return JSON: {{"keep": [{{"raw_text": "...", "confidence": 0.95, "corrected": "..."}}], "remove": ["junk entry 1", "junk entry 2"]}}"""
 
         try:
-            raw = await asyncio.to_thread(
-                _call_ollama, prompt, self.model, self.base_url, 0.1, 4000
-            )
+            if self.provider == "openai":
+                raw = await asyncio.to_thread(
+                    _call_openai, prompt, self.model, self.api_key or "", self.base_url, 0.1, 4000
+                )
+            else:
+                raw = await asyncio.to_thread(
+                    _call_ollama, prompt, self.model, self.base_url, 0.1, 4000
+                )
         except Exception:
             return entities  # LLM failed, return unmodified
 

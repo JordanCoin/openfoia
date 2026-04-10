@@ -11,6 +11,7 @@ will return little or nothing, and the caller should fall back to OCR.
 from __future__ import annotations
 
 import asyncio
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -63,6 +64,8 @@ async def extract_text(
     pdf_path: Path | str,
     binary_path: str | None = None,
     min_chars: int = 50,
+    profile: str = "large",
+    max_workers: int | None = None,
 ) -> PDFExtractResult | None:
     """Extract text from a PDF using the compiled binary.
 
@@ -79,18 +82,51 @@ async def extract_text(
     if not pdf_path.exists():
         return None
 
-    def _run() -> subprocess.CompletedProcess:
+    # OpenFOIA default: use the large-document extraction profile.
+    profile_env = os.environ.get("OPENFOIA_PDF_EXTRACT_PROFILE")
+    if profile_env is not None and profile_env.strip():
+        profile = profile_env.strip()
+
+    workers_env = os.environ.get("OPENFOIA_PDF_EXTRACT_MAX_WORKERS")
+    if workers_env is not None and workers_env.strip():
+        try:
+            max_workers = int(workers_env)
+        except ValueError:
+            max_workers = None
+
+    if max_workers is not None and max_workers <= 0:
+        max_workers = None
+
+    command = [binary, str(pdf_path)]
+    if profile:
+        command.extend(["--profile", profile])
+    if max_workers is not None:
+        command.extend(["--max-workers", str(max_workers)])
+
+    def _run(cmd: list[str]) -> subprocess.CompletedProcess:
         return subprocess.run(
-            [binary, str(pdf_path)],
+            cmd,
             capture_output=True,
             text=True,
             timeout=30,
         )
 
     try:
-        result = await asyncio.to_thread(_run)
+        result = await asyncio.to_thread(_run, command)
     except (subprocess.TimeoutExpired, OSError):
         return None
+
+    # Backward compatibility: if the installed extractor does not support
+    # profile/worker flags yet, retry without them.
+    if result.returncode != 0:
+        stderr = (result.stderr or "").lower()
+        if ("unknown argument" in stderr or "unexpected argument" in stderr) and (
+            "--profile" in stderr or "--max-workers" in stderr
+        ):
+            try:
+                result = await asyncio.to_thread(_run, [binary, str(pdf_path)])
+            except (subprocess.TimeoutExpired, OSError):
+                return None
 
     if result.returncode != 0:
         return None
