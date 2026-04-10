@@ -836,9 +836,9 @@ def _call_openai(
 
 
 def _llm_available(provider: str, api_key: str | None, base_url: str | None) -> bool:
-    if provider == "ollama":
-        import urllib.request
+    import urllib.request
 
+    if provider == "ollama":
         url = (base_url or "http://localhost:11434").rstrip("/")
         try:
             req = urllib.request.Request(f"{url}/api/tags", method="GET")
@@ -846,6 +846,19 @@ def _llm_available(provider: str, api_key: str | None, base_url: str | None) -> 
                 return True
         except Exception:
             return False
+
+    if provider == "openai" and base_url:
+        # Local OpenAI-compatible server — check if it's actually reachable
+        is_local = "localhost" in base_url or "127.0.0.1" in base_url
+        if is_local:
+            try:
+                url = base_url.rstrip("/")
+                req = urllib.request.Request(f"{url}/models", method="GET")
+                with urllib.request.urlopen(req, timeout=3):
+                    return True
+            except Exception:
+                return False
+
     return bool(api_key)
 
 
@@ -1045,17 +1058,41 @@ Return JSON: {{"keep": [{{"raw_text": "...", "confidence": 0.95, "corrected": ".
                 raw = await asyncio.to_thread(
                     _call_ollama, prompt, self.model, self.base_url, 0.1, 4000
                 )
-        except Exception:
+        except Exception as exc:
+            import sys
+
+            print(
+                f"LLM validation skipped: {type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
             return entities  # LLM failed, return unmodified
 
         # Parse LLM response
         try:
             json_match = re.search(r"\{[\s\S]*\}", raw)
             if not json_match:
+                import sys
+
+                print(
+                    f"LLM validation: no JSON found in response ({len(raw)} chars)", file=sys.stderr
+                )
                 return entities
             data = json.loads(json_match.group())
-        except (json.JSONDecodeError, AttributeError):
+        except (json.JSONDecodeError, AttributeError) as exc:
+            import sys
+
+            print(f"LLM validation: JSON parse failed: {exc}", file=sys.stderr)
             return entities
+
+        import sys
+
+        keep_count = len(data.get("keep", []))
+        remove_count = len(data.get("remove", []))
+        print(
+            f"LLM validation: keep={keep_count}, remove={remove_count} "
+            f"(from {len(entities)} entities)",
+            file=sys.stderr,
+        )
 
         # Apply LLM decisions — handle both strings and dicts in remove list
         remove_set: set[str] = set()
