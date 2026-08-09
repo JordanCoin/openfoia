@@ -36,7 +36,7 @@ class RequestDetails:
     description: str
     date_range_start: datetime | None = None
     date_range_end: datetime | None = None
-    keywords: list[str] = None
+    keywords: list[str] | None = None
     exclusions: str | None = None
 
 
@@ -417,7 +417,7 @@ Sincerely,
 # === CLI Integration ===
 
 
-def list_templates() -> list[dict]:
+def list_templates() -> list[dict[str, str]]:
     """Return list of available templates for CLI display."""
     return [
         {
