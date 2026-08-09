@@ -182,6 +182,25 @@ def test_existing_data_dir_is_tightened(tmp_path, monkeypatch):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permissions")
+def test_database_file_is_owner_only(tmp_path, monkeypatch):
+    """Defence in depth: the 0700 dir protects it, but set the file too.
+
+    If the data dir is ever placed on a volume with looser semantics, or its
+    mode is changed, a 0644 database is readable by every local account.
+    """
+    monkeypatch.setenv("OPENFOIA_DATA_DIR", str(tmp_path))
+    from openfoia.db import init_db
+
+    init_db(seed=False)
+
+    db = tmp_path / "data.db"
+    assert db.exists()
+    mode = stat.S_IMODE(db.stat().st_mode)
+    assert mode & stat.S_IRWXG == 0, f"group bits set: {oct(mode)}"
+    assert mode & stat.S_IRWXO == 0, f"other bits set: {oct(mode)}"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permissions")
 def test_saved_config_is_not_world_readable(tmp_path, monkeypatch):
     """config.json can hold SMTP/Twilio/Lob secrets and the DB password."""
     monkeypatch.setenv("OPENFOIA_DATA_DIR", str(tmp_path))

@@ -289,6 +289,25 @@ def init_db(seed: bool = True, password: str | None = None) -> None:
         engine = get_engine(password=password)
         seed_agencies(engine)
 
+    _restrict_db_permissions(get_db_path(password=password))
+
+
+def _restrict_db_permissions(db_path: Path) -> None:
+    """Make the database (and its sidecars) owner-only.
+
+    The 0700 data directory is the primary protection; this is defence in
+    depth for the case where the directory mode is changed or the data lives
+    on a volume with looser semantics.
+    """
+    if os.name == "nt":
+        return
+    for candidate in (db_path, *(Path(str(db_path) + s) for s in _DB_SIDECAR_SUFFIXES)):
+        if candidate.is_file():
+            try:
+                os.chmod(candidate, 0o600)
+            except OSError:
+                pass
+
 
 def encrypt_database(password: str) -> None:
     """Encrypt an existing plaintext SQLite database with SQLCipher.
