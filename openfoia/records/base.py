@@ -67,6 +67,39 @@ def resolves_to_public_address(host: str) -> bool:
     return True
 
 
+async def download_to_file(client: Any, url: str, dest: Any, max_bytes: int) -> int:
+    """Stream *url* into *dest*, aborting as soon as *max_bytes* is exceeded.
+
+    Buffering via ``response.content`` first would let a compromised or
+    MITM'd upstream force a huge allocation before any size check ran. This
+    enforces the cap incrementally and removes the partial file on abort.
+
+    Returns the number of bytes written.
+    """
+    from pathlib import Path
+
+    dest = Path(dest)
+    written = 0
+
+    try:
+        async with client.stream("GET", url) as response:
+            response.raise_for_status()
+            with open(dest, "wb") as f:
+                async for chunk in response.aiter_bytes():
+                    written += len(chunk)
+                    if written > max_bytes:
+                        raise ValueError(
+                            f"Refusing download over {max_bytes} bytes (cap exceeded): {url!r}"
+                        )
+                    f.write(chunk)
+    except BaseException:
+        if dest.exists():
+            dest.unlink()
+        raise
+
+    return written
+
+
 def safe_download_filename(url: str, default: str = "download") -> str:
     """Derive a safe basename from *url*.
 

@@ -285,6 +285,7 @@ def _strip_docx_extended_props(file_path: Path) -> list[str]:
     A .docx is a zip, so this rewrites the archive in place. Returns the list
     of property names that were actually present and removed.
     """
+    import os
     import re as _re
     import shutil
     import tempfile
@@ -330,7 +331,11 @@ def _strip_docx_extended_props(file_path: Path) -> list[str]:
             text = _re.sub(r"<Relationship[^>]*custom\.xml[^>]*/>", "", text)
             members["_rels/.rels"] = text.encode("utf-8")
 
-    tmp = tempfile.mktemp(suffix=".docx")
+    # Securely created in the same directory as the target: mktemp() is a
+    # TOCTOU race (an attacker can win the name and plant a symlink), and this
+    # function rewrites sensitive documents.
+    fd, tmp = tempfile.mkstemp(suffix=".docx", dir=str(Path(file_path).parent))
+    os.close(fd)
     try:
         with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as dst:
             for name, data in members.items():

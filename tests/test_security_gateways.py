@@ -214,6 +214,100 @@ def test_records_download_accepts_expected_https_asset():
     assert validate_download_url(ok) == ok
 
 
+def test_download_is_streamed_with_an_incremental_cap(tmp_path):
+    """The cap must bite before the whole body is in memory.
+
+    `resp.content` buffers everything first, so a compromised upstream could
+    force a huge allocation before any size check ran.
+    """
+    import asyncio
+
+    from openfoia.records.base import download_to_file
+
+    chunks_yielded = []
+
+    class _Resp:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        async def aiter_bytes(self, chunk_size=65536):
+            for i in range(1000):
+                chunks_yielded.append(i)
+                yield b"A" * 1024
+
+    class _Stream:
+        def __init__(self, resp):
+            self._resp = resp
+
+        async def __aenter__(self):
+            return self._resp
+
+        async def __aexit__(self, *a):
+            return False
+
+    class _Client:
+        def stream(self, method, url):
+            return _Stream(_Resp())
+
+    dest = tmp_path / "out.bin"
+    with pytest.raises(ValueError, match="(?i)size|large|bytes"):
+        asyncio.run(download_to_file(_Client(), "https://x.test/a.pdf", dest, max_bytes=8 * 1024))
+
+    # It must have stopped early, not consumed the whole stream.
+    assert len(chunks_yielded) < 100, "stream was fully consumed before the cap applied"
+    assert not dest.exists(), "partial oversized download left on disk"
+
+
+def test_download_to_file_writes_within_cap(tmp_path):
+    import asyncio
+
+    from openfoia.records.base import download_to_file
+
+    class _Resp:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        async def aiter_bytes(self, chunk_size=65536):
+            yield b"hello "
+            yield b"world"
+
+    class _Stream:
+        async def __aenter__(self):
+            return _Resp()
+
+        async def __aexit__(self, *a):
+            return False
+
+    class _Client:
+        def stream(self, method, url):
+            return _Stream()
+
+    dest = tmp_path / "out.bin"
+    asyncio.run(download_to_file(_Client(), "https://x.test/a.pdf", dest, max_bytes=1024))
+
+    assert dest.read_bytes() == b"hello world"
+
+
+def test_metadata_rewrite_does_not_use_insecure_mktemp():
+    """tempfile.mktemp is a TOCTOU race — an attacker can win the symlink."""
+    import inspect
+
+    from openfoia.pipeline import metadata
+
+    # Ignore comments: the point is that mktemp is not actually called.
+    code = "\n".join(
+        line
+        for line in inspect.getsource(metadata).splitlines()
+        if not line.strip().startswith("#")
+    )
+
+    assert "mktemp(" not in code, "insecure tempfile.mktemp used on sensitive documents"
+
+
 @pytest.mark.parametrize(
     "raw,expected",
     [

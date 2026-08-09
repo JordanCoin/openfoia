@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 # ---------------------------------------------------------------------------
 # Alembic must use the SQLCipher connection it is handed
 # ---------------------------------------------------------------------------
@@ -89,10 +88,10 @@ def test_mail_template_has_no_unescaped_field_interpolation():
 
 def test_tor_browse_does_not_claim_webrtc_is_disabled():
     """`--disable-webrtc` is not a real Chromium flag; don't promise it."""
-    from openfoia.tor_browse import _TOR_WARNING, browse  # noqa: F401
     import inspect
 
     from openfoia import tor_browse
+    from openfoia.tor_browse import _TOR_WARNING
 
     assert "WebRTC disabled (prevents IP leaks)" not in _TOR_WARNING
 

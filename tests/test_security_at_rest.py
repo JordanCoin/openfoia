@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import os
 import stat
+from pathlib import Path
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # `db encrypt` must not leave the plaintext database recoverable
@@ -107,6 +107,57 @@ def test_real_db_uses_a_profile_slot_not_data_db(tmp_path, monkeypatch):
     slots = get_profile_paths()
     assert real_profile_path() in slots
     assert real_profile_path().name != "data.db"
+
+
+def test_duress_migration_moves_sidecars_with_the_database(tmp_path, monkeypatch):
+    """A leftover data.db-wal defeats the whole point of the slot migration.
+
+    It retains recent plaintext pages AND re-labels which slot is the real
+    one, which is exactly what moving into an opaque slot was meant to stop.
+    """
+    monkeypatch.setenv("OPENFOIA_DATA_DIR", str(tmp_path))
+    from openfoia.security import migrate_db_to_profile_slot, real_profile_path
+
+    legacy = tmp_path / "data.db"
+    legacy.write_bytes(b"main db")
+    (tmp_path / "data.db-wal").write_bytes(b"recent plaintext writes")
+    (tmp_path / "data.db-shm").write_bytes(b"shared memory")
+
+    migrate_db_to_profile_slot()
+
+    assert not legacy.exists()
+    assert not (tmp_path / "data.db-wal").exists(), "WAL left behind next to the slots"
+    assert not (tmp_path / "data.db-shm").exists(), "SHM left behind next to the slots"
+
+    real = real_profile_path()
+    assert real.exists()
+    assert Path(str(real) + "-wal").read_bytes() == b"recent plaintext writes"
+
+
+def test_duress_migration_is_idempotent(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENFOIA_DATA_DIR", str(tmp_path))
+    from openfoia.security import migrate_db_to_profile_slot, real_profile_path
+
+    real_profile_path().write_bytes(b"already migrated")
+    (tmp_path / "data.db").write_bytes(b"stale legacy")
+
+    migrate_db_to_profile_slot()
+
+    # An existing slot must never be clobbered by a stale legacy file.
+    assert real_profile_path().read_bytes() == b"already migrated"
+
+
+def test_no_leftover_data_db_names_after_migration(tmp_path, monkeypatch):
+    """Nothing matching data.db* may remain to label the layout."""
+    monkeypatch.setenv("OPENFOIA_DATA_DIR", str(tmp_path))
+    from openfoia.security import migrate_db_to_profile_slot
+
+    (tmp_path / "data.db").write_bytes(b"x")
+    (tmp_path / "data.db-journal").write_bytes(b"y")
+
+    migrate_db_to_profile_slot()
+
+    assert list(tmp_path.glob("data.db*")) == []
 
 
 def test_profile_slot_names_are_indistinguishable():

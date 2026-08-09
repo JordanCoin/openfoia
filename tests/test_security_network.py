@@ -7,9 +7,9 @@ chooses. No silent cloud calls. These tests pin the places that broke it.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # The local web UI must not phone home
@@ -126,7 +126,7 @@ def test_archive_strips_trackers_from_saved_html(tmp_path):
     finally:
         httpx.AsyncClient = orig
 
-    saved = (tmp_path / result.html_path).read_text() if False else open(result.html_path).read()
+    saved = Path(result.html_path).read_text()
 
     assert "google-analytics.com" not in saved
     assert "facebook.com/tr" not in saved

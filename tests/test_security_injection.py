@@ -12,7 +12,6 @@ import json
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Entity graph HTML — untrusted document text is embedded in an inline <script>
 # ---------------------------------------------------------------------------

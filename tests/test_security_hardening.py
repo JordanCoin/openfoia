@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Secrets must not be printed or accepted on the command line
 # ---------------------------------------------------------------------------
@@ -214,9 +213,9 @@ def test_browser_module_has_no_bare_url_interpolation():
 
 
 def test_search_result_has_error_field():
-    from openfoia.records.base import SearchResult
-
     import dataclasses
+
+    from openfoia.records.base import SearchResult
 
     fields = {f.name for f in dataclasses.fields(SearchResult)}
     assert "error" in fields

@@ -19,6 +19,7 @@ from .base import (
     RecordAdapter,
     RecordEntity,
     SearchResult,
+    download_to_file,
     safe_download_filename,
     validate_download_url,
 )
@@ -377,20 +378,18 @@ class MuckRockAdapter(RecordAdapter):
 
                 try:
                     validate_download_url(url)
-                    resp = await client.get(url)
-                    resp.raise_for_status()
-
-                    if len(resp.content) > MAX_DOWNLOAD_BYTES:
-                        raise ValueError(
-                            f"Refusing file over {MAX_DOWNLOAD_BYTES} bytes: {len(resp.content)}"
-                        )
 
                     filename = safe_download_filename(url)
                     dest = output_path / filename
 
-                    dest.write_bytes(resp.content)
+                    # Streamed with an incremental cap: buffering the whole
+                    # body first would let a compromised upstream force a
+                    # large allocation before the size check ran.
+                    written = await download_to_file(
+                        client, url, dest, max_bytes=MAX_DOWNLOAD_BYTES
+                    )
                     downloaded.append(str(dest))
-                    logger.info("Downloaded %s (%d bytes)", filename, len(resp.content))
+                    logger.info("Downloaded %s (%d bytes)", filename, written)
                 except Exception as e:
                     logger.warning("Failed to download %s: %s", url, e)
 

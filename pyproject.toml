@@ -71,6 +71,14 @@ build-backend = "hatchling.build"
 line-length = 100
 target-version = "py311"
 
+[tool.ruff.lint]
+# Pin the rule set explicitly. CI installs an unpinned `ruff>=0.1.0`, so
+# relying on ruff's *defaults* means a new ruff release can silently widen
+# the rule set and turn CI red on unchanged code — which is what happened.
+# These four are the defaults the project has always been linted against.
+# Widening this list is a deliberate choice, not an upgrade side effect.
+select = ["E4", "E7", "E9", "F"]
+
 [tool.mypy]
 python_version = "3.11"
 strict = true

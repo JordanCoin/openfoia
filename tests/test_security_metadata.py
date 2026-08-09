@@ -11,7 +11,6 @@ import zipfile
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # DOCX: company/manager live in docProps/app.xml, which python-docx cannot see
 # ---------------------------------------------------------------------------
@@ -41,10 +40,12 @@ def _docx_with_extended_props(path):
 
 
 def _add_zip_member(path, name, content):
+    import os
     import shutil
     import tempfile
 
-    tmp = tempfile.mktemp(suffix=".docx")
+    fd, tmp = tempfile.mkstemp(suffix=".docx")
+    os.close(fd)
     with zipfile.ZipFile(path) as src, zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as dst:
         for item in src.infolist():
             if item.filename == name:
@@ -128,13 +129,13 @@ def _pdf_with_xmp(path):
     writer.add_metadata({"/Author": "Jane Source", "/Producer": "SecretTool"})
 
     xmp = (
-        '<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>'
-        '<x:xmpmeta xmlns:x="adobe:ns:meta/">'
-        '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
-        '<rdf:Description xmlns:dc="http://purl.org/dc/elements/1.1/">'
-        "<dc:creator>Jane Source</dc:creator>"
-        "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end='w'?>"
-    ).encode()
+        b'<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>'
+        b'<x:xmpmeta xmlns:x="adobe:ns:meta/">'
+        b'<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
+        b'<rdf:Description xmlns:dc="http://purl.org/dc/elements/1.1/">'
+        b"<dc:creator>Jane Source</dc:creator>"
+        b"</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end='w'?>"
+    )
 
     stream = DecodedStreamObject()
     stream.set_data(xmp)

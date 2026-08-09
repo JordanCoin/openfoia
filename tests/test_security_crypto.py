@@ -13,7 +13,6 @@ import sqlite3
 
 import pytest
 
-
 NASTY_PASSPHRASES = [
     "it's a secret",
     "abc'--rest-of-my-very-long-passphrase",

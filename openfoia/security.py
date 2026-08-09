@@ -242,6 +242,43 @@ def real_profile_path() -> Path:
     return get_profile_paths()[0]
 
 
+def migrate_db_to_profile_slot() -> Path:
+    """Move a legacy ``data.db`` (and its sidecars) into the real profile slot.
+
+    The sidecars must travel with it. A ``data.db-wal`` left behind holds
+    recent writes in plaintext *and* re-labels the layout — an examiner seeing
+    it next to profile_0/profile_1 learns which slot is real, which is exactly
+    what moving into an opaque slot was meant to prevent.
+
+    Idempotent, and never clobbers an existing slot.
+    """
+    from .db import _DB_SIDECAR_SUFFIXES, get_data_dir
+
+    data_dir = get_data_dir()
+    legacy = data_dir / "data.db"
+    real = real_profile_path()
+
+    if real.exists():
+        # Already migrated. Remove any stale legacy leftovers so nothing in
+        # the directory listing points at which slot is real.
+        for suffix in ("", *_DB_SIDECAR_SUFFIXES):
+            stale = Path(str(legacy) + suffix)
+            if stale.is_file():
+                stale.unlink()
+        return real
+
+    if not legacy.exists():
+        return real
+
+    shutil.move(str(legacy), str(real))
+    for suffix in _DB_SIDECAR_SUFFIXES:
+        sidecar = Path(str(legacy) + suffix)
+        if sidecar.is_file():
+            shutil.move(str(sidecar), str(real) + suffix)
+
+    return real
+
+
 def duress_mode_active() -> bool:
     """True once the real database has been migrated into a profile slot."""
     return real_profile_path().exists()
@@ -268,11 +305,9 @@ def setup_duress_mode(duress_password: str) -> Path:
             "Install encryption support: openfoia install-extras encryption"
         )
 
-    # Migrate the real database into slot 0 so both slots look alike.
-    legacy_path = get_data_dir() / "data.db"
-    real_path = real_profile_path()
-    if legacy_path.exists() and not real_path.exists():
-        shutil.move(str(legacy_path), str(real_path))
+    # Migrate the real database (with its sidecars) into slot 0 so both slots
+    # look alike on disk.
+    migrate_db_to_profile_slot()
 
     # Use the second slot for the decoy
     decoy_path = get_data_dir() / _PROFILE_SLOTS[1]
