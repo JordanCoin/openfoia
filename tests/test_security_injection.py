@@ -67,10 +67,10 @@ def test_graph_render_escapes_line_separators(tmp_path):
     """U+2028/U+2029 are valid JSON but break JS string literals."""
     html = _render_graph(
         tmp_path,
-        {"nodes": [], "links": [], "documents": [{"id": "d1", "text": "a b c"}]},
+        {"nodes": [], "links": [], "documents": [{"id": "d1", "text": "a\u2028b\u2029c"}]},
     )
-    assert " " not in html
-    assert " " not in html
+    assert "\u2028" not in html
+    assert "\u2029" not in html
 
 
 def test_graph_data_still_round_trips(tmp_path):

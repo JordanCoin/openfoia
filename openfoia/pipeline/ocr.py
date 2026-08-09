@@ -6,7 +6,7 @@ import asyncio
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 #: Hard cap on pages rasterized in one OCR run. A hostile "FOIA response"
 #: declaring tens of thousands of pages would otherwise exhaust memory/disk
@@ -147,7 +147,11 @@ class OCREngine:
 
         for i, image in enumerate(images):
             # Get detailed OCR data
-            def _ocr():
+            # `image` is bound as a default so the closure captures THIS
+            # iteration's page. It is awaited immediately today, so late
+            # binding does not bite — but parallelizing this loop later would
+            # otherwise silently OCR the last page N times.
+            def _ocr(image=image):
                 data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
                 text = pytesseract.image_to_string(image)
                 return data, text
@@ -311,7 +315,7 @@ class RedactionDetector:
     """Detect and analyze redactions in documents."""
 
     # Common FOIA exemption patterns
-    EXEMPTION_PATTERNS = {
+    EXEMPTION_PATTERNS: ClassVar[dict] = {
         r"\(b\)\(1\)": "National security",
         r"\(b\)\(2\)": "Internal personnel rules",
         r"\(b\)\(3\)": "Statutory exemption",

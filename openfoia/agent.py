@@ -12,9 +12,9 @@ Allows an AI agent to drive the entire FOIA workflow:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any
 
 from .models import Agency, Request, RequestStatus
@@ -319,10 +319,8 @@ class OpenFOIAAgent:
         if level and level != "all":
             from .models import AgencyLevel
 
-            try:
+            with contextlib.suppress(ValueError):
                 agencies = agencies.filter(Agency.level == AgencyLevel(level))
-            except ValueError:
-                pass
 
         results = agencies.limit(20).all()
         return {
@@ -401,8 +399,6 @@ Please contact me if you have questions about this request.
 
         user = self.db.query(User).first()
         if user and agency:
-            from datetime import datetime as dt
-
             req_num = f"REQ-{_utcnow().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
             new_req = Request(
                 id=request_id,
@@ -508,10 +504,8 @@ Please contact me if you have questions about this request.
 
         status_filter = params.get("status")
         if status_filter and status_filter != "all":
-            try:
+            with contextlib.suppress(ValueError):
                 query = query.filter(Request.status == RequestStatus(status_filter))
-            except ValueError:
-                pass
 
         agency_id = params.get("agency_id")
         if agency_id:
@@ -642,10 +636,8 @@ Please contact me if you have questions about this request.
         if entity_type and entity_type != "all":
             from .models import EntityType
 
-            try:
+            with contextlib.suppress(ValueError):
                 query = query.filter(Entity.entity_type == EntityType(entity_type))
-            except ValueError:
-                pass
 
         results = query.limit(50).all()
 

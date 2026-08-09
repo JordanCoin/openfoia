@@ -14,7 +14,7 @@ import asyncio
 import html
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from .base import DeliveryGateway, DeliveryPayload, DeliveryResult, DeliveryStatus
@@ -94,7 +94,8 @@ class LobMailGateway(DeliveryGateway):
         sends it via Lob's print-and-mail API, and returns tracking info.
         """
         try:
-            import lob  # noqa: F401 — triggers ImportError if not installed
+            # Availability probe: raises ImportError if the extra is missing.
+            import lob  # noqa: F401
 
             lob_client = self._get_lob()
 
@@ -142,7 +143,7 @@ class LobMailGateway(DeliveryGateway):
             return DeliveryResult(
                 status=DeliveryStatus.SENT,
                 reference_id=letter.id,
-                sent_at=datetime.now(timezone.utc),
+                sent_at=datetime.now(UTC),
                 cost_cents=self.estimate_cost(payload),
                 metadata={
                     "tracking_number": tracking_number,
@@ -274,7 +275,7 @@ class LobMailGateway(DeliveryGateway):
         pages = max(1, len(payload.body) // 3000 + 1)
 
         if payload.attachments:
-            for filename, content in payload.attachments:
+            for _filename, content in payload.attachments:
                 pages += max(1, len(content) // 3000 + 1)
 
         return pages
@@ -353,7 +354,7 @@ class LobMailGateway(DeliveryGateway):
         Lob renders HTML to PDF for printing. The template uses standard
         fonts and margins suitable for USPS mailing.
         """
-        date_str = datetime.now(timezone.utc).strftime("%B %d, %Y")
+        date_str = datetime.now(UTC).strftime("%B %d, %Y")
         sender_name = self.return_address.get("name", "[Requester Name]")
 
         # Build sender address block for letterhead

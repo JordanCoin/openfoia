@@ -14,6 +14,6 @@ from .ocr import OCREngine
 
 __all__ = [
     "DocumentIngester",
-    "OCREngine",
     "EntityExtractor",
+    "OCREngine",
 ]

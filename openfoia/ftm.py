@@ -66,7 +66,7 @@ _RELATION_TO_FTM: dict[str, dict[str, str]] = {
 def _try_ftm_available() -> bool:
     """Check if followthemoney library is installed."""
     try:
-        import followthemoney  # noqa: F401
+        import followthemoney  # noqa: F401 - availability probe for the optional extra
 
         return True
     except ImportError:

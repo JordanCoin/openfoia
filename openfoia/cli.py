@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import typer
 from rich import print as rprint
@@ -38,7 +39,7 @@ def init(
     duress: bool = typer.Option(
         False, "--duress", help="Also set up a decoy database (prompts for a passphrase)"
     ),
-    password: Optional[str] = typer.Option(
+    password: str | None = typer.Option(
         None,
         "--password",
         prompt=False,
@@ -46,7 +47,7 @@ def init(
         help="Encryption passphrase. Prefer --encrypt, which prompts: a passphrase "
         "passed here is recorded in shell history and visible in the process list.",
     ),
-    duress_password: Optional[str] = typer.Option(
+    duress_password: str | None = typer.Option(
         None,
         "--duress-password",
         prompt=False,
@@ -384,7 +385,7 @@ def guide():
 def serve(
     port: int = typer.Option(0, "--port", "-p", help="Port to run on (0 = random)"),
     host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host to bind to"),
-    browser: Optional[str] = typer.Option(
+    browser: str | None = typer.Option(
         None, "--browser", "-b", help="Browser to open (safari/firefox/chrome/brave/tor)"
     ),
     private: bool = typer.Option(
@@ -577,7 +578,7 @@ def encrypt(
         encrypt_database(password)
     except Exception as e:
         rprint(f"[bold red]Encryption failed:[/bold red] {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     rprint("[bold green]Database encrypted successfully.[/bold green]")
     rprint("[green]Plaintext database and its WAL/journal files were shredded in place.[/green]")
@@ -680,8 +681,8 @@ def config(
 def request_new(
     agency: str = typer.Option(..., "--agency", "-a", help="Target agency name or ID"),
     subject: str = typer.Option(..., "--subject", "-s", help="Request subject"),
-    body: Optional[str] = typer.Option(None, "--body", "-b", help="Request body (or use --file)"),
-    body_file: Optional[Path] = typer.Option(
+    body: str | None = typer.Option(None, "--body", "-b", help="Request body (or use --file)"),
+    body_file: Path | None = typer.Option(
         None, "--file", "-f", help="File containing request body"
     ),
     method: str = typer.Option("email", "--method", "-m", help="Delivery method (email/fax/mail)"),
@@ -783,8 +784,8 @@ def request_new(
 
 @request_app.command("list")
 def request_list(
-    status: Optional[str] = typer.Option(None, "--status", "-s", help="Filter by status"),
-    agency: Optional[str] = typer.Option(None, "--agency", "-a", help="Filter by agency"),
+    status: str | None = typer.Option(None, "--status", "-s", help="Filter by status"),
+    agency: str | None = typer.Option(None, "--agency", "-a", help="Filter by agency"),
     limit: int = typer.Option(20, "--limit", "-n", help="Maximum results"),
 ):
     """List FOIA requests."""
@@ -807,7 +808,7 @@ def request_list(
                 query = query.filter(RequestModel.status == status_enum)
             except ValueError:
                 rprint(f"[red]Invalid status '{status}'.[/red]")
-                raise typer.Exit(1)
+                raise typer.Exit(1) from None
 
         if agency:
             query = query.filter(
@@ -940,17 +941,17 @@ def request_status(
 def request_send(
     agency: str = typer.Option(..., "--agency", "-a", help="Target agency (name or abbreviation)"),
     subject: str = typer.Option(..., "--subject", "-s", help="Request subject"),
-    body: Optional[str] = typer.Option(None, "--body", "-b", help="Request body text"),
-    body_file: Optional[Path] = typer.Option(
+    body: str | None = typer.Option(None, "--body", "-b", help="Request body text"),
+    body_file: Path | None = typer.Option(
         None, "--file", "-f", help="File containing request body"
     ),
-    template: Optional[str] = typer.Option(
+    template: str | None = typer.Option(
         None, "--template", "-t", help="Use template (standard/self)"
     ),
     name: str = typer.Option(..., "--name", "-n", help="Your full name"),
     email: str = typer.Option(..., "--email", "-e", help="Your email address"),
     method: str = typer.Option("email", "--method", "-m", help="Delivery method (email/fax/mail)"),
-    to_address: Optional[str] = typer.Option(
+    to_address: str | None = typer.Option(
         None, "--to", help="Override recipient address (email, fax number, or mailing address)"
     ),
     dry_run: bool = typer.Option(
@@ -1105,10 +1106,8 @@ def request_send(
 
     config = {}
     if config_path.exists():
-        try:
+        with contextlib.suppress(json.JSONDecodeError):
             config = json.loads(config_path.read_text())
-        except json.JSONDecodeError:
-            pass
 
     # Build and send via the appropriate gateway
     if method == "email":
@@ -1266,9 +1265,7 @@ def request_send(
 @docs_app.command("ingest")
 def docs_ingest(
     path: Path = typer.Argument(..., help="File or directory to ingest"),
-    request_id: Optional[str] = typer.Option(
-        None, "--request", "-r", help="Associate with request"
-    ),
+    request_id: str | None = typer.Option(None, "--request", "-r", help="Associate with request"),
     recursive: bool = typer.Option(
         True, "--recursive/--no-recursive", help="Recurse into directories"
     ),
@@ -1464,7 +1461,7 @@ def docs_ocr(
     backend: str = typer.Option(
         "tesseract", "--backend", "-b", help="OCR backend (tesseract/google/aws)"
     ),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output text file"),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output text file"),
 ):
     """Run OCR on a PDF document.
 
@@ -1506,10 +1503,10 @@ def docs_ocr(
             rprint(f"[red]Missing dependency: {e}[/red]")
             rprint("[dim]Install with: pip install pytesseract pdf2image[/dim]")
             rprint("[dim]Also need: brew install tesseract poppler (macOS)[/dim]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
         except Exception as e:
             rprint(f"[red]OCR failed: {e}[/red]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
         progress.update(task, description="Detecting redactions...")
         redactions = asyncio.run(detector.analyze(result.text, file_path))
@@ -1552,12 +1549,10 @@ def docs_ocr(
 
 @agency_app.command("list")
 def agency_list(
-    level: Optional[str] = typer.Option(
+    level: str | None = typer.Option(
         None, "--level", "-l", help="Filter by level (federal/state/local)"
     ),
-    state: Optional[str] = typer.Option(
-        None, "--state", "-s", help="Filter by state (2-letter code)"
-    ),
+    state: str | None = typer.Option(None, "--state", "-s", help="Filter by state (2-letter code)"),
     limit: int = typer.Option(50, "--limit", "-n", help="Maximum results"),
 ):
     """List agencies in the database."""
@@ -1578,7 +1573,7 @@ def agency_list(
                 query = query.filter(Agency.level == level_enum)
             except ValueError:
                 rprint(f"[red]Invalid level '{level}'. Use: federal, state, local, tribal[/red]")
-                raise typer.Exit(1)
+                raise typer.Exit(1) from None
 
         if state:
             query = query.filter(Agency.state == state.upper())
@@ -1746,9 +1741,9 @@ def template_generate(
     name: str = typer.Option(..., "--name", "-n", help="Your full name"),
     email: str = typer.Option(..., "--email", "-e", help="Your email address"),
     address: str = typer.Option("", "--address", help="Your mailing address"),
-    organization: Optional[str] = typer.Option(None, "--org", help="Your organization"),
+    organization: str | None = typer.Option(None, "--org", help="Your organization"),
     journalist: bool = typer.Option(False, "--journalist", "-j", help="You are a journalist"),
-    output: Optional[Path] = typer.Option(
+    output: Path | None = typer.Option(
         None, "--output", "-o", help="Output file (default: stdout)"
     ),
     no_fee_waiver: bool = typer.Option(
@@ -2316,9 +2311,9 @@ def campaign_progress(
 @analyze_app.command("extract")
 def analyze_extract(
     document_id: str = typer.Argument(..., help="Document ID to analyze"),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file"),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output file"),
     force: bool = typer.Option(False, "--force", help="Re-extract even if already done"),
-    model: Optional[str] = typer.Option(
+    model: str | None = typer.Option(
         None, "--model", "-m", help="LLM model (e.g. llama3.1:8b, llama3.2:3b)"
     ),
     ensemble: bool = typer.Option(
@@ -2403,7 +2398,7 @@ def analyze_extract(
         except Exception as e:
             rprint(f"[red]Extraction failed: {e}[/red]")
             rprint("[dim]Ensure AI provider is configured: openfoia config --init[/dim]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
         if not result.entities:
             rprint("[yellow]No entities found in document.[/yellow]")
@@ -2549,9 +2544,7 @@ def analyze_graphs_list():
         size = f.stat().st_size
         size_str = f"{size / 1024:.0f}KB" if size > 1024 else f"{size}B"
         # Local time is intended: this is a file listing shown to the user.
-        modified = datetime.fromtimestamp(  # noqa: DTZ006
-            f.stat().st_mtime
-        ).strftime("%Y-%m-%d %H:%M")
+        modified = datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")  # noqa: DTZ006
 
         table.add_row(name, " + ".join(types), size_str, modified)
 
@@ -2562,13 +2555,11 @@ def analyze_graphs_list():
 
 @analyze_app.command("graph")
 def analyze_graph(
-    request_id: Optional[str] = typer.Option(
-        None, "--request", "-r", help="Analyze single request"
-    ),
-    campaign_id: Optional[str] = typer.Option(
+    request_id: str | None = typer.Option(None, "--request", "-r", help="Analyze single request"),
+    campaign_id: str | None = typer.Option(
         None, "--campaign", "-c", help="Analyze entire campaign"
     ),
-    name: Optional[str] = typer.Option(
+    name: str | None = typer.Option(
         None, "--name", "-n", help="Save as named graph (stored in ~/.openfoia/graphs/)"
     ),
     output: Path = typer.Option(
@@ -2743,10 +2734,7 @@ def _load_config_data() -> tuple[Path, dict]:
     from .db import get_data_dir
 
     config_path = get_data_dir() / "config.json"
-    if config_path.exists():
-        data = json.loads(config_path.read_text())
-    else:
-        data = {}
+    data = json.loads(config_path.read_text()) if config_path.exists() else {}
     return config_path, data
 
 
@@ -2799,7 +2787,7 @@ def entities_add(
         re.compile(pattern)
     except re.error as e:
         rprint(f"[red]Invalid regex pattern: {e}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     name = name.upper().replace(" ", "_")
 
@@ -3251,7 +3239,7 @@ def entities_export(
 @entities_app.command("test")
 def entities_test(
     text: str = typer.Option(None, "--text", "-t", help="Test text (or reads from stdin)"),
-    file: Optional[Path] = typer.Option(None, "--file", "-f", help="Test against a file"),
+    file: Path | None = typer.Option(None, "--file", "-f", help="Test against a file"),
 ):
     """Test your custom entity types against sample text.
 
@@ -3530,10 +3518,10 @@ def browse(
             )
         )
     except SystemExit:
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except Exception as e:
         rprint(f"[red]Browse failed:[/red] {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     rprint(f"\n[cyan]Title:[/cyan] {result.get('title', 'N/A')}")
     rprint(f"[cyan]URL:[/cyan]   {result.get('url', url)}")
@@ -3657,9 +3645,7 @@ def purge(
 def ingest_url(
     url: str = typer.Option(..., "--url", "-u", help="URL to fetch and ingest"),
     tor: bool = typer.Option(False, "--tor", help="Route through Tor SOCKS5 proxy"),
-    output: Optional[Path] = typer.Option(
-        None, "--output", "-o", help="Save extracted text to file"
-    ),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Save extracted text to file"),
 ):
     """Ingest a web page into the document pipeline.
 
@@ -3694,7 +3680,7 @@ def ingest_url(
             rprint(f"[red]Failed to fetch URL: {e}[/red]")
             if tor:
                 rprint("[dim]Make sure Tor is running: brew install tor && tor[/dim]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
     rprint("\n[bold green]Archived web page[/bold green]")
     rprint("=" * 50)
@@ -3735,10 +3721,10 @@ def records_search(
         "-s",
         help="Data source (muckrock, opencorporates, sec)",
     ),
-    jurisdiction: Optional[str] = typer.Option(
+    jurisdiction: str | None = typer.Option(
         None, "--jurisdiction", "-j", help="Jurisdiction filter (e.g. us_ca, gb)"
     ),
-    filing_type: Optional[str] = typer.Option(
+    filing_type: str | None = typer.Option(
         None, "--type", "-t", help="Filing type filter for SEC (e.g. 10-K, 8-K)"
     ),
     limit: int = typer.Option(10, "--limit", "-n", help="Maximum results to display"),
@@ -3789,7 +3775,7 @@ def records_search(
             result = asyncio.run(adapter.search(query, **kwargs))
         except Exception as e:
             rprint(f"[red]Search failed: {e}[/red]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
     if raw:
         rprint(
@@ -4035,7 +4021,7 @@ def records_fetch(
                 result_id, text = asyncio.run(adapter.pull_text(doc_id))
             except Exception as e:
                 rprint(f"[red]Fetch failed: {e}[/red]")
-                raise typer.Exit(1)
+                raise typer.Exit(1) from None
 
         if not result_id or not text:
             rprint(f"[red]Could not fetch text for document {doc_id}.[/red]")
@@ -4091,7 +4077,7 @@ def records_download(
             entity = asyncio.run(adapter.fetch(request_id))
         except Exception as e:
             rprint(f"[red]Failed to fetch request: {e}[/red]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
     if not entity:
         rprint(f"[red]Request {request_id} not found on MuckRock.[/red]")
@@ -4124,7 +4110,7 @@ def records_download(
             downloaded = asyncio.run(adapter.download_files(request_id, str(output)))
         except Exception as e:
             rprint(f"[red]Download failed: {e}[/red]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
     rprint(f"\n[green]{len(downloaded)} file(s) downloaded to {output}/[/green]")
 
@@ -4216,22 +4202,22 @@ def records_download(
 
 @app.command()
 def crossref(
-    request_id: Optional[str] = typer.Option(
+    request_id: str | None = typer.Option(
         None, "--request", "-r", help="Cross-ref entities from a specific request"
     ),
-    document_id: Optional[str] = typer.Option(
+    document_id: str | None = typer.Option(
         None, "--document", "-d", help="Cross-ref entities from a specific document"
     ),
-    sources: Optional[str] = typer.Option(
+    sources: str | None = typer.Option(
         None,
         "--sources",
         help="Comma-separated sources (muckrock,opencorporates,sec,opensanctions,documentcloud)",
     ),
-    icij_data: Optional[Path] = typer.Option(
+    icij_data: Path | None = typer.Option(
         None, "--icij-data", help="Path to downloaded ICIJ CSV data"
     ),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Save report to file"),
-    ftm: Optional[Path] = typer.Option(
+    output: Path | None = typer.Option(None, "--output", "-o", help="Save report to file"),
+    ftm: Path | None = typer.Option(
         None, "--ftm", help="Export results as FollowTheMoney JSON-lines"
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip the network confirmation prompt"),
@@ -4341,9 +4327,7 @@ def crossref(
     rprint("[bold]Cross-referencing entities...[/bold]")
 
     def _progress(event: str, msg: str) -> None:
-        if event == "start":
-            rprint(f"[dim]  {msg}[/dim]")
-        elif event == "entity":
+        if event == "start" or event == "entity":
             rprint(f"[dim]  {msg}[/dim]")
 
     report = asyncio.run(
@@ -4435,7 +4419,7 @@ def crossref(
 @analyze_app.command("export")
 def analyze_export(
     output: Path = typer.Option("entities.ftm.json", "--output", "-o", help="Output file path"),
-    request_id: Optional[str] = typer.Option(
+    request_id: str | None = typer.Option(
         None, "--request", "-r", help="Export from specific request"
     ),
 ):
@@ -4508,7 +4492,7 @@ def analyze_export(
 @analyze_app.command("import")
 def analyze_import(
     file: Path = typer.Argument(..., help="FtM JSON-lines file to import"),
-    tag: Optional[str] = typer.Option(None, "--tag", "-t", help="Tag for this import batch"),
+    tag: str | None = typer.Option(None, "--tag", "-t", help="Tag for this import batch"),
 ):
     """Import entities from a FollowTheMoney JSON-lines file.
 

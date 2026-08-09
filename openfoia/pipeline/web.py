@@ -6,10 +6,11 @@ and archives locally for the document pipeline.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
@@ -119,10 +120,9 @@ class _ContentExtractor(HTMLParser):
             self._in_article += 1
         elif tag == "main":
             self._in_main += 1
-        elif tag == "div":
-            if self._current_div_text is None:
-                self._current_div_text = []
-                self._div_depth = len(self._tag_stack)
+        elif tag == "div" and self._current_div_text is None:
+            self._current_div_text = []
+            self._div_depth = len(self._tag_stack)
 
     def handle_endtag(self, tag: str) -> None:
         tag = tag.lower()
@@ -140,10 +140,13 @@ class _ContentExtractor(HTMLParser):
             self._in_article -= 1
         elif tag == "main" and self._in_main > 0:
             self._in_main -= 1
-        elif tag == "div" and self._current_div_text is not None:
-            if len(self._tag_stack) <= self._div_depth:
-                self._div_blocks.append(self._current_div_text)
-                self._current_div_text = None
+        elif (
+            tag == "div"
+            and self._current_div_text is not None
+            and len(self._tag_stack) <= self._div_depth
+        ):
+            self._div_blocks.append(self._current_div_text)
+            self._current_div_text = None
 
         if self._tag_stack and self._tag_stack[-1] == tag:
             self._tag_stack.pop()
@@ -252,10 +255,9 @@ def _extract_content(html: str) -> tuple[str, str]:
     Returns (text_content, page_title).
     """
     extractor = _ContentExtractor()
-    try:
+    # Best-effort parsing: malformed markup must not abort the archive.
+    with contextlib.suppress(Exception):
         extractor.feed(html)
-    except Exception:
-        pass  # Best-effort parsing
     return extractor.get_content(), extractor.title.strip()
 
 
@@ -292,7 +294,7 @@ async def fetch_url(url: str, use_tor: bool = False) -> WebFetchResult:
     # Extract main content
     text, title = _extract_content(cleaned_html)
 
-    fetched_at = datetime.now(timezone.utc).isoformat()
+    fetched_at = datetime.now(UTC).isoformat()
 
     return WebFetchResult(
         url=url,

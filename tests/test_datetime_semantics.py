@@ -14,7 +14,7 @@ deliberate migration.
 from __future__ import annotations
 
 import warnings
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 
 def test_utcnow_helper_returns_naive_datetime():
@@ -29,7 +29,7 @@ def test_utcnow_helper_returns_naive_datetime():
 def test_utcnow_helper_is_actually_utc():
     from openfoia.models import utcnow
 
-    delta = abs((utcnow() - datetime.now(timezone.utc).replace(tzinfo=None)).total_seconds())
+    delta = abs((utcnow() - datetime.now(UTC).replace(tzinfo=None)).total_seconds())
 
     assert delta < 5, "helper is not UTC-based"
 

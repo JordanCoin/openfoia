@@ -6,15 +6,16 @@ Tests verify that each backend finds them.
 """
 
 import asyncio
+
 import pytest
+
 from openfoia.pipeline.extract import (
     EntityExtractor,
     ExtractionResult,
     _gliner_available,
-    _spacy_available,
     _llm_available,
+    _spacy_available,
 )
-
 
 # ---------------------------------------------------------------------------
 # Test documents with ground truth

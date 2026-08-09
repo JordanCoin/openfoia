@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 
 
 @dataclass
@@ -20,13 +19,13 @@ class RequesterInfo:
     """Information about the person filing the request."""
 
     name: str
-    organization: Optional[str] = None
+    organization: str | None = None
     address: str = ""
     email: str = ""
     phone: str = ""
     is_journalist: bool = False
     is_educational: bool = False
-    publication: Optional[str] = None
+    publication: str | None = None
 
 
 @dataclass
@@ -35,10 +34,10 @@ class RequestDetails:
 
     subject: str
     description: str
-    date_range_start: Optional[datetime] = None
-    date_range_end: Optional[datetime] = None
+    date_range_start: datetime | None = None
+    date_range_end: datetime | None = None
     keywords: list[str] = None
-    exclusions: Optional[str] = None
+    exclusions: str | None = None
 
 
 # === Base Request Template ===

@@ -15,7 +15,7 @@ from .mail import LobMailGateway
 __all__ = [
     "DeliveryGateway",
     "DeliveryResult",
-    "TwilioFaxGateway",
-    "LobMailGateway",
     "EmailGateway",
+    "LobMailGateway",
+    "TwilioFaxGateway",
 ]

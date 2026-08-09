@@ -16,7 +16,7 @@ import asyncio
 import io
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -138,7 +138,7 @@ class TwilioFaxGateway(DeliveryGateway):
             return DeliveryResult(
                 status=DeliveryStatus.PENDING,
                 reference_id=fax.sid,
-                sent_at=datetime.now(timezone.utc),
+                sent_at=datetime.now(UTC),
                 cost_cents=pages * self.COST_PER_PAGE_CENTS,
                 metadata={
                     "to": payload.recipient_address,
@@ -311,9 +311,7 @@ class TwilioFaxGateway(DeliveryGateway):
             story.append(Paragraph(f"<b>TO:</b> {_esc(payload.recipient_name)}", body_style))
             story.append(Paragraph(f"<b>FAX:</b> {_esc(payload.recipient_address)}", body_style))
             story.append(
-                Paragraph(
-                    f"<b>DATE:</b> {datetime.now(timezone.utc).strftime('%B %d, %Y')}", body_style
-                )
+                Paragraph(f"<b>DATE:</b> {datetime.now(UTC).strftime('%B %d, %Y')}", body_style)
             )
             story.append(
                 Paragraph(f"<b>RE:</b> FOIA Request - {_esc(payload.subject)}", body_style)
@@ -392,7 +390,7 @@ class TwilioFaxGateway(DeliveryGateway):
 
         This is a fallback that creates a bare-bones but valid PDF.
         """
-        date_str = datetime.now(timezone.utc).strftime("%B %d, %Y")
+        date_str = datetime.now(UTC).strftime("%B %d, %Y")
         sender = (payload.return_address or "[Requester Name]").split("\n")[0]
 
         text_lines = [

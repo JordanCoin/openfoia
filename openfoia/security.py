@@ -13,6 +13,7 @@ protection on modern SSDs.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 import tempfile
@@ -77,16 +78,13 @@ def secure_delete_dir(path: Path | str) -> int:
                 secure_delete(item)
             count += 1
         elif item.is_dir():
-            try:
+            # Non-empty dir — will retry after its children are removed.
+            with contextlib.suppress(OSError):
                 item.rmdir()
-            except OSError:
-                pass  # non-empty dir — will retry after children removed
 
     # Remove the root directory itself
-    try:
+    with contextlib.suppress(OSError):
         path.rmdir()
-    except OSError:
-        pass
 
     return count
 
@@ -172,16 +170,12 @@ def fill_free_space(path: Path | str, chunk_size_mb: int = 100) -> None:
 
     # Clean up fill files
     for fp in fill_files:
-        try:
+        with contextlib.suppress(OSError):
             fp.unlink()
-        except OSError:
-            pass
 
     # Try to remove the directory if we created it
-    try:
+    with contextlib.suppress(OSError):
         path.rmdir()
-    except OSError:
-        pass
 
 
 # ---------------------------------------------------------------------------
@@ -400,7 +394,7 @@ def seed_decoy_db(db_path: Path, password: str | None = None) -> None:
     If password is provided, the decoy is encrypted with SQLCipher.
     """
     import random
-    from datetime import datetime, timedelta
+    from datetime import timedelta
     from uuid import uuid4
 
     from sqlalchemy import create_engine

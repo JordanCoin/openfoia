@@ -210,7 +210,7 @@ def _is_protected_acronym(raw: str) -> bool:
     return s in _KEEP_ACRONYMS or (s.isupper() and 2 <= len(s) <= 6 and s.isalpha())
 
 
-def _mention_score(m: "Mention") -> float:
+def _mention_score(m: Mention) -> float:
     """Score a mention for quality. 0.0 = definitely junk, should be dropped."""
     s = _surface_clean(m.normalized_text)
     k = s.lower().rstrip(".")
@@ -271,7 +271,7 @@ def _ocr_fold(text: str) -> str:
     return re.sub(r"[^a-z0-9 ]+", "", t)
 
 
-def _core_tokens(text: str, etype: "EntityType") -> list[str]:
+def _core_tokens(text: str, etype: EntityType) -> list[str]:
     """Extract meaningful tokens, stripping org suffixes."""
     toks = re.findall(r"[a-z0-9]+", _ocr_fold(text))
     if etype == EntityType.ORGANIZATION:
@@ -414,7 +414,7 @@ def _get_gliner():
 def _gliner_available() -> bool:
     """Check if GLiNER is installed."""
     try:
-        import gliner  # noqa: F401
+        import gliner  # noqa: F401 - availability probe for the optional extra
 
         return True
     except ImportError:
@@ -1835,10 +1835,11 @@ Return JSON: {{"keep": [{{"raw_text": "...", "confidence": 0.95, "corrected": ".
                 a, b = c1.canonical_text, c2.canonical_text
 
                 # Substring match
-                if a.lower() in b.lower() or b.lower() in a.lower():
-                    should_merge = True
-                # OCR-fold similarity
-                elif SequenceMatcher(None, _ocr_fold(a), _ocr_fold(b)).ratio() >= 0.90:
+                if (
+                    a.lower() in b.lower()
+                    or b.lower() in a.lower()
+                    or SequenceMatcher(None, _ocr_fold(a), _ocr_fold(b)).ratio() >= 0.90
+                ):
                     should_merge = True
                 # Token Jaccard for orgs
                 elif c1.entity_type == EntityType.ORGANIZATION:
@@ -2020,10 +2021,11 @@ class EntityLinker:
                 return can_id
 
             can_norm = canonical["normalized"].lower()
-            if normalized in can_norm or can_norm in normalized:
-                if len(normalized) > 3 and len(can_norm) > 3:
-                    canonical["aliases"].add(entity.raw_text)
-                    return can_id
+            if (normalized in can_norm or can_norm in normalized) and (
+                len(normalized) > 3 and len(can_norm) > 3
+            ):
+                canonical["aliases"].add(entity.raw_text)
+                return can_id
 
         import uuid
 

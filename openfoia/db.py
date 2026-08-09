@@ -12,9 +12,10 @@ import shutil
 import sqlite3
 import stat
 import tempfile
-from contextlib import contextmanager
+from collections.abc import Generator
+from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
@@ -335,10 +336,8 @@ def _restrict_db_permissions(db_path: Path) -> None:
         return
     for candidate in (db_path, *(Path(str(db_path) + s) for s in _DB_SIDECAR_SUFFIXES)):
         if candidate.is_file():
-            try:
+            with suppress(OSError):
                 os.chmod(candidate, 0o600)
-            except OSError:
-                pass
 
 
 def encrypt_database(password: str) -> None:

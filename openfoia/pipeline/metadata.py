@@ -252,9 +252,7 @@ def _strip_docx_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
     # Clear sensitive properties
     for attr in _DOCX_SENSITIVE_ATTRS:
         try:
-            if attr in ("created", "modified"):
-                setattr(core, attr, None)
-            elif attr == "revision":
+            if attr in ("created", "modified") or attr == "revision":
                 setattr(core, attr, None)
             else:
                 setattr(core, attr, "")

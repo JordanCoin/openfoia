@@ -6,8 +6,8 @@ Your data never leaves your machine.
 
 from __future__ import annotations
 
+import contextlib
 import secrets
-from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -242,7 +242,7 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
                     raise HTTPException(
                         status_code=400,
                         detail=f"Invalid status '{status}'. Valid: {', '.join(s.value for s in RequestStatus)}",
-                    )
+                    ) from None
 
             requests = query.order_by(FOIARequest.created_at.desc()).limit(limit).all()
 
@@ -432,7 +432,7 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
             raise HTTPException(
                 status_code=413,
                 detail=f"File exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MiB upload limit.",
-            )
+            ) from None
         except Exception:
             dest.unlink(missing_ok=True)
             raise
@@ -445,10 +445,8 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
 
         ingester = DocumentIngester(storage_path=docs_dir)
         extracted_text = None
-        try:
+        with contextlib.suppress(Exception):
             extracted_text = await ingester._extract_text(dest, mime)
-        except Exception:
-            pass
 
         from .db import get_session
         from .models import Document, DocumentType
