@@ -6,6 +6,7 @@ Supports optional AES-256 encryption at rest via SQLCipher.
 
 from __future__ import annotations
 
+import importlib
 import os
 import shutil
 import sqlite3
@@ -13,7 +14,7 @@ import stat
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Generator
+from typing import Any, Generator
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
@@ -21,19 +22,50 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from .models import Agency, AgencyLevel, DeliveryMethod
 
-# Check for SQLCipher availability
-_HAS_SQLCIPHER = False
-try:
-    import pysqlcipher3.dbapi2 as sqlcipher  # noqa: F401
+# Check for SQLCipher availability.
+#
+# Two drivers expose the same DB-API surface:
+#   * pysqlcipher3  — the original, unmaintained since 2021, source-only, and
+#                     no longer pip-installable on modern Python.
+#   * sqlcipher3    — the maintained fork; `sqlcipher3-binary` ships wheels.
+# Accept either, preferring whichever is already installed, so the encryption
+# feature is actually reachable for users (and testable in CI).
+sqlcipher: Any = None
+_SQLCIPHER_DRIVER_NAME: str | None = None
 
-    _HAS_SQLCIPHER = True
-except ImportError:
-    pass
+for _candidate in ("pysqlcipher3.dbapi2", "sqlcipher3.dbapi2"):
+    try:
+        sqlcipher = importlib.import_module(_candidate)
+        _SQLCIPHER_DRIVER_NAME = _candidate.split(".")[0]
+        break
+    except ImportError:
+        continue
+
+_HAS_SQLCIPHER = sqlcipher is not None
 
 
 def has_sqlcipher() -> bool:
-    """Return True if pysqlcipher3 is installed and usable."""
+    """Return True if a SQLCipher driver is installed and usable."""
     return _HAS_SQLCIPHER
+
+
+def get_sqlcipher_driver() -> Any:
+    """Return the imported SQLCipher DB-API module.
+
+    Raises RuntimeError when no driver is installed, rather than returning
+    None and failing later with an opaque AttributeError.
+    """
+    if sqlcipher is None:
+        raise RuntimeError(
+            "No SQLCipher driver installed. Install encryption support: "
+            "openfoia install-extras encryption"
+        )
+    return sqlcipher
+
+
+def sqlcipher_driver_name() -> str | None:
+    """Name of the active SQLCipher driver, or None."""
+    return _SQLCIPHER_DRIVER_NAME
 
 
 def get_db_password() -> str | None:

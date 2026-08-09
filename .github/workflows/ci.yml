@@ -38,3 +38,44 @@ jobs:
 
       - name: Tests
         run: python -m pytest tests/ -v -k "not gliner and not spacy and not LLM and not benchmark"
+
+  # The at-rest encryption and duress features are the highest-stakes code in
+  # the project, and their tests skip when no SQLCipher driver is present.
+  # This job installs one so those paths are actually exercised on every push
+  # rather than depending on someone testing by hand.
+  integration:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies (with encryption)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,encryption]"
+
+      - name: Verify a SQLCipher driver is actually present
+        # Fail loudly rather than letting the crypto tests silently skip,
+        # which would look green while testing nothing.
+        run: |
+          python - <<'PY'
+          import sys
+          from openfoia.db import has_sqlcipher, sqlcipher_driver_name
+          if not has_sqlcipher():
+              sys.exit("No SQLCipher driver installed - crypto tests would silently skip.")
+          print(f"SQLCipher driver: {sqlcipher_driver_name()}")
+          PY
+
+      - name: Encryption / duress integration tests
+        run: python -m pytest tests/test_crypto_integration.py -v
+
+      - name: Full suite with encryption enabled
+        run: python -m pytest tests/ -v -k "not gliner and not spacy and not LLM and not benchmark"
