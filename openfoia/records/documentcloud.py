@@ -21,7 +21,7 @@ from typing import Any
 
 import httpx
 
-from .base import RecordAdapter, RecordEntity, SearchResult
+from .base import RecordAdapter, RecordEntity, SearchResult, validate_download_url
 
 logger = logging.getLogger(__name__)
 
@@ -213,6 +213,9 @@ class DocumentCloudAdapter(RecordAdapter):
                 if text_url:
                     txt_url = f"{text_url}documents/{doc_id}/{slug}.txt"
                     try:
+                        # asset_url comes from the API response, so it is
+                        # attacker-influenced if the upstream is compromised.
+                        validate_download_url(txt_url)
                         txt_resp = await client.get(txt_url, timeout=15)
                         if txt_resp.status_code == 200:
                             full_text = txt_resp.text

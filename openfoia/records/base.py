@@ -2,9 +2,88 @@
 
 from __future__ import annotations
 
+import ipaddress
+import posixpath
+import re
+import socket
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import unquote, urlparse
+
+
+def validate_download_url(url: str) -> str:
+    """Return *url* if it is safe to fetch, else raise ValueError.
+
+    File URLs in third-party API responses (MuckRock ``ffile``,
+    DocumentCloud ``asset_url``) are attacker-influenced: a compromised or
+    MITM'd upstream can point them at ``file:///etc/passwd`` or cloud
+    metadata endpoints, and the body is written straight to disk.
+    """
+    parsed = urlparse(url)
+
+    if parsed.scheme != "https":
+        raise ValueError(f"Refusing to download over {parsed.scheme or 'missing'} scheme: {url!r}")
+
+    host = parsed.hostname
+    if not host:
+        raise ValueError(f"Refusing to download from a URL with no host: {url!r}")
+
+    # Block obvious internal targets without doing a network lookup.
+    if host in ("localhost", "localhost.localdomain") or host.endswith(".localhost"):
+        raise ValueError(f"Refusing to download from a loopback host: {url!r}")
+
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        ip = None
+    if ip is not None and (
+        ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast
+    ):
+        raise ValueError(f"Refusing to download from a non-public address: {url!r}")
+
+    return url
+
+
+def resolves_to_public_address(host: str) -> bool:
+    """Best-effort DNS check that *host* is not an internal address.
+
+    Separate from :func:`validate_download_url` so callers can opt in; DNS
+    resolution is itself a network call.
+    """
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError:
+        return False
+
+    for info in infos:
+        addr = info[4][0]
+        try:
+            ip = ipaddress.ip_address(addr)
+        except ValueError:
+            return False
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            return False
+    return True
+
+
+def safe_download_filename(url: str, default: str = "download") -> str:
+    """Derive a safe basename from *url*.
+
+    ``url.split("/")[-1]`` accepted percent-encoded traversal, empty names and
+    dotfiles straight into the output directory.
+    """
+    path = unquote(urlparse(url).path or "")
+    name = posixpath.basename(posixpath.normpath(path))
+
+    # normpath can still yield traversal markers for pathological input.
+    name = name.replace("\\", "/").split("/")[-1]
+    name = name.strip().lstrip(".")
+    name = re.sub(r"[^A-Za-z0-9._-]", "_", name)
+
+    if not name or name in (".", ".."):
+        return default
+    return name[:255]
 
 
 @dataclass

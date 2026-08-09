@@ -14,6 +14,8 @@ from uuid import uuid4
 from fastapi import FastAPI, Request, HTTPException, Depends, Query, UploadFile, File
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel
 from sqlalchemy import func
 
@@ -25,6 +27,13 @@ class CreateRequestBody(BaseModel):
     method: str = "email"
     fee_waiver: bool = True
     expedited: bool = False
+
+
+def _default_data_dir() -> Path:
+    """Resolve the data dir the same way the rest of the toolkit does."""
+    from .db import get_data_dir
+
+    return get_data_dir()
 
 
 def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
@@ -40,8 +49,21 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
 
     # Store token and data directory in app state
     app.state.auth_token = token
-    app.state.data_dir = data_dir or Path.home() / ".openfoia"
-    app.state.data_dir.mkdir(parents=True, exist_ok=True)
+    from .db import _ensure_private_dir
+
+    app.state.data_dir = _ensure_private_dir(Path(data_dir) if data_dir else _default_data_dir())
+
+    # Serve the vendored stylesheet from disk — no CDN, works air-gapped.
+    static_dir = Path(__file__).parent / "static"
+    if static_dir.is_dir():
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+    # Reject requests that did not arrive addressed to loopback (DNS rebinding).
+    # Starlette compares the Host header with the port stripped.
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=["127.0.0.1", "localhost", "::1", "[::1]"],
+    )
 
     # CORS - only allow localhost
     app.add_middleware(
@@ -53,6 +75,32 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        """Structurally forbid the page from talking to anything off-machine.
+
+        Defence in depth behind the escaping fixes: even if untrusted document
+        text did reach the DOM as markup, `connect-src 'self'` blocks the
+        exfiltration step, and `default-src 'self'` blocks remote subresources.
+        """
+        response = await call_next(request)
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; "
+            "connect-src 'self'; "
+            "form-action 'self'; "
+            "frame-ancestors 'none'; "
+            "base-uri 'none'"
+        )
+        # Keep the ?token= out of outbound Referer headers and shared caches.
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        return response
+
     # Token verification dependency
     async def verify_token(
         request: Request,
@@ -60,7 +108,8 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
     ):
         # Check query param first, then cookie
         auth_token = token or request.cookies.get("openfoia_token")
-        if auth_token != app.state.auth_token:
+        # Constant-time: a plain != leaks the token prefix through timing.
+        if not secrets.compare_digest(auth_token or "", app.state.auth_token):
             raise HTTPException(status_code=401, detail="Invalid or missing token")
         return auth_token
 
@@ -544,10 +593,10 @@ def get_index_html() -> str:
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OpenFOIA</title>
-    <!-- NOTE: Tailwind CSS loaded from CDN for styling convenience.
-         For air-gapped/high-security deployments, pre-build Tailwind CSS
-         and serve from disk. See docs/AIRGAP.md -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Styles are served from disk (openfoia/static/app.css). Nothing is
+         loaded from a CDN: an external subresource would tell the CDN and any
+         on-path observer when this machine is running an investigation. -->
+    <link rel="stylesheet" href="/static/app.css">
     <style>
         .gradient-bg {
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);

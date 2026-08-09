@@ -542,12 +542,13 @@ def encrypt(
         rprint(f"[bold red]Encryption failed:[/bold red] {e}")
         raise typer.Exit(1)
 
-    rprint(f"[green]Backup saved:[/green] {db_path.with_suffix('.db.bak')}")
     rprint("[bold green]Database encrypted successfully.[/bold green]")
+    rprint("[green]Plaintext database and its WAL/journal files were shredded in place.[/green]")
     rprint("")
     rprint("[dim]Set OPENFOIA_DB_PASSWORD env var or pass --password to commands.[/dim]")
     rprint(
-        "[dim]You can safely delete the .bak file after verifying the encrypted DB works.[/dim]\n"
+        "[dim]No plaintext backup was kept. On SSDs, overwriting is best-effort — "
+        "use full-disk encryption. See docs/THREAT_MODEL.md.[/dim]\n"
     )
 
 
@@ -4152,6 +4153,7 @@ def crossref(
     ftm: Optional[Path] = typer.Option(
         None, "--ftm", help="Export results as FollowTheMoney JSON-lines"
     ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the network confirmation prompt"),
 ):
     """Cross-reference extracted entities against external databases.
 
@@ -4242,8 +4244,17 @@ def crossref(
             "\n[yellow]WARNING: Cross-reference will send entity names to external APIs:[/yellow]"
         )
         rprint(f"[yellow]  {', '.join(network_sources)}[/yellow]")
+        rprint(
+            "[yellow]  The names of the people and organizations you are "
+            "investigating will leave this machine.[/yellow]"
+        )
         rprint("[dim]  Use --sources icij for offline-only (requires downloaded ICIJ CSVs)[/dim]")
         rprint("")
+
+        # A warning you cannot answer is not consent. Confirm before leaking.
+        if not yes and not typer.confirm("Send these names to the sources listed above?"):
+            rprint("[green]Aborted. Nothing left your machine.[/green]")
+            raise typer.Exit(0)
 
     rprint("[bold]Cross-referencing entities...[/bold]")
 
@@ -4259,6 +4270,7 @@ def crossref(
             sources=source_list,
             icij_data_dir=str(icij_data) if icij_data else None,
             on_progress=_progress,
+            allow_network=True,  # user was warned and confirmed above
         )
     )
 

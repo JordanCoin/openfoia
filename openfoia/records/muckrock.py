@@ -15,7 +15,16 @@ from typing import Any
 
 import httpx
 
-from .base import RecordAdapter, RecordEntity, SearchResult
+from .base import (
+    RecordAdapter,
+    RecordEntity,
+    SearchResult,
+    safe_download_filename,
+    validate_download_url,
+)
+
+#: Cap on a single downloaded response file (100 MiB), matching ingest.
+MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024
 
 logger = logging.getLogger(__name__)
 
@@ -358,18 +367,25 @@ class MuckRockAdapter(RecordAdapter):
         if not files:
             return []
 
-        async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+        # follow_redirects is off: a redirect is a second, unvalidated URL and
+        # would bypass the scheme/host checks below.
+        async with httpx.AsyncClient(timeout=60, follow_redirects=False) as client:
             for f in files:
                 url = f.get("url")
                 if not url:
                     continue
 
                 try:
+                    validate_download_url(url)
                     resp = await client.get(url)
                     resp.raise_for_status()
 
-                    # Extract filename from URL
-                    filename = url.split("/")[-1]
+                    if len(resp.content) > MAX_DOWNLOAD_BYTES:
+                        raise ValueError(
+                            f"Refusing file over {MAX_DOWNLOAD_BYTES} bytes: {len(resp.content)}"
+                        )
+
+                    filename = safe_download_filename(url)
                     dest = output_path / filename
 
                     dest.write_bytes(resp.content)

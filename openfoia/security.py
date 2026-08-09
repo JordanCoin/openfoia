@@ -14,6 +14,7 @@ protection on modern SSDs.
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -221,6 +222,13 @@ def print_ssd_warning() -> None:
 _PROFILE_SLOTS = ["profile_0.db", "profile_1.db"]
 
 
+def _has_sqlcipher() -> bool:
+    """Return True if SQLCipher support is importable."""
+    from .db import has_sqlcipher
+
+    return has_sqlcipher()
+
+
 def get_profile_paths() -> list[Path]:
     """Return paths for both profile slots."""
     from .db import get_data_dir
@@ -229,13 +237,42 @@ def get_profile_paths() -> list[Path]:
     return [data_dir / name for name in _PROFILE_SLOTS]
 
 
+def real_profile_path() -> Path:
+    """Path of the slot holding the real database."""
+    return get_profile_paths()[0]
+
+
+def duress_mode_active() -> bool:
+    """True once the real database has been migrated into a profile slot."""
+    return real_profile_path().exists()
+
+
 def setup_duress_mode(duress_password: str) -> Path:
     """Create and seed a decoy profile encrypted with the duress password.
 
     Returns the path to the decoy database. No password hash is stored
     anywhere — the password is verified by attempting to open the DB.
+
+    The real database is moved into slot 0 at the same time. Leaving it as
+    ``data.db`` next to a file named ``profile_1.db`` would tell any examiner
+    both that duress mode is configured and which file is the decoy — the
+    opposite of the "opaque filenames" the design promises.
     """
     from .db import get_data_dir
+
+    if not _has_sqlcipher():
+        # A plaintext decoy contradicts the guarantee. Fail closed.
+        raise RuntimeError(
+            "Duress mode requires database encryption, but pysqlcipher3 is not "
+            "installed. A plaintext decoy would provide no protection. "
+            "Install encryption support: openfoia install-extras encryption"
+        )
+
+    # Migrate the real database into slot 0 so both slots look alike.
+    legacy_path = get_data_dir() / "data.db"
+    real_path = real_profile_path()
+    if legacy_path.exists() and not real_path.exists():
+        shutil.move(str(legacy_path), str(real_path))
 
     # Use the second slot for the decoy
     decoy_path = get_data_dir() / _PROFILE_SLOTS[1]

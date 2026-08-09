@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import shutil
 import sqlite3
+import stat
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -53,6 +54,27 @@ def get_db_password() -> str | None:
     return cfg.encryption.password
 
 
+#: Sidecar files SQLite writes next to the database. They hold recent writes
+#: in plaintext, so they must be shredded whenever the main file is.
+_DB_SIDECAR_SUFFIXES = ("-wal", "-shm", "-journal")
+
+
+def secure_delete_plaintext_db(db_path: Path) -> None:
+    """Shred a plaintext database *in place*, along with its sidecar files.
+
+    Overwriting the file's own blocks matters: renaming it away and deleting a
+    copy (the previous behaviour) frees the original blocks without ever
+    touching them, leaving the whole pre-encryption database recoverable by
+    file carving. Best-effort on SSDs — see docs/THREAT_MODEL.md.
+    """
+    from .security import secure_delete
+
+    db_path = Path(db_path)
+    for candidate in (db_path, *(Path(str(db_path) + s) for s in _DB_SIDECAR_SUFFIXES)):
+        if candidate.is_file():
+            secure_delete(candidate)
+
+
 def sqlcipher_key_literal(password: str) -> str:
     """Return *password* as a safely-quoted SQL string literal.
 
@@ -72,6 +94,27 @@ def sqlcipher_key_pragma(password: str) -> str:
     return f"PRAGMA key = {sqlcipher_key_literal(password)}"
 
 
+def _ensure_private_dir(path: Path) -> Path:
+    """Create *path* if needed and make it owner-only (0700).
+
+    The data directory holds the investigation database, ingested documents
+    and config.json (which can carry SMTP/Twilio/Lob credentials). On a shared
+    machine the default 0755 let any other local account read all of it.
+    Directories created before this fix are tightened on next use.
+    """
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if os.name != "nt":
+        try:
+            current = stat.S_IMODE(path.stat().st_mode)
+            if current & 0o077:
+                os.chmod(path, 0o700)
+        except OSError:
+            # Read-only media or a filesystem without POSIX modes — the caller
+            # still gets a usable directory; permissions just cannot be fixed.
+            pass
+    return path
+
+
 def get_data_dir() -> Path:
     """Get the OpenFOIA data directory, creating if needed.
 
@@ -89,8 +132,7 @@ def get_data_dir() -> Path:
     env_dir = os.environ.get("OPENFOIA_DATA_DIR")
     if env_dir:
         data_dir = Path(env_dir)
-        data_dir.mkdir(parents=True, exist_ok=True)
-        return data_dir
+        return _ensure_private_dir(data_dir)
 
     # 2. Portable mode — check for marker file
     # Check next to this package
@@ -98,20 +140,17 @@ def get_data_dir() -> Path:
     portable_marker = package_dir / ".openfoia-portable"
     if portable_marker.exists():
         data_dir = package_dir / "openfoia-data"
-        data_dir.mkdir(parents=True, exist_ok=True)
-        return data_dir
+        return _ensure_private_dir(data_dir)
 
     # Also check current working directory
     cwd_marker = Path.cwd() / ".openfoia-portable"
     if cwd_marker.exists():
         data_dir = Path.cwd() / "openfoia-data"
-        data_dir.mkdir(parents=True, exist_ok=True)
-        return data_dir
+        return _ensure_private_dir(data_dir)
 
     # 3. Default
     data_dir = Path.home() / ".openfoia"
-    data_dir.mkdir(parents=True, exist_ok=True)
-    return data_dir
+    return _ensure_private_dir(data_dir)
 
 
 def get_db_path(password: str | None = None) -> Path:
@@ -128,6 +167,14 @@ def get_db_path(password: str | None = None) -> Path:
 
         if is_duress_password(password):
             return get_decoy_db_path()
+
+    # Once duress mode is configured the real database lives in an opaque
+    # profile slot; before that it is the legacy data.db.
+    from .security import real_profile_path
+
+    real_slot = real_profile_path()
+    if real_slot.exists():
+        return real_slot
 
     return get_data_dir() / "data.db"
 
@@ -279,20 +326,12 @@ def encrypt_database(password: str) -> None:
         enc_conn.close()
         plain_conn.close()
 
-        # Backup original, swap in encrypted version, then securely delete backup
-        backup_path = db_path.with_suffix(".db.bak")
-        shutil.copy2(db_path, backup_path)
+        # Shred the plaintext original IN PLACE before swapping the encrypted
+        # file in. Renaming it away first would free its blocks untouched and
+        # leave the entire unencrypted database recoverable.
+        secure_delete_plaintext_db(db_path)
         shutil.move(tmp_path, db_path)
-
-        # Remove the plaintext backup — don't leave unencrypted data on disk
-        try:
-            from .security import secure_delete
-
-            secure_delete(backup_path)
-        except Exception:
-            # If secure_delete isn't available, at least do a normal delete
-            if backup_path.exists():
-                backup_path.unlink()
+        os.chmod(db_path, 0o600)
     except Exception:
         # Clean up temp file on failure
         if Path(tmp_path).exists():

@@ -380,5 +380,15 @@ def save_config(config: OpenFOIAConfig, config_path: Path | str | None = None) -
         },
     }
 
-    with open(path, "w") as f:
+    # Owner-only: config.json can carry SMTP/Twilio/Lob credentials and, if the
+    # user hand-edits it, the database password. Create it 0600 from the start
+    # rather than writing world-readable and chmod-ing after.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
         json.dump(data, f, indent=2)
+
+    if os.name != "nt":
+        try:
+            os.chmod(path, 0o600)  # tighten a pre-existing looser file
+        except OSError:
+            pass

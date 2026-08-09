@@ -221,6 +221,32 @@ def _strip_trackers(html: str) -> str:
     return html
 
 
+def _sanitize_for_archive(html: str) -> str:
+    """Strip every remote-loading construct from HTML before archiving it.
+
+    Tracker-domain filtering alone is not enough for a file that will be
+    reopened later: any surviving <script>, <img>, <iframe> or stylesheet
+    <link> re-contacts its origin. An archived page must be inert.
+    """
+    # Drop scripts (and their contents) outright.
+    html = re.sub(r"<script\b[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
+    html = re.sub(r"<noscript\b[^>]*>.*?</noscript>", "", html, flags=re.DOTALL | re.IGNORECASE)
+    # Drop remote subresource elements.
+    html = re.sub(
+        r"<(?:img|iframe|frame|embed|object|video|audio|source|track)\b[^>]*/?>",
+        "",
+        html,
+        flags=re.IGNORECASE,
+    )
+    # Drop <link> elements that fetch (stylesheets, preloads, prefetch...).
+    html = re.sub(r"<link\b[^>]*>", "", html, flags=re.IGNORECASE)
+    # Drop inline event handlers (onload=, onerror=, ...).
+    html = re.sub(r"\son[a-z]+\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s>]+)", "", html, flags=re.IGNORECASE)
+    # Neutralise any remaining external url() references in inline styles.
+    html = re.sub(r"url\(\s*['\"]?https?://[^)]*\)", "url(about:blank)", html, flags=re.IGNORECASE)
+    return html
+
+
 def _extract_content(html: str) -> tuple[str, str]:
     """Extract main text content and title from HTML.
 
@@ -307,9 +333,13 @@ async def archive_url(
     dest_dir = storage / doc_id[:2] / doc_id[2:4]
     dest_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save raw HTML
+    # Save the SANITIZED HTML, never the raw page. Persisting raw HTML kept
+    # analytics scripts and tracking pixels live in the archive: opening the
+    # saved page later would fire those beacons and tell the tracker (and the
+    # journalist's ISP) that the page was re-read, and from where.
+    safe_html = _sanitize_for_archive(result.raw_html)
     html_path = dest_dir / f"{doc_id}.html"
-    html_path.write_text(result.raw_html, encoding="utf-8")
+    html_path.write_text(safe_html, encoding="utf-8")
 
     # Save extracted text
     text_path = dest_dir / f"{doc_id}.txt"

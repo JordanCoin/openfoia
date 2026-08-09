@@ -16,7 +16,12 @@ investigations.
 - **Tor-routed fetches.** When you use `--tor`, web requests are routed through
   Tor's SOCKS5 proxy so the target server does not see your IP.
 - **Encrypted database.** `openfoia db encrypt` encrypts the SQLite database at
-  rest with a password you choose.
+  rest with a password you choose. It shreds the plaintext original and its
+  WAL/journal files in place — no plaintext backup is kept.
+  **Note:** this encrypts the *database* (requests, entities, extracted text).
+  Ingested source documents under `~/.openfoia/docs/` and archived web pages
+  are stored as ordinary files and are **not** encrypted by this command. Use
+  full-disk encryption or an encrypted USB for those.
 - **Secure delete (best-effort).** `openfoia purge --secure` overwrites files
   3x with random data before deletion. On HDDs this is effective. On SSDs it is
   unreliable due to wear-leveling (see Known Limitations).
@@ -124,8 +129,13 @@ examiner can determine that two encrypted database files exist on the device.
 What the decoy profile provides:
 - Buys time during casual device inspections
 - No password hash stored anywhere — SQLCipher verifies the password directly
-- Both profiles encrypted (no plaintext decoy)
-- Opaque filenames (profile_0.db, profile_1.db)
+- Both profiles encrypted (no plaintext decoy). If SQLCipher is unavailable,
+  `openfoia init --duress-password` now fails rather than writing a plaintext
+  decoy that would offer no protection at all.
+- Opaque filenames (`profile_0.db`, `profile_1.db`). Enabling duress mode
+  migrates the real database into slot 0, so neither filename reveals which
+  profile is real. Before duress mode is configured the database is the
+  ordinary `data.db`.
 
 What it does NOT provide:
 - Protection against forensic analysis (two encrypted files are visible)

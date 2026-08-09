@@ -9,8 +9,37 @@ from datetime import datetime
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import getaddresses
 
 from .base import DeliveryGateway, DeliveryPayload, DeliveryResult, DeliveryStatus
+
+
+def validate_single_recipient(address: str) -> str:
+    """Return *address* if it is exactly one plain email address.
+
+    ``smtplib.send_message`` derives the envelope recipients from the To/Cc/Bcc
+    headers, so ``agency@gov, attacker@evil`` silently delivers a copy of the
+    FOIA request — the requester's identity and the subject of their
+    investigation — to the attacker. No CRLF is needed; a comma is enough.
+    """
+    if not address or not address.strip():
+        raise ValueError("No recipient address provided.")
+
+    if any(ch in address for ch in "\r\n"):
+        raise ValueError("Invalid recipient address: contains a line break.")
+
+    parsed = getaddresses([address])
+    if len(parsed) != 1:
+        raise ValueError(
+            f"Refusing to send: {len(parsed)} recipient addresses supplied, expected exactly one. "
+            "A second address would receive a copy of this request."
+        )
+
+    _, addr = parsed[0]
+    if not addr or addr.count("@") != 1 or addr.startswith("@") or addr.endswith("@"):
+        raise ValueError(f"Invalid recipient address: {address!r}")
+
+    return addr
 
 
 class EmailGateway(DeliveryGateway):
@@ -51,6 +80,15 @@ class EmailGateway(DeliveryGateway):
 
     async def send(self, payload: DeliveryPayload) -> DeliveryResult:
         """Send FOIA request via email."""
+        try:
+            validate_single_recipient(payload.recipient_address)
+        except ValueError as e:
+            return DeliveryResult(
+                status=DeliveryStatus.FAILED,
+                reference_id="",
+                error_message=str(e),
+            )
+
         if self.sendgrid_api_key:
             return await self._send_sendgrid(payload)
         else:
@@ -59,10 +97,12 @@ class EmailGateway(DeliveryGateway):
     async def _send_smtp(self, payload: DeliveryPayload) -> DeliveryResult:
         """Send via SMTP."""
         try:
+            recipient = validate_single_recipient(payload.recipient_address)
+
             # Build message
             msg = MIMEMultipart()
             msg["From"] = f"{self.from_name} <{self.from_email}>"
-            msg["To"] = payload.recipient_address
+            msg["To"] = recipient
             msg["Subject"] = f"FOIA Request: {payload.subject}"
 
             # Request read receipt
@@ -88,7 +128,9 @@ class EmailGateway(DeliveryGateway):
                         server.starttls(context=context)
                     if self.smtp_user and self.smtp_password:
                         server.login(self.smtp_user, self.smtp_password)
-                    server.send_message(msg)
+                    # Pass the envelope explicitly rather than letting smtplib
+                    # re-derive it from the headers.
+                    server.send_message(msg, to_addrs=[recipient])
 
             await asyncio.to_thread(_send)
 

@@ -122,11 +122,16 @@ def _deduplicate_entities(entities: list[Any]) -> list[Any]:
     return list(seen.values())
 
 
+#: Sources that run entirely against local data — safe with no network.
+OFFLINE_SOURCES = frozenset({"icij"})
+
+
 async def crossref_entities(
     entities: list[Any],
     sources: list[str] | None = None,
     icij_data_dir: str | None = None,
     on_progress: Any | None = None,
+    allow_network: bool = False,
 ) -> CrossRefReport:
     """Cross-reference extracted entities against all available sources.
 
@@ -137,11 +142,36 @@ async def crossref_entities(
         entities: ExtractedEntity objects from the extraction pipeline
         sources: List of sources to check (default: all available)
         icij_data_dir: Path to downloaded ICIJ CSV data (for offline search)
+        allow_network: Must be explicitly True to contact remote sources.
+            Cross-referencing sends the *names of the people and organizations
+            under investigation* to third-party APIs, which is the single most
+            sensitive thing this toolkit holds. The gate lives here rather than
+            in the CLI so that agent, server and script callers cannot reach
+            the network without the same explicit opt-in (Principle 5).
 
     Returns:
         CrossRefReport with all hits
+
+    Raises:
+        PermissionError: if remote sources are requested without opting in.
     """
     import asyncio
+
+    available_sources = _get_available_sources(icij_data_dir)
+    if sources:
+        available_sources = {k: v for k, v in available_sources.items() if k in sources}
+
+    # Check permission BEFORE touching the entities, so the refusal is about
+    # consent and cannot be reached only on some input shapes.
+    if not allow_network:
+        remote = sorted(set(available_sources) - OFFLINE_SOURCES)
+        if remote:
+            raise PermissionError(
+                "Cross-referencing would send entity names over the network to: "
+                f"{', '.join(remote)}. Pass allow_network=True to opt in "
+                "(the CLI does this after showing its warning), or restrict to "
+                f"offline sources: {', '.join(sorted(OFFLINE_SOURCES))}."
+            )
 
     # Filter to cross-referable entity types and confidence threshold
     targets = [
@@ -150,10 +180,6 @@ async def crossref_entities(
 
     # Deduplicate — "Clearview AI" and "Clearview Ai Inc." become one lookup
     targets = _deduplicate_entities(targets)
-
-    available_sources = _get_available_sources(icij_data_dir)
-    if sources:
-        available_sources = {k: v for k, v in available_sources.items() if k in sources}
 
     if on_progress:
         on_progress(
