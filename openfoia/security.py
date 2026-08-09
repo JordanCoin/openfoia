@@ -279,9 +279,20 @@ def _can_open_db(db_path: Path, password: str) -> bool:
     """
     try:
         import pysqlcipher3.dbapi2 as sqlcipher
+    except ImportError as exc:
+        # Encryption support missing entirely — a configuration error, not a
+        # wrong password. Swallowing this would make the duress password
+        # silently never match, so the decoy would never open under coercion.
+        raise RuntimeError(
+            "Cannot verify the database password: pysqlcipher3 is not installed. "
+            "Install encryption support: openfoia install-extras encryption"
+        ) from exc
 
+    from .db import sqlcipher_key_pragma
+
+    try:
         conn = sqlcipher.connect(str(db_path))
-        conn.execute(f"PRAGMA key='{password}'")
+        conn.execute(sqlcipher_key_pragma(password))
         conn.execute("PRAGMA cipher_compatibility = 4")
         conn.execute("SELECT count(*) FROM sqlite_master")
         conn.close()
@@ -350,16 +361,25 @@ def seed_decoy_db(db_path: Path, password: str | None = None) -> None:
         try:
             import pysqlcipher3.dbapi2 as sqlcipher
 
+            from .db import sqlcipher_key_pragma
+
             def _creator():
                 conn = sqlcipher.connect(str(db_path))
-                conn.execute(f"PRAGMA key='{password}'")
+                conn.execute(sqlcipher_key_pragma(password))
                 conn.execute("PRAGMA cipher_compatibility = 4")
                 conn.execute("PRAGMA cipher_memory_security = ON")
                 return conn
 
             engine = create_engine("sqlite+pysqlite:///", creator=_creator, echo=False)
-        except ImportError:
-            engine = create_engine(f"sqlite:///{db_path}", echo=False)
+        except ImportError as exc:
+            # Fail closed. Falling back to plain SQLite here would write an
+            # UNENCRYPTED decoy database while telling the user duress mode
+            # is configured — the opposite of the promised guarantee.
+            raise RuntimeError(
+                "Cannot create the decoy profile: pysqlcipher3 is not installed. "
+                "A plaintext decoy would contradict the duress-mode guarantee. "
+                "Install encryption support: openfoia install-extras encryption"
+            ) from exc
     else:
         engine = create_engine(f"sqlite:///{db_path}", echo=False)
 

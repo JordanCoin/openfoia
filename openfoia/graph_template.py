@@ -15,9 +15,31 @@ def get_template() -> str:
     return _TEMPLATE
 
 
+def escape_json_for_script(graph_json: str) -> str:
+    """Make a JSON string safe to embed inside an inline <script> block.
+
+    Document text and entity labels come from UNTRUSTED documents. ``json.dumps``
+    does not escape ``<``, ``>`` or ``&``, so a document containing a literal
+    ``</script>`` terminates the script element and everything after it is
+    parsed as HTML — arbitrary JS execution in the reader's browser.
+
+    These characters never appear in JSON *structure*, only inside string
+    literals, so replacing them with their ``\\uXXXX`` escapes preserves the
+    decoded value exactly while making breakout impossible. U+2028/U+2029 are
+    valid in JSON but are line terminators in JavaScript, so they go too.
+    """
+    return (
+        graph_json.replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace(" ", "\\u2028")
+        .replace(" ", "\\u2029")
+    )
+
+
 def render(graph_json: str, output_path: Path) -> None:
     """Render the graph template with embedded data and write to file."""
-    html = _TEMPLATE.replace("__GRAPH_DATA__", graph_json)
+    html = _TEMPLATE.replace("__GRAPH_DATA__", escape_json_for_script(graph_json))
     output_path.write_text(html)
 
 

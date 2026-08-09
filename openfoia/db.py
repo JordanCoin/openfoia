@@ -53,6 +53,25 @@ def get_db_password() -> str | None:
     return cfg.encryption.password
 
 
+def sqlcipher_key_literal(password: str) -> str:
+    """Return *password* as a safely-quoted SQL string literal.
+
+    SQLCipher's ``PRAGMA key`` cannot be parameterized through every driver
+    path, so the passphrase has to be embedded in the statement text. Escaping
+    is not optional: a passphrase containing an apostrophe (``it's ...``) used
+    to terminate the literal early, turning the remainder into a SQL comment
+    and silently reducing the effective key to the few characters before the
+    quote — on both create and unlock, so nothing looked broken.
+    """
+    escaped = password.replace("'", "''")
+    return f"'{escaped}'"
+
+
+def sqlcipher_key_pragma(password: str) -> str:
+    """Build the ``PRAGMA key`` statement for *password*."""
+    return f"PRAGMA key = {sqlcipher_key_literal(password)}"
+
+
 def get_data_dir() -> Path:
     """Get the OpenFOIA data directory, creating if needed.
 
@@ -130,8 +149,11 @@ def get_engine(db_path: Path | None = None, password: str | None = None) -> Engi
         # Use pysqlcipher3 as the DBAPI driver via creator pattern
         def _sqlcipher_creator():
             conn = sqlcipher.connect(str(db_path))
-            conn.execute(f"PRAGMA key='{password}'")
+            conn.execute(sqlcipher_key_pragma(password))
             conn.execute("PRAGMA cipher_compatibility = 4")
+            # Keep key material and plaintext pages out of memory longer than
+            # necessary (wiped on free rather than left for a core dump).
+            conn.execute("PRAGMA cipher_memory_security = ON")
             return conn
 
         engine = create_engine(
@@ -246,7 +268,7 @@ def encrypt_database(password: str) -> None:
 
         # Open new encrypted database with SQLCipher
         enc_conn = sqlcipher.connect(tmp_path)
-        enc_conn.execute(f"PRAGMA key='{password}'")
+        enc_conn.execute(sqlcipher_key_pragma(password))
         enc_conn.execute("PRAGMA cipher_compatibility = 4")
 
         # Dump plaintext and replay into encrypted DB
