@@ -11,6 +11,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import getaddresses
 
+from ..models import utcnow as _utcnow
 from .base import DeliveryGateway, DeliveryPayload, DeliveryResult, DeliveryStatus
 
 
@@ -138,13 +139,13 @@ class EmailGateway(DeliveryGateway):
             import hashlib
 
             ref_id = hashlib.sha256(
-                f"{payload.recipient_address}:{payload.subject}:{datetime.utcnow().isoformat()}".encode()
+                f"{payload.recipient_address}:{payload.subject}:{_utcnow().isoformat()}".encode()
             ).hexdigest()[:16]
 
             return DeliveryResult(
                 status=DeliveryStatus.SENT,
                 reference_id=ref_id,
-                sent_at=datetime.utcnow(),
+                sent_at=_utcnow(),
                 cost_cents=0,  # Email is free (sort of)
                 metadata={
                     "to": payload.recipient_address,
@@ -164,16 +165,17 @@ class EmailGateway(DeliveryGateway):
     async def _send_sendgrid(self, payload: DeliveryPayload) -> DeliveryResult:
         """Send via SendGrid API."""
         try:
+            import base64
+
             from sendgrid import SendGridAPIClient
             from sendgrid.helpers.mail import (
-                Mail,
                 Attachment,
+                Disposition,
                 FileContent,
                 FileName,
                 FileType,
-                Disposition,
+                Mail,
             )
-            import base64
 
             message = Mail(
                 from_email=(self.from_email, self.from_name),
@@ -206,7 +208,7 @@ class EmailGateway(DeliveryGateway):
             return DeliveryResult(
                 status=DeliveryStatus.SENT,
                 reference_id=message_id,
-                sent_at=datetime.utcnow(),
+                sent_at=_utcnow(),
                 cost_cents=0,
                 metadata={
                     "to": payload.recipient_address,
@@ -256,7 +258,7 @@ This is a request under the Freedom of Information Act, 5 U.S.C. § 552.
 ---
 REQUEST DETAILS
 Subject: {payload.subject}
-Date: {datetime.utcnow().strftime("%B %d, %Y")}
+Date: {_utcnow().strftime("%B %d, %Y")}
 
 I request a fee waiver for this request. Disclosure of the requested information is in the public interest because it is likely to contribute significantly to public understanding of government operations and activities.
 

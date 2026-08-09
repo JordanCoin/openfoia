@@ -20,6 +20,7 @@ from pathlib import Path
 
 from rich import print as rprint
 
+from .models import utcnow as _utcnow
 
 # ---------------------------------------------------------------------------
 # Secure file deletion
@@ -510,7 +511,7 @@ def seed_decoy_db(db_path: Path, password: str | None = None) -> None:
     session.flush()
 
     # --- Requests (bland, non-sensitive) ---
-    now = datetime.utcnow()
+    now = _utcnow()
     requests_data = [
         {
             "subject": "Monthly weather data summaries for Portland, OR (2024)",

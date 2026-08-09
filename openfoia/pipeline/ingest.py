@@ -13,6 +13,7 @@ from typing import Any
 from uuid import uuid4
 
 from ..models import DocumentType
+from ..models import utcnow as _utcnow
 
 
 @dataclass
@@ -103,7 +104,7 @@ class DocumentIngester:
             checksum=checksum,
             metadata={
                 "original_path": str(file_path),
-                "ingested_at": datetime.utcnow().isoformat(),
+                "ingested_at": _utcnow().isoformat(),
                 "doc_type": doc_type.value,
                 "request_id": request_id,
                 "metadata_stripped": stripped_info if stripped_info else None,
@@ -159,7 +160,7 @@ class DocumentIngester:
             extracted_text=extracted_text,
             checksum=checksum,
             metadata={
-                "ingested_at": datetime.utcnow().isoformat(),
+                "ingested_at": _utcnow().isoformat(),
                 "doc_type": doc_type.value,
                 "request_id": request_id,
                 **(metadata or {}),

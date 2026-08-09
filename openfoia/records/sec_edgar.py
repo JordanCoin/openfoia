@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 from .base import AdapterRequestError, RecordAdapter, RecordEntity, SearchResult
 
 EFTS_BASE = "https://efts.sec.gov/LATEST/search-index"

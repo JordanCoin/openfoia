@@ -18,6 +18,7 @@ from datetime import datetime
 from typing import Any
 
 from .models import Agency, Request, RequestStatus
+from .models import utcnow as _utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -385,6 +386,7 @@ Please contact me if you have questions about this request.
 """
 
         import uuid
+
         from .models import DeliveryMethod, User
 
         request_id = str(uuid.uuid4())
@@ -401,7 +403,7 @@ Please contact me if you have questions about this request.
         if user and agency:
             from datetime import datetime as dt
 
-            req_num = f"REQ-{dt.utcnow().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+            req_num = f"REQ-{_utcnow().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
             new_req = Request(
                 id=request_id,
                 request_number=req_num,
@@ -432,7 +434,7 @@ Please contact me if you have questions about this request.
             return {"error": f"Request not found: {request_id}"}
 
         request.status = RequestStatus.SENT
-        request.sent_at = datetime.utcnow()
+        request.sent_at = _utcnow()
 
         # Auto-set due date (20 business days per FOIA statute)
         if not request.due_date:
@@ -541,6 +543,7 @@ Please contact me if you have questions about this request.
         database, where it becomes visible in reports and exports.
         """
         from pathlib import Path
+
         from .db import get_data_dir
 
         doc_path = params.get("document_path", "")
@@ -604,7 +607,7 @@ Please contact me if you have questions about this request.
 
     async def _build_entity_graph(self, params: dict[str, Any]) -> dict[str, Any]:
         """Build entity graph."""
-        from .models import Entity, Document, entity_links
+        from .models import Document, Entity, entity_links
 
         query = self.db.query(Entity)
         request_ids = params.get("request_ids")

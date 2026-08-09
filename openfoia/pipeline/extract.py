@@ -16,9 +16,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..config import load_config, OpenFOIAConfig, EntityConfig
-from ..models import EntityType, ConfidenceLevel
-
+from ..config import EntityConfig, OpenFOIAConfig, load_config
+from ..models import ConfidenceLevel, EntityType
 
 # ---------------------------------------------------------------------------
 # Data classes

@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-
 # Known tracker/analytics domains and script patterns to strip
 TRACKER_PATTERNS: list[str] = [
     r"google-analytics\.com",

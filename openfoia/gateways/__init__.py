@@ -8,9 +8,9 @@ Adapters for different delivery methods:
 """
 
 from .base import DeliveryGateway, DeliveryResult
+from .email import EmailGateway
 from .fax import TwilioFaxGateway
 from .mail import LobMailGateway
-from .email import EmailGateway
 
 __all__ = [
     "DeliveryGateway",

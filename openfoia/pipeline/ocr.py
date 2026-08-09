@@ -358,8 +358,8 @@ class RedactionDetector:
 
         Uses image analysis to detect large black rectangular regions.
         """
-        from pdf2image import convert_from_path
         import numpy as np
+        from pdf2image import convert_from_path
 
         def _analyze():
             with tempfile.TemporaryDirectory(dir=get_ocr_temp_dir()) as scratch:

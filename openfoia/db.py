@@ -195,7 +195,7 @@ def get_db_path(password: str | None = None) -> Path:
         password = get_db_password()
 
     if password:
-        from .security import is_duress_password, get_decoy_db_path
+        from .security import get_decoy_db_path, is_duress_password
 
         if is_duress_password(password):
             return get_decoy_db_path()

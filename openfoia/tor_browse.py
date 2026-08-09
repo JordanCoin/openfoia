@@ -18,6 +18,7 @@ from typing import Any
 
 from rich import print as rprint
 
+from .models import utcnow as _utcnow
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -185,14 +186,14 @@ async def browse(
             from datetime import datetime
 
             safe_name = re.sub(r"[^\w\-.]", "_", url.split("//", 1)[-1][:60])
-            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            timestamp = _utcnow().strftime("%Y%m%d_%H%M%S")
             filename = f"{timestamp}_{safe_name}.txt"
             out_path = save_dir / filename
 
             out_path.write_text(
                 f"URL: {result['url']}\n"
                 f"Title: {result['title']}\n"
-                f"Captured: {datetime.utcnow().isoformat()}Z\n"
+                f"Captured: {_utcnow().isoformat()}Z\n"
                 f"Tor: {use_tor}\n"
                 f"{'=' * 60}\n\n"
                 f"{content}"

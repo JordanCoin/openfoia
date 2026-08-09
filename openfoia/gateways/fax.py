@@ -268,9 +268,9 @@ class TwilioFaxGateway(DeliveryGateway):
     def _generate_pdf_reportlab(self, payload: DeliveryPayload) -> bytes:
         """Generate PDF using reportlab with proper legal formatting."""
         from reportlab.lib.pagesizes import letter
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import inch
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(

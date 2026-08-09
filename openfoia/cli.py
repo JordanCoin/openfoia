@@ -14,6 +14,8 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
+from .models import utcnow as _utcnow
+
 app = typer.Typer(
     name="openfoia",
     help="Crowdsourced FOIA automation with AI-powered document analysis.",
@@ -71,7 +73,7 @@ def init(
         openfoia init --encrypt              # Initialize with encryption (prompts)
         openfoia init --encrypt --duress     # Also set up a decoy database
     """
-    from .db import get_data_dir, get_db_path, init_db, has_sqlcipher
+    from .db import get_data_dir, get_db_path, has_sqlcipher, init_db
 
     data_dir = get_data_dir()
 
@@ -113,7 +115,7 @@ def init(
 
         # Show stats
         from .db import get_session
-        from .models import Agency, Request, Document
+        from .models import Agency, Document, Request
 
         with get_session(password=password) as session:
             agency_count = session.query(Agency).count()
@@ -405,7 +407,7 @@ def serve(
     import secrets
     import socket
 
-    from .browser import detect_browsers, launch_browser, print_browser_menu, BrowserType
+    from .browser import BrowserType, detect_browsers, launch_browser, print_browser_menu
 
     # Generate session token for security
     token = secrets.token_urlsafe(16)
@@ -473,8 +475,8 @@ def serve(
             rprint("[yellow]No browser auto-selected. Copy the URL above.[/yellow]\n")
 
     # Start the server
-    from .server import run_server
     from .db import get_data_dir
+    from .server import run_server
 
     run_server(host=host, port=port, token=token, data_dir=get_data_dir())
 
@@ -556,7 +558,7 @@ def encrypt(
         openfoia db encrypt --password SECRET
         openfoia db encrypt   # will prompt for password
     """
-    from .db import get_db_path, encrypt_database, has_sqlcipher
+    from .db import encrypt_database, get_db_path, has_sqlcipher
 
     if not has_sqlcipher():
         rprint("[bold red]Error:[/bold red] pysqlcipher3 is not installed.")
@@ -688,13 +690,18 @@ def request_new(
 ):
     """Create a new FOIA request."""
     from uuid import uuid4
+
     from .db import get_db_path, get_session, init_db
     from .models import (
         Agency as AgencyModel,
-        Request as RequestModel,
-        User,
-        RequestStatus,
+    )
+    from .models import (
         DeliveryMethod,
+        RequestStatus,
+        User,
+    )
+    from .models import (
+        Request as RequestModel,
     )
 
     if body_file:
@@ -735,7 +742,7 @@ def request_new(
             session.flush()
 
         # Create request
-        req_num = f"REQ-{datetime.now().strftime('%Y%m%d')}-{uuid4().hex[:6].upper()}"
+        req_num = f"REQ-{_utcnow().strftime('%Y%m%d')}-{uuid4().hex[:6].upper()}"
 
         try:
             delivery = DeliveryMethod(method.lower())
@@ -781,8 +788,10 @@ def request_list(
     limit: int = typer.Option(20, "--limit", "-n", help="Maximum results"),
 ):
     """List FOIA requests."""
-    from .db import get_session, get_db_path
-    from .models import Request as RequestModel, Agency as AgencyModel, RequestStatus
+    from .db import get_db_path, get_session
+    from .models import Agency as AgencyModel
+    from .models import Request as RequestModel
+    from .models import RequestStatus
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -849,8 +858,9 @@ def request_status(
     request_id: str = typer.Argument(..., help="Request ID or number"),
 ):
     """Check status of a FOIA request."""
-    from .db import get_session, get_db_path
-    from .models import Request as RequestModel, TimelineEvent
+    from .db import get_db_path, get_session
+    from .models import Request as RequestModel
+    from .models import TimelineEvent
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -971,9 +981,10 @@ def request_send(
         openfoia request send -a FBI -s "Test" -t standard -n "Test User" -e test@example.com --dry-run
     """
     import asyncio
+
     from .db import get_db_path, get_session
-    from .models import Agency
     from .gateways.base import DeliveryPayload
+    from .models import Agency
 
     if method not in ("email", "fax", "mail"):
         rprint(f"[red]Unknown method '{method}'. Use: email, fax, mail[/red]")
@@ -1022,7 +1033,7 @@ def request_send(
 
     # Get body content
     if template:
-        from .templates import standard_request, records_about_self, RequesterInfo, RequestDetails
+        from .templates import RequestDetails, RequesterInfo, records_about_self, standard_request
 
         requester = RequesterInfo(name=name, email=email)
         details = RequestDetails(subject=subject, description=subject)
@@ -1089,8 +1100,8 @@ def request_send(
     from .db import get_data_dir
 
     config_path = get_data_dir() / "config.json"
-    import os
     import json
+    import os
 
     config = {}
     if config_path.exists():
@@ -1206,9 +1217,12 @@ def request_send(
                     rprint(f"  Expected delivery: {result.metadata['expected_delivery_date']}")
 
         # Update the matching Request in the DB if one exists
-        from .db import get_session, get_db_path
-        from .models import Request as RequestModel, RequestStatus, Agency as AgencyModel
         from datetime import timedelta
+
+        from .db import get_db_path, get_session
+        from .models import Agency as AgencyModel
+        from .models import Request as RequestModel
+        from .models import RequestStatus
 
         db_path = get_db_path()
         if db_path.exists():
@@ -1227,7 +1241,7 @@ def request_send(
                 )
                 if req:
                     req.status = RequestStatus.SENT
-                    req.sent_at = datetime.now()
+                    req.sent_at = _utcnow()
                     req.delivery_reference = result.reference_id
                     # Auto-set due date
                     response_days = req.agency.typical_response_days if req.agency else 20
@@ -1277,6 +1291,7 @@ def docs_ingest(
         openfoia docs ingest ./doc.pdf --keep-metadata
     """
     import asyncio
+
     from .db import get_data_dir, get_db_path, init_db
     from .pipeline.ingest import DocumentIngester
 
@@ -1359,9 +1374,10 @@ def docs_ingest(
 
     # Persist Document rows to database
     if results:
+        from uuid import uuid4
+
         from .db import get_session
         from .models import Document, DocumentType
-        from uuid import uuid4
 
         with get_session() as session:
             for r in results:
@@ -1380,7 +1396,7 @@ def docs_ingest(
                 # Check if request_id is valid, otherwise create without it
                 if not request_id:
                     # Create a placeholder request for unassociated documents
-                    from .models import Request, User, RequestStatus, DeliveryMethod
+                    from .models import DeliveryMethod, Request, RequestStatus, User
 
                     user = session.query(User).first()
                     if not user:
@@ -1464,6 +1480,7 @@ def docs_ocr(
         openfoia docs ocr document.pdf --backend google
     """
     import asyncio
+
     from .pipeline.ocr import OCREngine, RedactionDetector
 
     if not file_path.exists():
@@ -1544,7 +1561,7 @@ def agency_list(
     limit: int = typer.Option(50, "--limit", "-n", help="Maximum results"),
 ):
     """List agencies in the database."""
-    from .db import get_session, get_db_path
+    from .db import get_db_path, get_session
     from .models import Agency, AgencyLevel
 
     db_path = get_db_path()
@@ -1598,7 +1615,7 @@ def agency_search(
     limit: int = typer.Option(20, "--limit", "-n", help="Maximum results"),
 ):
     """Search for agencies by name or abbreviation."""
-    from .db import get_session, get_db_path
+    from .db import get_db_path, get_session
     from .models import Agency
 
     db_path = get_db_path()
@@ -1642,7 +1659,7 @@ def agency_info(
     agency_id: str = typer.Argument(..., help="Agency abbreviation or name"),
 ):
     """Show detailed information about an agency."""
-    from .db import get_session, get_db_path
+    from .db import get_db_path, get_session
     from .models import Agency
 
     db_path = get_db_path()
@@ -1745,7 +1762,7 @@ def template_generate(
         openfoia template generate standard -a FBI -s "Records on X" -n "Jane Doe" -e jane@example.com
         openfoia template generate standard -a EPA -s "Pollution data" -n "John Smith" -e john@example.com -j
     """
-    from .templates import standard_request, records_about_self, RequesterInfo, RequestDetails
+    from .templates import RequestDetails, RequesterInfo, records_about_self, standard_request
 
     # Build requester info
     requester = RequesterInfo(
@@ -1889,6 +1906,7 @@ def campaign_create(
 ):
     """Create a new crowdsourced campaign."""
     from uuid import uuid4
+
     from .db import get_db_path, get_session, init_db
     from .models import Campaign, User
 
@@ -1932,7 +1950,7 @@ def campaign_create(
 @campaign_app.command("list")
 def campaign_list():
     """List all campaigns."""
-    from .db import get_session, get_db_path
+    from .db import get_db_path, get_session
     from .models import Campaign
 
     db_path = get_db_path()
@@ -1974,7 +1992,7 @@ def campaign_status(
     campaign_id: str = typer.Argument(..., help="Campaign ID (or prefix)"),
 ):
     """Check campaign progress."""
-    from .db import get_session, get_db_path
+    from .db import get_db_path, get_session
     from .models import Campaign, RequestStatus
 
     db_path = get_db_path()
@@ -2035,7 +2053,8 @@ def campaign_join(
 ):
     """Join a campaign as a participant."""
     from uuid import uuid4
-    from .db import get_session, get_db_path
+
+    from .db import get_db_path, get_session
     from .models import Campaign, User
 
     db_path = get_db_path()
@@ -2091,13 +2110,18 @@ def campaign_distribute(
     target agency and assigns them round-robin to participants.
     """
     from uuid import uuid4
-    from .db import get_session, get_db_path
+
+    from .db import get_db_path, get_session
+    from .models import (
+        Agency as AgencyModel,
+    )
     from .models import (
         Campaign,
-        Agency as AgencyModel,
-        Request as RequestModel,
-        RequestStatus,
         DeliveryMethod,
+        RequestStatus,
+    )
+    from .models import (
+        Request as RequestModel,
     )
 
     db_path = get_db_path()
@@ -2163,7 +2187,7 @@ def campaign_distribute(
                 skipped += 1
                 continue
 
-            req_num = f"REQ-{datetime.now().strftime('%Y%m%d')}-{uuid4().hex[:6].upper()}"
+            req_num = f"REQ-{_utcnow().strftime('%Y%m%d')}-{uuid4().hex[:6].upper()}"
             request = RequestModel(
                 id=str(uuid4()),
                 request_number=req_num,
@@ -2195,8 +2219,9 @@ def campaign_progress(
     campaign_id: str = typer.Argument(..., help="Campaign ID (or prefix)"),
 ):
     """Show per-participant, per-agency status grid for a campaign."""
-    from .db import get_session, get_db_path
-    from .models import Campaign, Agency as AgencyModel
+    from .db import get_db_path, get_session
+    from .models import Agency as AgencyModel
+    from .models import Campaign
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -2305,7 +2330,7 @@ def analyze_extract(
     Pipeline: regex + NER → merge → LLM validation (if available).
     Use --ensemble to run ALL NER backends (GLiNER + spaCy) together.
     """
-    from .db import get_session, get_db_path
+    from .db import get_db_path, get_session
     from .models import Document, Entity
 
     db_path = get_db_path()
@@ -2355,6 +2380,7 @@ def analyze_extract(
 
         # Run extraction
         import asyncio
+
         from .pipeline.extract import EntityExtractor
 
         extractor = EntityExtractor(model=model) if model else EntityExtractor()
@@ -2385,6 +2411,7 @@ def analyze_extract(
 
         # Save entities to database
         from uuid import uuid4
+
         from .models import entity_links
 
         entity_id_map: dict[str, str] = {}  # normalized_text.lower() -> entity.id
@@ -2521,7 +2548,10 @@ def analyze_graphs_list():
 
         size = f.stat().st_size
         size_str = f"{size / 1024:.0f}KB" if size > 1024 else f"{size}B"
-        modified = datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+        # Local time is intended: this is a file listing shown to the user.
+        modified = datetime.fromtimestamp(  # noqa: DTZ006
+            f.stat().st_mtime
+        ).strftime("%Y-%m-%d %H:%M")
 
         table.add_row(name, " + ".join(types), size_str, modified)
 
@@ -2559,8 +2589,9 @@ def analyze_graph(
         openfoia analyze graph --request REQ-001 --name epa    # filter + save
         openfoia analyze graphs                                # list saved graphs
     """
-    from .db import get_session, get_db_path
-    from .models import Entity, Document, Request as RequestModel, entity_links
+    from .db import get_db_path, get_session
+    from .models import Document, Entity, entity_links
+    from .models import Request as RequestModel
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -2627,8 +2658,10 @@ def analyze_graph(
         doc_ids = {e.document_id for e in entities if e.document_id}
         documents = {}
         if doc_ids:
-            from .models import Document as DocModel, Request as ReqModel
             import re as re_mod
+
+            from .models import Document as DocModel
+            from .models import Request as ReqModel
 
             for doc in session.query(DocModel).filter(DocModel.id.in_(doc_ids)).all():
                 # Derive source URL from request body or filename
@@ -2858,8 +2891,8 @@ def _fuzzy_match_column(header: str) -> str | None:
 
 def _llm_map_columns(headers: list[str], sample_rows: list[list[str]]) -> dict[str, int] | None:
     """Use the configured LLM to figure out which columns map to name/pattern/description."""
-    from .pipeline.extract import _llm_available, _call_ollama
     from .config import load_config
+    from .pipeline.extract import _call_ollama, _llm_available
 
     cfg = load_config()
     if not _llm_available(cfg.ai.provider, cfg.ai.api_key, cfg.ai.base_url):
@@ -2913,8 +2946,8 @@ def _llm_generate_regex(description: str) -> str | None:
     2. Matches at least one example from the description (if examples are present)
     3. Is reasonably short (not hallucinated garbage)
     """
-    from .pipeline.extract import _llm_available
     from .config import load_config
+    from .pipeline.extract import _llm_available
 
     cfg = load_config()
     if not _llm_available(cfg.ai.provider, cfg.ai.api_key, cfg.ai.base_url):
@@ -3303,8 +3336,10 @@ def deadline_list(
     Federal agencies have 20 business days to respond (5 U.S.C. 552).
     This command shows what's due, what's overdue, and what needs follow-up.
     """
-    from .db import get_session, get_db_path
-    from .models import Request as RequestModel, Agency as AgencyModel, RequestStatus
+    from .db import get_db_path, get_session
+    from .models import Agency as AgencyModel
+    from .models import Request as RequestModel
+    from .models import RequestStatus
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -3362,7 +3397,7 @@ def deadline_list(
             table.add_column("Days Over", style="red")
 
             for r in overdue:
-                days_over = (datetime.utcnow() - r.due_date).days
+                days_over = (_utcnow() - r.due_date).days
                 table.add_row(
                     r.request_number,
                     r.agency.abbreviation or r.agency.name,
@@ -3384,7 +3419,7 @@ def deadline_list(
             table.add_column("Days Left", style="green")
 
             for r in upcoming:
-                days_left = (r.due_date - datetime.utcnow()).days
+                days_left = (r.due_date - _utcnow()).days
                 color = "green" if days_left > 5 else "yellow"
                 table.add_row(
                     r.request_number,
@@ -3411,8 +3446,9 @@ def deadline_check():
     Example (add to .bashrc):
         openfoia deadlines check 2>/dev/null
     """
-    from .db import get_session, get_db_path
-    from .models import Request as RequestModel, RequestStatus
+    from .db import get_db_path, get_session
+    from .models import Request as RequestModel
+    from .models import RequestStatus
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -3440,7 +3476,7 @@ def deadline_check():
                 r.due_date = _foia_due_date(r.sent_at)
             if r.is_overdue():
                 overdue_count += 1
-                days_over = (datetime.utcnow() - r.due_date).days
+                days_over = (_utcnow() - r.due_date).days
                 rprint(f"[red]OVERDUE:[/red] {r.request_number} — {r.subject} (+{days_over} days)")
 
         if overdue_count:
@@ -3481,6 +3517,7 @@ def browse(
         openfoia browse https://example.com --tor --headless --save  # Headless Tor
     """
     import asyncio
+
     from .tor_browse import browse as _browse
 
     try:
@@ -3542,6 +3579,7 @@ def purge(
         print_ssd_warning,
         secure_delete_dir,
     )
+
     from .db import get_data_dir as _get_data_dir
 
     data_dir = _get_data_dir()
@@ -3636,6 +3674,7 @@ def ingest_url(
         openfoia ingest --url https://example.onion/docs --tor
     """
     import asyncio
+
     from .db import get_data_dir
     from .pipeline.web import archive_url
 
@@ -3722,6 +3761,7 @@ def records_search(
         openfoia records search "EPA water" --source muckrock
     """
     import asyncio
+
     from .records import get_adapter, list_sources
 
     # Validate source
@@ -4119,9 +4159,10 @@ def records_download(
 
         # Persist Document rows to database
         if ingest_results:
-            from .db import get_session
-            from .models import Document, DocumentType, Request, User, RequestStatus, DeliveryMethod
             from uuid import uuid4
+
+            from .db import get_session
+            from .models import DeliveryMethod, Document, DocumentType, Request, RequestStatus, User
 
             with get_session() as session:
                 # Create a placeholder request for downloaded docs
@@ -4209,9 +4250,10 @@ def crossref(
         openfoia crossref --icij-data ./icij-csvs/  # include Offshore Leaks
         openfoia crossref --ftm results.ftm.json    # export as FollowTheMoney
     """
-    from .db import get_session, get_db_path
-    from .models import Entity, Document, Request as RequestModel
     from .crossref import crossref_entities
+    from .db import get_db_path, get_session
+    from .models import Document, Entity
+    from .models import Request as RequestModel
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -4406,10 +4448,11 @@ def analyze_export(
         openfoia analyze export
         openfoia analyze export -o investigation.ftm.json -r REQ-20260322-ABC
     """
-    from .db import get_session, get_db_path
-    from .models import Entity, Document, Request as RequestModel, entity_links
-    from .pipeline.extract import ExtractedEntity
+    from .db import get_db_path, get_session
     from .ftm import export_ftm
+    from .models import Document, Entity, entity_links
+    from .models import Request as RequestModel
+    from .pipeline.extract import ExtractedEntity
 
     db_path = get_db_path()
     if not db_path.exists():

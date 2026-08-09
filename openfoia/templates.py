@@ -57,7 +57,9 @@ def standard_request(
     This is the core template that works for most federal agencies.
     Uses language proven to be effective based on RCFP guidance.
     """
-    date_str = datetime.now().strftime("%B %d, %Y")
+    # Local date is intended: this is the date printed on a letter the
+    # requester is sending, not a stored timestamp.
+    date_str = datetime.now().strftime("%B %d, %Y")  # noqa: DTZ005
 
     # Build date range clause if provided
     date_clause = ""
@@ -243,7 +245,9 @@ def appeal_denial(
 
     Appeals must generally be filed within 90 days of the denial.
     """
-    date_str = datetime.now().strftime("%B %d, %Y")
+    # Local date is intended: this is the date printed on a letter the
+    # requester is sending, not a stored timestamp.
+    date_str = datetime.now().strftime("%B %d, %Y")  # noqa: DTZ005
     request_date = original_request_date.strftime("%B %d, %Y")
     denial_date_str = denial_date.strftime("%B %d, %Y")
 
@@ -348,7 +352,9 @@ def records_about_self(
 
     This template combines FOIA and Privacy Act requests for maximum coverage.
     """
-    date_str = datetime.now().strftime("%B %d, %Y")
+    # Local date is intended: this is the date printed on a letter the
+    # requester is sending, not a stored timestamp.
+    date_str = datetime.now().strftime("%B %d, %Y")  # noqa: DTZ005
 
     letter = f"""{date_str}
 

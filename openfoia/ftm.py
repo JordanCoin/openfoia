@@ -10,11 +10,10 @@ FtM spec: https://followthemoney.tech
 from __future__ import annotations
 
 import json
-from typing import Any
 from pathlib import Path
+from typing import Any
 
 from .models import EntityType
-
 
 # Map OpenFOIA entity types to FtM schema types
 _ENTITY_TYPE_TO_FTM_SCHEMA: dict[str, str] = {
