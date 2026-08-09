@@ -352,6 +352,43 @@ def _apply_env_overrides(config: OpenFOIAConfig, prefix: str) -> OpenFOIAConfig:
     return config
 
 
+#: Substrings that mark a config key as secret-bearing.
+_SECRET_KEY_MARKERS = (
+    "password",
+    "api_key",
+    "apikey",
+    "token",
+    "secret",
+    "credential",
+    "access_key",
+    "auth",
+)
+
+_REDACTED = "••••••••"
+
+
+def _is_secret_key(key: str) -> bool:
+    normalized = key.lower().lstrip("_")
+    return any(marker in normalized for marker in _SECRET_KEY_MARKERS)
+
+
+def redact_secrets(data: Any) -> Any:
+    """Recursively mask secret-bearing values in a config-shaped structure.
+
+    `openfoia config --show` printed the file verbatim, which put the database
+    decryption password and every API key into terminal scrollback (and any
+    screen share or recording).
+    """
+    if isinstance(data, dict):
+        return {
+            key: (_REDACTED if _is_secret_key(key) and value else redact_secrets(value))
+            for key, value in data.items()
+        }
+    if isinstance(data, list):
+        return [redact_secrets(item) for item in data]
+    return data
+
+
 def save_config(config: OpenFOIAConfig, config_path: Path | str | None = None) -> None:
     """Save configuration to file (excludes secrets)."""
     path = Path(config_path) if config_path else _default_config_path()

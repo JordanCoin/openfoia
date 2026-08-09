@@ -20,6 +20,14 @@ from pydantic import BaseModel
 from sqlalchemy import func
 
 
+#: Hard cap on a single uploaded document (100 MiB), matching CLI ingest.
+MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+
+
+class _UploadTooLarge(Exception):
+    """Internal signal that an upload exceeded MAX_UPLOAD_BYTES."""
+
+
 class CreateRequestBody(BaseModel):
     agency_id: str
     subject: str
@@ -390,8 +398,6 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
         token: str = Depends(verify_token),
     ):
         """Upload a document for processing."""
-        import shutil
-
         if not request_id:
             raise HTTPException(
                 status_code=400, detail="request_id is required for document uploads"
@@ -404,10 +410,28 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
         safe_name = Path(file.filename).name if file.filename else "upload"
         stored_name = f"{uuid4().hex[:12]}_{safe_name}"
         dest = docs_dir / stored_name
-        with open(dest, "wb") as f:
-            shutil.copyfileobj(file.file, f)
 
-        file_size = dest.stat().st_size
+        # Stream with a hard cap. Without one, a single upload (or a crafted
+        # "response" the user was lured into importing) fills the disk.
+        written = 0
+        try:
+            with open(dest, "wb") as f:
+                while chunk := await file.read(1024 * 1024):
+                    written += len(chunk)
+                    if written > MAX_UPLOAD_BYTES:
+                        raise _UploadTooLarge()
+                    f.write(chunk)
+        except _UploadTooLarge:
+            dest.unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=413,
+                detail=f"File exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MiB upload limit.",
+            )
+        except Exception:
+            dest.unlink(missing_ok=True)
+            raise
+
+        file_size = written
         mime = file.content_type or "application/octet-stream"
 
         # Extract text from the uploaded file

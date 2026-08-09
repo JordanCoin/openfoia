@@ -26,6 +26,18 @@ from .base import DeliveryGateway, DeliveryPayload, DeliveryResult, DeliveryStat
 logger = logging.getLogger(__name__)
 
 
+def _esc(value: Any) -> str:
+    """Escape a field interpolated into reportlab Paragraph markup.
+
+    Paragraph parses a small HTML dialect, so an unescaped '<' in a recipient
+    name (which can come from fetched agency data) corrupts or injects into
+    the rendered cover page.
+    """
+    import html
+
+    return html.escape(str(value or ""), quote=True)
+
+
 def get_fax_media_dir() -> Path:
     """Owner-only staging directory for outbound fax PDFs.
 
@@ -296,14 +308,16 @@ class TwilioFaxGateway(DeliveryGateway):
         if payload.cover_page:
             story.append(Paragraph("FACSIMILE TRANSMITTAL", header_style))
             story.append(Spacer(1, 12))
-            story.append(Paragraph(f"<b>TO:</b> {payload.recipient_name}", body_style))
-            story.append(Paragraph(f"<b>FAX:</b> {payload.recipient_address}", body_style))
+            story.append(Paragraph(f"<b>TO:</b> {_esc(payload.recipient_name)}", body_style))
+            story.append(Paragraph(f"<b>FAX:</b> {_esc(payload.recipient_address)}", body_style))
             story.append(
                 Paragraph(
                     f"<b>DATE:</b> {datetime.now(timezone.utc).strftime('%B %d, %Y')}", body_style
                 )
             )
-            story.append(Paragraph(f"<b>RE:</b> FOIA Request - {payload.subject}", body_style))
+            story.append(
+                Paragraph(f"<b>RE:</b> FOIA Request - {_esc(payload.subject)}", body_style)
+            )
             story.append(
                 Paragraph(
                     f"<b>PAGES:</b> {self._estimate_pages(payload)} (including cover)",

@@ -63,9 +63,19 @@ main() {
     if [ -d "$DATA_DIR" ]; then
         echo ""
         warn "Data directory found: ${DATA_DIR}"
+        info "  NOTE: 'rm -rf' unlinks files but leaves the contents recoverable."
+        info "  For a forensic wipe, cancel and run: openfoia purge --secure"
         printf "  Delete all OpenFOIA data (database, documents, config)? [y/N] "
         read -r answer
         if [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
+            if command -v openfoia &>/dev/null; then
+                printf "  Overwrite the data first (slower, safer)? [Y/n] "
+                read -r secure_answer
+                if [ "$secure_answer" != "n" ] && [ "$secure_answer" != "N" ]; then
+                    openfoia purge --secure --yes 2>/dev/null || \
+                        warn "  purge --secure failed; falling back to rm -rf"
+                fi
+            fi
             rm -rf "$DATA_DIR"
             ok "Removed ${DATA_DIR}"
         else

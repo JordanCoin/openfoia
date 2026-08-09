@@ -11,12 +11,24 @@ See: https://docs.lob.com/
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 import re
 from datetime import datetime, timezone
 from typing import Any
 
 from .base import DeliveryGateway, DeliveryPayload, DeliveryResult, DeliveryStatus
+
+
+def _esc(value: Any) -> str:
+    """HTML-escape a field interpolated into the printed letter.
+
+    The body was already escaped, but recipient/sender names and the subject
+    were not — and those can come from fetched agency records, so markup in
+    them would distort or inject content into the rendered letter.
+    """
+    return html.escape(str(value or ""), quote=True)
+
 
 logger = logging.getLogger(__name__)
 
@@ -436,12 +448,12 @@ class LobMailGateway(DeliveryGateway):
     </div>
 
     <div class="recipient">
-        {payload.recipient_name}<br>
+        {_esc(payload.recipient_name)}<br>
         {recipient_addr}
     </div>
 
     <div class="subject">
-        Re: Freedom of Information Act Request &mdash; {payload.subject}
+        Re: Freedom of Information Act Request &mdash; {_esc(payload.subject)}
     </div>
 
     <div class="salutation">
@@ -469,7 +481,7 @@ class LobMailGateway(DeliveryGateway):
     </div>
 
     <div class="signature">
-        {sender_name}
+        {_esc(sender_name)}
     </div>
 
     <div class="legal-notice">

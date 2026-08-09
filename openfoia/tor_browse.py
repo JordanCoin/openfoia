@@ -35,14 +35,18 @@ _TOR_WARNING = """
 The Tor daemon must be running. On macOS: brew install tor && tor
 On Debian/Tails: sudo apt install tor && sudo systemctl start tor
 
-Fingerprint hardening is enabled:
-  - WebGL disabled
-  - WebRTC disabled (prevents IP leaks)
+Best-effort fingerprint hardening is applied:
+  - WebGL vendor/renderer spoofed
+  - RTCPeerConnection removed from the page (reduces, does not eliminate,
+    the risk of a WebRTC IP leak)
   - Timezone forced to UTC
   - Common user-agent applied
 
-This is NOT a guarantee of anonymity. Avoid logging into personal
-accounts. Do not download files you do not trust.
+These are page-level mitigations, NOT the Tor Browser's defenses. A
+determined site can still fingerprint this browser, and script execution
+inside the page may find ways around the patches above. For real anonymity
+use the Tor Browser itself, or Tails. Avoid logging into personal accounts.
+Do not download files you do not trust.
 [/yellow]
 [yellow]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/yellow]
 """
@@ -83,11 +87,14 @@ async def browse(
     if use_tor:
         rprint(_TOR_WARNING)
 
+    # Note: "--disable-webrtc" is not a real Chromium switch; the WebRTC
+    # mitigation that actually takes effect is the RTCPeerConnection removal
+    # in the init script below. Keep the flags that do exist.
     launch_args: dict[str, Any] = {
         "headless": headless,
         "args": [
             "--disable-webgl",
-            "--disable-webrtc",
+            "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
             "--disable-features=WebRtcHideLocalIpsWithMdns",
         ],
     }

@@ -130,6 +130,14 @@ class SearchResult:
     error: str | None = None  # non-None means API failed (vs genuine zero results)
 
 
+class AdapterRequestError(RuntimeError):
+    """A records API call failed at the transport or HTTP-status level.
+
+    Distinct from "the source returned zero results" — conflating the two
+    makes a failed sanctions or registry check look like a clean record.
+    """
+
+
 class RecordAdapter(ABC):
     """Base class for public records adapters.
 
@@ -138,6 +146,40 @@ class RecordAdapter(ABC):
     """
 
     source_name: str = ""
+
+    async def _request(
+        self,
+        url: str,
+        *,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        timeout: float = 15.0,
+    ) -> Any:
+        """GET *url* and return decoded JSON, raising AdapterRequestError.
+
+        Centralized so every adapter reports transport and HTTP failures the
+        same way instead of letting them surface as empty result sets.
+        """
+        import httpx
+
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.get(url, params=params, headers=headers)
+                response.raise_for_status()
+                return response.json()
+        except Exception as exc:
+            raise AdapterRequestError(f"{type(exc).__name__}: {exc}") from exc
+
+    def _failed(self, query: str, error: str, **kwargs: Any) -> SearchResult:
+        """Build a SearchResult that records a failure, not an empty result."""
+        return SearchResult(
+            source=self.source_name,
+            query=query,
+            total_results=0,
+            entities=[],
+            error=error,
+            **kwargs,
+        )
 
     @abstractmethod
     async def search(self, query: str, **kwargs: Any) -> SearchResult:

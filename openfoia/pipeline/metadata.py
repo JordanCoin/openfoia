@@ -174,10 +174,35 @@ def _strip_pdf_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
         if kept:
             writer.add_metadata(kept)
 
+    # Drop the XMP packet. Modern PDFs carry an /Metadata stream that
+    # duplicates Author/Creator/timestamps (and sometimes GPS); clearing only
+    # the /Info dictionary left all of it readable in the shipped file.
+    _remove_xmp_metadata(writer)
+
     with open(file_path, "wb") as f:
         writer.write(f)
 
     return result
+
+
+def _remove_xmp_metadata(writer: Any) -> None:
+    """Remove the document-level XMP metadata stream from a PdfWriter."""
+    from pypdf.generic import NameObject
+
+    try:
+        root = writer._root_object
+        if NameObject("/Metadata") in root:
+            del root[NameObject("/Metadata")]
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("Could not remove XMP metadata: %s", exc)
+
+    # Page-level XMP is rare but possible.
+    try:
+        for page in writer.pages:
+            if NameObject("/Metadata") in page:
+                del page[NameObject("/Metadata")]
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("Could not remove page XMP metadata: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -238,4 +263,83 @@ def _strip_docx_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
 
     doc.save(str(file_path))
 
+    # company/manager are extended properties in docProps/app.xml, which
+    # python-docx cannot reach. Without this the module reported them as
+    # stripped while leaving them in the shipped file.
+    extended = _strip_docx_extended_props(file_path)
+    for key in extended:
+        if key not in result["stripped"]:
+            result["stripped"].append(key)
+
     return result
+
+
+#: Extended/custom properties (docProps/app.xml) that identify the author's
+#: organization. Not exposed by python-docx's core_properties.
+_DOCX_EXTENDED_TAGS = ("Company", "Manager")
+
+
+def _strip_docx_extended_props(file_path: Path) -> list[str]:
+    """Blank out Company/Manager in docProps/app.xml and drop custom.xml.
+
+    A .docx is a zip, so this rewrites the archive in place. Returns the list
+    of property names that were actually present and removed.
+    """
+    import re as _re
+    import shutil
+    import tempfile
+    import zipfile
+
+    removed: list[str] = []
+
+    try:
+        with zipfile.ZipFile(file_path) as src:
+            names = src.namelist()
+            members = {name: src.read(name) for name in names}
+    except Exception as exc:
+        logger.warning("Could not open DOCX archive %s: %s", file_path, exc)
+        return removed
+
+    app_xml = members.get("docProps/app.xml")
+    if app_xml is not None:
+        text = app_xml.decode("utf-8", "replace")
+        for tag in _DOCX_EXTENDED_TAGS:
+            pattern = _re.compile(rf"<{tag}>(.*?)</{tag}>", _re.DOTALL)
+            match = pattern.search(text)
+            if match and match.group(1).strip():
+                removed.append(tag.lower())
+            text = pattern.sub(f"<{tag}></{tag}>", text)
+        members["docProps/app.xml"] = text.encode("utf-8")
+
+    # Custom properties are arbitrary user-defined fields — drop entirely,
+    # along with the content-type override and relationship that point at it,
+    # so the resulting archive is still a valid .docx.
+    if "docProps/custom.xml" in members:
+        del members["docProps/custom.xml"]
+        removed.append("custom_properties")
+
+        ct = members.get("[Content_Types].xml")
+        if ct is not None:
+            text = ct.decode("utf-8", "replace")
+            text = _re.sub(r"<Override[^>]*custom\.xml[^>]*/>", "", text)
+            members["[Content_Types].xml"] = text.encode("utf-8")
+
+        rels = members.get("_rels/.rels")
+        if rels is not None:
+            text = rels.decode("utf-8", "replace")
+            text = _re.sub(r"<Relationship[^>]*custom\.xml[^>]*/>", "", text)
+            members["_rels/.rels"] = text.encode("utf-8")
+
+    tmp = tempfile.mktemp(suffix=".docx")
+    try:
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as dst:
+            for name, data in members.items():
+                dst.writestr(name, data)
+        shutil.move(tmp, file_path)
+    except Exception as exc:
+        logger.warning("Could not rewrite DOCX archive %s: %s", file_path, exc)
+        if Path(tmp).exists():
+            Path(tmp).unlink()
+        return []
+
+    return removed

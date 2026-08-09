@@ -3,9 +3,28 @@
 from __future__ import annotations
 
 import asyncio
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+#: Hard cap on pages rasterized in one OCR run. A hostile "FOIA response"
+#: declaring tens of thousands of pages would otherwise exhaust memory/disk
+#: while every page is rendered at 300 dpi.
+MAX_OCR_PAGES = 2000
+
+
+def get_ocr_temp_dir() -> Path:
+    """Owner-only scratch directory for rasterized page images.
+
+    pdf2image renders full-fidelity images of every page. Left in the shared
+    system temp dir they are plaintext copies of sensitive documents that
+    `openfoia purge --secure` never touches, because purge only covers the
+    data directory.
+    """
+    from ..db import _ensure_private_dir, get_data_dir
+
+    return _ensure_private_dir(get_data_dir() / "ocr_tmp")
 
 
 @dataclass
@@ -108,9 +127,17 @@ class OCREngine:
         if self.tesseract_cmd:
             pytesseract.pytesseract.tesseract_cmd = self.tesseract_cmd
 
-        # Convert PDF to images
+        # Convert PDF to images. Render into an owner-only directory under the
+        # data dir (so purge covers the plaintext page images) and cap the page
+        # count so a crafted PDF cannot exhaust memory or disk.
         def _convert():
-            return convert_from_path(str(pdf_path), dpi=300)
+            with tempfile.TemporaryDirectory(dir=get_ocr_temp_dir()) as scratch:
+                return convert_from_path(
+                    str(pdf_path),
+                    dpi=300,
+                    output_folder=scratch,
+                    last_page=MAX_OCR_PAGES,
+                )
 
         images = await asyncio.to_thread(_convert)
 
@@ -335,7 +362,13 @@ class RedactionDetector:
         import numpy as np
 
         def _analyze():
-            images = convert_from_path(str(pdf_path), dpi=150)
+            with tempfile.TemporaryDirectory(dir=get_ocr_temp_dir()) as scratch:
+                images = convert_from_path(
+                    str(pdf_path),
+                    dpi=150,
+                    output_folder=scratch,
+                    last_page=MAX_OCR_PAGES,
+                )
             total_redactions = 0
 
             for image in images:

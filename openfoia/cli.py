@@ -30,13 +30,26 @@ def init(
         False, "--force", "-f", help="Re-initialize even if database exists"
     ),
     no_seed: bool = typer.Option(False, "--no-seed", help="Don't seed agency data"),
+    encrypt: bool = typer.Option(
+        False, "--encrypt", help="Encrypt the database at rest (prompts for a passphrase)"
+    ),
+    duress: bool = typer.Option(
+        False, "--duress", help="Also set up a decoy database (prompts for a passphrase)"
+    ),
     password: Optional[str] = typer.Option(
-        None, "--password", help="Encrypt database with this password (AES-256 via SQLCipher)"
+        None,
+        "--password",
+        prompt=False,
+        hide_input=True,
+        help="Encryption passphrase. Prefer --encrypt, which prompts: a passphrase "
+        "passed here is recorded in shell history and visible in the process list.",
     ),
     duress_password: Optional[str] = typer.Option(
         None,
         "--duress-password",
-        help="Create a decoy database that opens when this password is used",
+        prompt=False,
+        hide_input=True,
+        help="Duress passphrase. Prefer --duress, which prompts (see --password).",
     ),
 ):
     """Initialize the OpenFOIA database.
@@ -55,20 +68,42 @@ def init(
         openfoia init                        # Initialize with agency data
         openfoia init --no-seed              # Initialize without seed data
         openfoia init --force                # Re-initialize (WARNING: loses data)
-        openfoia init --password SECRET      # Initialize with encryption
-        openfoia init --duress-password DURESS  # Set up duress/decoy database
+        openfoia init --encrypt              # Initialize with encryption (prompts)
+        openfoia init --encrypt --duress     # Also set up a decoy database
     """
     from .db import get_data_dir, get_db_path, init_db, has_sqlcipher
 
     data_dir = get_data_dir()
-    db_path = get_db_path()
 
     rprint("\n[bold green]🔒 OpenFOIA Initialization[/bold green]")
     rprint("─" * 50)
 
-    if password and not has_sqlcipher():
+    # Prefer prompting: a passphrase in argv is written to shell history and
+    # is readable from the process list while the command runs.
+    if password:
+        rprint(
+            "[yellow]WARNING: --password was read from the command line. It is now in "
+            "your shell history and was visible in the process list. "
+            "Prefer --encrypt, which prompts.[/yellow]"
+        )
+    elif encrypt:
+        password = typer.prompt("Encryption passphrase", hide_input=True, confirmation_prompt=True)
+
+    if duress_password:
+        rprint(
+            "[yellow]WARNING: --duress-password was read from the command line "
+            "(shell history + process list). Prefer --duress, which prompts.[/yellow]"
+        )
+    elif duress:
+        duress_password = typer.prompt(
+            "Duress passphrase", hide_input=True, confirmation_prompt=True
+        )
+
+    db_path = get_db_path(password=password)
+
+    if (password or duress_password) and not has_sqlcipher():
         rprint("[bold red]ERROR: pysqlcipher3 is not installed.[/bold red]")
-        rprint("[red]Cannot create encrypted database without it.[/red]")
+        rprint("[red]Cannot create an encrypted database or decoy profile without it.[/red]")
         rprint("[yellow]Install with: openfoia install-extras encryption[/yellow]")
         raise typer.Exit(1)
 
@@ -483,19 +518,19 @@ def upgrade(
         openfoia db upgrade          # Upgrade to latest
         openfoia db upgrade head     # Same as above
     """
-    from .db import get_db_path
+    from .db import get_db_path, run_migrations
 
     db_path = get_db_path()
     rprint(f"\n[cyan]Database:[/cyan] {db_path}")
     rprint(f"[cyan]Upgrading to:[/cyan] {revision}")
 
-    from alembic import command
-    from alembic.config import Config
+    if revision != "head":
+        rprint("[yellow]Only 'head' is supported for encrypted databases.[/yellow]")
 
-    alembic_cfg = Config()
-    alembic_cfg.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
-    alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
-    command.upgrade(alembic_cfg, revision)
+    # Route through run_migrations so an encrypted database is migrated with
+    # its key attached. Building a bare sqlite:/// URL here silently failed
+    # on encrypted databases.
+    run_migrations()
 
     rprint("[bold green]Database upgraded successfully.[/bold green]\n")
 
@@ -621,8 +656,13 @@ def config(
 
     elif show:
         if config_path.exists():
+            from .config import redact_secrets
+
             config_data = json.loads(config_path.read_text())
-            rprint(json.dumps(config_data, indent=2))
+            # Never print secrets: terminal scrollback outlives the session,
+            # and this file can hold the database decryption password.
+            rprint(json.dumps(redact_secrets(config_data), indent=2))
+            rprint(f"\n[dim]Secrets are masked. File: {config_path}[/dim]")
         else:
             rprint(
                 "[yellow]No configuration found. Run 'openfoia config --init' to create one.[/yellow]"

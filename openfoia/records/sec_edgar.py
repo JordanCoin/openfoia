@@ -8,12 +8,23 @@ from __future__ import annotations
 
 from typing import Any
 
-import httpx
 
-from .base import RecordAdapter, RecordEntity, SearchResult
+from .base import AdapterRequestError, RecordAdapter, RecordEntity, SearchResult
 
 EFTS_BASE = "https://efts.sec.gov/LATEST/search-index"
 EDGAR_FILING_BASE = "https://www.sec.gov/Archives/edgar/data"
+
+#: SEC requires a descriptive User-Agent. Keep it generic and overridable —
+#: announcing "OpenFOIA" tells a government endpoint that the requester is
+#: using an adversarial-journalism tool.
+DEFAULT_USER_AGENT = "Research Client/1.0 (contact: research@example.org)"
+
+
+def _edgar_headers() -> dict[str, str]:
+    """Headers for EDGAR requests, honouring OPENFOIA_SEC_USER_AGENT."""
+    import os
+
+    return {"User-Agent": os.environ.get("OPENFOIA_SEC_USER_AGENT", DEFAULT_USER_AGENT)}
 
 
 class SECEdgarAdapter(RecordAdapter):
@@ -43,15 +54,10 @@ class SECEdgarAdapter(RecordAdapter):
         params["from"] = (page - 1) * per_page
         params["size"] = per_page
 
-        async with httpx.AsyncClient(
-            timeout=15.0,
-            headers={
-                "User-Agent": "OpenFOIA/1.0 (FOIA research tool; contact@openfoia.org)",
-            },
-        ) as client:
-            response = await client.get(EFTS_BASE, params=params)
-            response.raise_for_status()
-            data = response.json()
+        try:
+            data = await self._request(EFTS_BASE, params=params, headers=_edgar_headers())
+        except AdapterRequestError as exc:
+            return self._failed(query, str(exc), page=page, per_page=per_page)
 
         hits = data.get("hits", {})
         total = (
@@ -89,17 +95,10 @@ class SECEdgarAdapter(RecordAdapter):
         # Search by accession number
         params = {"q": f'"{identifier}"', "size": 1}
 
-        async with httpx.AsyncClient(
-            timeout=15.0,
-            headers={
-                "User-Agent": "OpenFOIA/1.0 (FOIA research tool; contact@openfoia.org)",
-            },
-        ) as client:
-            response = await client.get(EFTS_BASE, params=params)
-            if response.status_code == 404:
-                return None
-            response.raise_for_status()
-            data = response.json()
+        try:
+            data = await self._request(EFTS_BASE, params=params, headers=_edgar_headers())
+        except AdapterRequestError:
+            return None
 
         hits = data.get("hits", {}).get("hits", [])
         if not hits:

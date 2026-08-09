@@ -54,6 +54,22 @@ def run_migrations_online() -> None:
 
     Creates an engine and connects to the database to run migrations.
     """
+    # db.run_migrations() hands us a live SQLCipher connection through the
+    # config attributes. Ignoring it (and building an engine from
+    # sqlalchemy.url instead) meant encrypted databases were never migrated:
+    # the schema landed in a throwaway DB while the real encrypted file stayed
+    # empty, and "openfoia init --encrypt" appeared to succeed.
+    existing = config.attributes.get("connection", None)
+    if existing is not None:
+        context.configure(
+            connection=existing,
+            target_metadata=target_metadata,
+            render_as_batch=True,
+        )
+        with context.begin_transaction():
+            context.run_migrations()
+        return
+
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
