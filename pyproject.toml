@@ -1,6 +1,6 @@
 [project]
 name = "openfoia"
-version = "3.0.0"
+version = "4.0.0"
 description = "Local-first investigation toolkit for journalists, researchers, and citizens"
 readme = "README.md"
 license = "AGPL-3.0"
@@ -45,8 +45,12 @@ browser = ["playwright>=1.40.0"]
 email-files = ["extract-msg>=0.48.0"]
 # DocumentCloud integration
 documentcloud = ["documentcloud>=4.0.0"]
-# Encrypted database
-encryption = ["pysqlcipher3>=1.2.0"]
+# Encrypted database.
+# sqlcipher3-binary ships prebuilt wheels; pysqlcipher3 is unmaintained
+# (2021), source-only, and no longer pip-installs on modern Python — which
+# made the encryption feature effectively unreachable. Both drivers are
+# supported at runtime, so an existing pysqlcipher3 install keeps working.
+encryption = ["sqlcipher3-binary>=0.5.0"]
 # Everything
 all = [
     "openfoia[ocr,fax,mail,cloud-ai,ner,tor,browser,email-files,encryption]",
@@ -70,6 +74,53 @@ build-backend = "hatchling.build"
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.ruff.lint]
+# The rule set is pinned explicitly, never inherited from ruff's defaults:
+# CI installs an unpinned `ruff>=0.1.0`, so relying on defaults lets a new
+# ruff release silently change what CI enforces (which is exactly how this
+# repo went from green to 325 errors on unchanged code).
+#
+# Widen this list deliberately, and fix the findings — do not narrow it to
+# make a build pass.
+select = [
+    "E4", "E7", "E9",  # pycodestyle (the historical default subset)
+    "F",               # pyflakes
+    "I",               # import sorting
+    "UP",              # pyupgrade
+    "B",               # bugbear
+    "SIM",             # simplify
+    "DTZ",             # naive datetimes — caught a real deadline bug
+    "C4",              # comprehensions
+    "PIE",
+    "RUF",
+]
+
+ignore = [
+    # `class X(str, Enum)` -> `StrEnum` changes what `str(X.MEMBER)` returns
+    # ("federal" instead of "AgencyLevel.FEDERAL"). These enums are persisted
+    # through SQLAlchemy and serialized into API responses and exports, so
+    # that is a data-format change wearing a lint fix's clothing. Worth doing
+    # deliberately with migration checks, not as part of a lint sweep.
+    "UP042",
+]
+
+# Not enabled yet, tracked as follow-up:
+#   BLE001 (~82) — blind `except Exception`. High signal for this codebase:
+#     a swallowed exception is what made a failed records lookup report as a
+#     clean result. Fixing it needs a per-site audit of error handling, which
+#     is its own reviewable change rather than a bulk sweep.
+#   S (bandit) — mostly subprocess/randomness false positives here, plus
+#     S101 which is just "asserts in tests".
+
+[tool.ruff.lint.per-file-ignores]
+# FastAPI's dependency-injection idiom is `arg = Depends(...)` in the
+# signature default; B008 flags every route.
+"openfoia/server.py" = ["B008"]
+# Typer's CLI idiom is the same: `arg: T = typer.Option(...)`.
+"openfoia/cli.py" = ["B008"]
+# Tests legitimately use `assert`, private access, and broad `raises`.
+"tests/*" = ["S101", "SLF001"]
 
 [tool.mypy]
 python_version = "3.11"

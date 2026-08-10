@@ -6,15 +6,17 @@ and archives locally for the document pipeline.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from ..net import EgressMode, EgressPolicy, egress_client
 
 # Known tracker/analytics domains and script patterns to strip
 TRACKER_PATTERNS: list[str] = [
@@ -120,10 +122,9 @@ class _ContentExtractor(HTMLParser):
             self._in_article += 1
         elif tag == "main":
             self._in_main += 1
-        elif tag == "div":
-            if self._current_div_text is None:
-                self._current_div_text = []
-                self._div_depth = len(self._tag_stack)
+        elif tag == "div" and self._current_div_text is None:
+            self._current_div_text = []
+            self._div_depth = len(self._tag_stack)
 
     def handle_endtag(self, tag: str) -> None:
         tag = tag.lower()
@@ -141,10 +142,13 @@ class _ContentExtractor(HTMLParser):
             self._in_article -= 1
         elif tag == "main" and self._in_main > 0:
             self._in_main -= 1
-        elif tag == "div" and self._current_div_text is not None:
-            if len(self._tag_stack) <= self._div_depth:
-                self._div_blocks.append(self._current_div_text)
-                self._current_div_text = None
+        elif (
+            tag == "div"
+            and self._current_div_text is not None
+            and len(self._tag_stack) <= self._div_depth
+        ):
+            self._div_blocks.append(self._current_div_text)
+            self._current_div_text = None
 
         if self._tag_stack and self._tag_stack[-1] == tag:
             self._tag_stack.pop()
@@ -221,43 +225,67 @@ def _strip_trackers(html: str) -> str:
     return html
 
 
+def _sanitize_for_archive(html: str) -> str:
+    """Strip every remote-loading construct from HTML before archiving it.
+
+    Tracker-domain filtering alone is not enough for a file that will be
+    reopened later: any surviving <script>, <img>, <iframe> or stylesheet
+    <link> re-contacts its origin. An archived page must be inert.
+    """
+    # Drop scripts (and their contents) outright.
+    html = re.sub(r"<script\b[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
+    html = re.sub(r"<noscript\b[^>]*>.*?</noscript>", "", html, flags=re.DOTALL | re.IGNORECASE)
+    # Drop remote subresource elements.
+    html = re.sub(
+        r"<(?:img|iframe|frame|embed|object|video|audio|source|track)\b[^>]*/?>",
+        "",
+        html,
+        flags=re.IGNORECASE,
+    )
+    # Drop <link> elements that fetch (stylesheets, preloads, prefetch...).
+    html = re.sub(r"<link\b[^>]*>", "", html, flags=re.IGNORECASE)
+    # Drop inline event handlers (onload=, onerror=, ...).
+    html = re.sub(r"\son[a-z]+\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s>]+)", "", html, flags=re.IGNORECASE)
+    # Neutralise any remaining external url() references in inline styles.
+    html = re.sub(r"url\(\s*['\"]?https?://[^)]*\)", "url(about:blank)", html, flags=re.IGNORECASE)
+    return html
+
+
 def _extract_content(html: str) -> tuple[str, str]:
     """Extract main text content and title from HTML.
 
     Returns (text_content, page_title).
     """
     extractor = _ContentExtractor()
-    try:
+    # Best-effort parsing: malformed markup must not abort the archive.
+    with contextlib.suppress(Exception):
         extractor.feed(html)
-    except Exception:
-        pass  # Best-effort parsing
     return extractor.get_content(), extractor.title.strip()
 
 
-async def fetch_url(url: str, use_tor: bool = False) -> WebFetchResult:
+async def fetch_url(
+    url: str, use_tor: bool = False, *, egress: EgressPolicy | None = None
+) -> WebFetchResult:
     """Fetch a web page and extract its content.
 
     Args:
         url: The URL to fetch.
-        use_tor: If True, route through Tor SOCKS5 proxy at localhost:9050.
+        use_tor: If True (and *egress* is not given), route through Tor via
+            the egress choke point. Kept for backward compatibility.
+        egress: How to route the request (DIRECT/TOR). Takes precedence over
+            *use_tor* when both are given. Defaults to a plain DIRECT policy,
+            or a TOR policy when use_tor=True.
 
     Returns:
         WebFetchResult with extracted text, title, and raw HTML.
     """
-    import httpx
+    policy = (
+        egress
+        if egress is not None
+        else (EgressPolicy(mode=EgressMode.TOR) if use_tor else EgressPolicy())
+    )
 
-    transport = None
-    if use_tor:
-        transport = httpx.AsyncHTTPTransport(proxy="socks5://127.0.0.1:9050")
-
-    async with httpx.AsyncClient(
-        transport=transport,
-        follow_redirects=True,
-        timeout=30.0,
-        headers={
-            "User-Agent": "Mozilla/5.0 (compatible; OpenFOIA/1.0; +https://github.com/JordanCoin/openfoia)",
-        },
-    ) as client:
+    async with egress_client(policy, timeout=30.0, follow_redirects=True) as client:
         response = await client.get(url)
         response.raise_for_status()
 
@@ -267,7 +295,7 @@ async def fetch_url(url: str, use_tor: bool = False) -> WebFetchResult:
     # Extract main content
     text, title = _extract_content(cleaned_html)
 
-    fetched_at = datetime.now(timezone.utc).isoformat()
+    fetched_at = datetime.now(UTC).isoformat()
 
     return WebFetchResult(
         url=url,
@@ -276,7 +304,7 @@ async def fetch_url(url: str, use_tor: bool = False) -> WebFetchResult:
         raw_html=raw_html,
         fetched_at=fetched_at,
         content_length=len(raw_html),
-        used_tor=use_tor,
+        used_tor=policy.is_tor,
     )
 
 
@@ -284,6 +312,8 @@ async def archive_url(
     url: str,
     storage_path: str | Path,
     use_tor: bool = False,
+    *,
+    egress: EgressPolicy | None = None,
 ) -> WebArchiveResult:
     """Fetch a URL and archive it locally.
 
@@ -293,7 +323,10 @@ async def archive_url(
     Args:
         url: The URL to fetch and archive.
         storage_path: Base directory for storing archived content.
-        use_tor: Route through Tor SOCKS5 proxy.
+        use_tor: If True (and *egress* is not given), route through Tor via
+            the egress choke point. Kept for backward compatibility.
+        egress: How to route the request (DIRECT/TOR). Takes precedence over
+            *use_tor* when both are given.
 
     Returns:
         WebArchiveResult with paths to saved files and metadata.
@@ -301,15 +334,19 @@ async def archive_url(
     storage = Path(storage_path)
     storage.mkdir(parents=True, exist_ok=True)
 
-    result = await fetch_url(url, use_tor=use_tor)
+    result = await fetch_url(url, use_tor=use_tor, egress=egress)
 
     doc_id = str(uuid4())
     dest_dir = storage / doc_id[:2] / doc_id[2:4]
     dest_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save raw HTML
+    # Save the SANITIZED HTML, never the raw page. Persisting raw HTML kept
+    # analytics scripts and tracking pixels live in the archive: opening the
+    # saved page later would fire those beacons and tell the tracker (and the
+    # journalist's ISP) that the page was re-read, and from where.
+    safe_html = _sanitize_for_archive(result.raw_html)
     html_path = dest_dir / f"{doc_id}.html"
-    html_path.write_text(result.raw_html, encoding="utf-8")
+    html_path.write_text(safe_html, encoding="utf-8")
 
     # Save extracted text
     text_path = dest_dir / f"{doc_id}.txt"

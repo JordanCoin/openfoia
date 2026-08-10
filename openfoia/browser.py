@@ -69,6 +69,18 @@ LINUX_BROWSERS = {
 }
 
 
+def _applescript_string_literal(value: str) -> str:
+    """Quote *value* as a single AppleScript string literal.
+
+    AppleScript has no parameter binding, so anything interpolated into a
+    script body must be escaped. Backslashes and quotes are escaped; control
+    characters that could terminate the statement are dropped outright.
+    """
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    escaped = "".join(ch for ch in escaped if ch not in "\r\n\x00")
+    return f'"{escaped}"'
+
+
 def detect_browsers() -> list[Browser]:
     """Detect installed browsers on the system."""
     browsers: list[Browser] = []
@@ -231,17 +243,19 @@ def _launch_macos(url: str, browser: Browser, private: bool, tor_mode: bool) -> 
 
     if browser_type == BrowserType.SAFARI:
         if private:
-            # Safari private window via AppleScript
-            script = f'''
+            # Safari private window via AppleScript. The URL is escaped: it is
+            # interpolated into a program that osascript executes, so an
+            # unescaped quote would let a crafted URL run `do shell script`.
+            script = f"""
             tell application "Safari"
                 activate
                 tell application "System Events"
                     keystroke "n" using {{command down, shift down}}
                 end tell
                 delay 0.5
-                set URL of document 1 to "{url}"
+                set URL of document 1 to {_applescript_string_literal(url)}
             end tell
-            '''
+            """
             subprocess.run(["osascript", "-e", script])
         else:
             subprocess.run(["open", "-a", "Safari", url])

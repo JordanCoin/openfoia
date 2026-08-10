@@ -4,9 +4,10 @@ set -euo pipefail
 # OpenFOIA installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/JordanCoin/openfoia/main/install.sh | bash
 #
-# Portable USB install:
+# Portable USB install (note `-s --`: without it bash eats the flag and you
+# get a NON-portable install that writes data to the host machine):
 #   cd /Volumes/MY_USB
-#   curl -fsSL https://raw.githubusercontent.com/JordanCoin/openfoia/main/install.sh | bash --portable
+#   curl -fsSL https://raw.githubusercontent.com/JordanCoin/openfoia/main/install.sh | bash -s -- --portable
 
 REPO="JordanCoin/openfoia"
 
@@ -18,10 +19,12 @@ die()   { printf '\033[0;31m%s\033[0m\n' "$*" >&2; exit 1; }
 # --- Detect portable mode ---
 PORTABLE=false
 MINIMAL=false
+SKIP_VERIFY=false
 for arg in "$@"; do
     case "$arg" in
         --portable) PORTABLE=true ;;
         --minimal)  MINIMAL=true ;;
+        --insecure-skip-verify) SKIP_VERIFY=true ;;
     esac
 done
 if [ -f ".openfoia-portable" ] || [ -n "${OPENFOIA_DATA_DIR:-}" ]; then
@@ -104,9 +107,14 @@ download_binary() {
             actual_checksum=$(sha256sum "${INSTALL_DIR}/pdf-extract" | awk '{print $1}')
         elif command -v shasum &>/dev/null; then
             actual_checksum=$(shasum -a 256 "${INSTALL_DIR}/pdf-extract" | awk '{print $1}')
+        elif [ "$SKIP_VERIFY" = true ]; then
+            warn "No sha256sum or shasum found — verification skipped (--insecure-skip-verify)."
+            actual_checksum="$expected_checksum"
         else
-            warn "No sha256sum or shasum found — skipping checksum verification."
-            actual_checksum="$expected_checksum"  # skip comparison
+            rm -f "${INSTALL_DIR}/pdf-extract"
+            die "No sha256sum or shasum available to verify the download. \
+This binary runs with your environment, including OPENFOIA_DB_PASSWORD. \
+Install coreutils, or re-run with --insecure-skip-verify to accept the risk."
         fi
 
         if [ "$actual_checksum" != "$expected_checksum" ]; then
@@ -114,8 +122,13 @@ download_binary() {
             die "Checksum mismatch for pdf-extract! Expected ${expected_checksum}, got ${actual_checksum}. Aborting."
         fi
         ok "Checksum verified (SHA256)."
+    elif [ "$SKIP_VERIFY" = true ]; then
+        warn "No .sha256 in release — verification skipped (--insecure-skip-verify)."
     else
-        warn "No .sha256 file found in release — skipping checksum verification."
+        rm -f "${INSTALL_DIR}/pdf-extract"
+        die "No .sha256 published for this release, so the download cannot be verified. \
+Re-run with --insecure-skip-verify to accept the risk, or skip the optional \
+pdf-extract binary entirely (OpenFOIA falls back to pure-Python extraction)."
     fi
 
     chmod +x "${INSTALL_DIR}/pdf-extract"

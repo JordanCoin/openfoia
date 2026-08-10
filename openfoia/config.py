@@ -13,6 +13,7 @@ Secrets (API keys, tokens) can be provided via:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 from dataclasses import dataclass, field
@@ -156,6 +157,25 @@ class ServerConfig:
 
 
 @dataclass
+class NetworkConfig:
+    """Outbound network / Tor egress configuration.
+
+    Governs how CLI commands that touch the network (crossref, records
+    lookups, web fetch/archive) build their `openfoia.net.EgressPolicy`.
+    See `openfoia/net.py` for what Tor mode does and does not protect.
+    """
+
+    # Route egress-aware network calls through Tor. Default OFF — Tor
+    # routing is opt-in (Principle 1: data never leaves the machine unless
+    # the user explicitly chooses; this extends to *how* it leaves).
+    tor: bool = False
+    tor_host: str = "127.0.0.1"
+    tor_port: int = 9050
+    # Unique SOCKS credentials per request -> a fresh Tor circuit each time.
+    isolate_streams: bool = True
+
+
+@dataclass
 class OpenFOIAConfig:
     """Main configuration container."""
 
@@ -167,6 +187,7 @@ class OpenFOIAConfig:
     privacy: PrivacyConfig = field(default_factory=PrivacyConfig)
     encryption: EncryptionConfig = field(default_factory=EncryptionConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
+    network: NetworkConfig = field(default_factory=NetworkConfig)
 
     # Data directory — override with OPENFOIA_DATA_DIR env var for portable / air-gapped installs
     data_dir: Path = field(
@@ -296,6 +317,13 @@ def _merge_config(config: OpenFOIAConfig, data: dict[str, Any]) -> OpenFOIAConfi
         config.server.host = srv.get("host", config.server.host)
         config.server.port = srv.get("port", config.server.port)
 
+    if "network" in data:
+        net = data["network"]
+        config.network.tor = net.get("tor", config.network.tor)
+        config.network.tor_host = net.get("tor_host", config.network.tor_host)
+        config.network.tor_port = net.get("tor_port", config.network.tor_port)
+        config.network.isolate_streams = net.get("isolate_streams", config.network.isolate_streams)
+
     return config
 
 
@@ -349,7 +377,55 @@ def _apply_env_overrides(config: OpenFOIAConfig, prefix: str) -> OpenFOIAConfig:
     if v := os.environ.get(f"{prefix}DATA_DIR"):
         config.data_dir = Path(v)
 
+    # Network / Tor egress
+    if v := os.environ.get(f"{prefix}TOR"):
+        config.network.tor = v.strip().lower() in ("1", "true", "yes", "on")
+    if v := os.environ.get(f"{prefix}TOR_HOST"):
+        config.network.tor_host = v
+    if v := os.environ.get(f"{prefix}TOR_PORT"):
+        try:
+            config.network.tor_port = int(v)
+        except ValueError:
+            print(f"Warning: {prefix}TOR_PORT={v!r} is not a valid integer, ignoring")
+
     return config
+
+
+#: Substrings that mark a config key as secret-bearing.
+_SECRET_KEY_MARKERS = (
+    "password",
+    "api_key",
+    "apikey",
+    "token",
+    "secret",
+    "credential",
+    "access_key",
+    "auth",
+)
+
+_REDACTED = "••••••••"
+
+
+def _is_secret_key(key: str) -> bool:
+    normalized = key.lower().lstrip("_")
+    return any(marker in normalized for marker in _SECRET_KEY_MARKERS)
+
+
+def redact_secrets(data: Any) -> Any:
+    """Recursively mask secret-bearing values in a config-shaped structure.
+
+    `openfoia config --show` printed the file verbatim, which put the database
+    decryption password and every API key into terminal scrollback (and any
+    screen share or recording).
+    """
+    if isinstance(data, dict):
+        return {
+            key: (_REDACTED if _is_secret_key(key) and value else redact_secrets(value))
+            for key, value in data.items()
+        }
+    if isinstance(data, list):
+        return [redact_secrets(item) for item in data]
+    return data
 
 
 def save_config(config: OpenFOIAConfig, config_path: Path | str | None = None) -> None:
@@ -378,7 +454,22 @@ def save_config(config: OpenFOIAConfig, config_path: Path | str | None = None) -
             "host": config.server.host,
             "port": config.server.port,
         },
+        "network": {
+            "tor": config.network.tor,
+            "tor_host": config.network.tor_host,
+            "tor_port": config.network.tor_port,
+            "isolate_streams": config.network.isolate_streams,
+        },
     }
 
-    with open(path, "w") as f:
+    # Owner-only: config.json can carry SMTP/Twilio/Lob credentials and, if the
+    # user hand-edits it, the database password. Create it 0600 from the start
+    # rather than writing world-readable and chmod-ing after.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
         json.dump(data, f, indent=2)
+
+    if os.name != "nt":
+        # Tighten a pre-existing looser file; best-effort on odd filesystems.
+        with contextlib.suppress(OSError):
+            os.chmod(path, 0o600)

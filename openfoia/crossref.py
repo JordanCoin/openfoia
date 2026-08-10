@@ -14,10 +14,12 @@ $999/year for.
 from __future__ import annotations
 
 import logging
+import random
 from dataclasses import dataclass, field
 from typing import Any
 
 from .models import EntityType
+from .net import EgressPolicy, egress_client
 
 logger = logging.getLogger(__name__)
 
@@ -89,8 +91,6 @@ class _RateLimited(BaseException):
     in individual checkers don't swallow it — the crossref loop catches it.
     """
 
-    pass
-
 
 def _check_rate_limit(result: Any) -> None:
     """Raise _RateLimited if the search result indicates a rate limit error."""
@@ -122,11 +122,17 @@ def _deduplicate_entities(entities: list[Any]) -> list[Any]:
     return list(seen.values())
 
 
+#: Sources that run entirely against local data — safe with no network.
+OFFLINE_SOURCES = frozenset({"icij"})
+
+
 async def crossref_entities(
     entities: list[Any],
     sources: list[str] | None = None,
     icij_data_dir: str | None = None,
     on_progress: Any | None = None,
+    allow_network: bool = False,
+    egress: EgressPolicy | None = None,
 ) -> CrossRefReport:
     """Cross-reference extracted entities against all available sources.
 
@@ -137,11 +143,40 @@ async def crossref_entities(
         entities: ExtractedEntity objects from the extraction pipeline
         sources: List of sources to check (default: all available)
         icij_data_dir: Path to downloaded ICIJ CSV data (for offline search)
+        allow_network: Must be explicitly True to contact remote sources.
+            Cross-referencing sends the *names of the people and organizations
+            under investigation* to third-party APIs, which is the single most
+            sensitive thing this toolkit holds. The gate lives here rather than
+            in the CLI so that agent, server and script callers cannot reach
+            the network without the same explicit opt-in (Principle 5).
+        egress: How to route the network calls (DIRECT/TOR). Orthogonal to
+            allow_network — allow_network gates WHETHER to contact remote
+            sources at all; egress governs HOW (direct vs Tor). Defaults to
+            a plain DIRECT policy.
 
     Returns:
         CrossRefReport with all hits
+
+    Raises:
+        PermissionError: if remote sources are requested without opting in.
     """
     import asyncio
+
+    available_sources = _get_available_sources(icij_data_dir, egress)
+    if sources:
+        available_sources = {k: v for k, v in available_sources.items() if k in sources}
+
+    # Check permission BEFORE touching the entities, so the refusal is about
+    # consent and cannot be reached only on some input shapes.
+    if not allow_network:
+        remote = sorted(set(available_sources) - OFFLINE_SOURCES)
+        if remote:
+            raise PermissionError(
+                "Cross-referencing would send entity names over the network to: "
+                f"{', '.join(remote)}. Pass allow_network=True to opt in "
+                "(the CLI does this after showing its warning), or restrict to "
+                f"offline sources: {', '.join(sorted(OFFLINE_SOURCES))}."
+            )
 
     # Filter to cross-referable entity types and confidence threshold
     targets = [
@@ -150,10 +185,6 @@ async def crossref_entities(
 
     # Deduplicate — "Clearview AI" and "Clearview Ai Inc." become one lookup
     targets = _deduplicate_entities(targets)
-
-    available_sources = _get_available_sources(icij_data_dir)
-    if sources:
-        available_sources = {k: v for k, v in available_sources.items() if k in sources}
 
     if on_progress:
         on_progress(
@@ -197,8 +228,17 @@ async def crossref_entities(
                     e,
                 )
 
-            # Rate limit: respect each API's documented limits
-            await asyncio.sleep(_SOURCE_DELAYS.get(source_name, _DEFAULT_DELAY))
+            # Rate limit: respect each API's documented limits. Sleep the base
+            # delay times a randomized ~[1.0, 1.5) jitter factor rather than
+            # the exact duration every time — a perfectly regular gap between
+            # requests is itself a timing fingerprint (trivially regular
+            # signatures are easy to correlate, especially over Tor where a
+            # metronomic request cadence can help link a stream back to a
+            # user). The base delay is a floor, never a ceiling: jitter only
+            # ever adds time, so the documented rate limit is never violated.
+            base_delay = _SOURCE_DELAYS.get(source_name, _DEFAULT_DELAY)
+            jitter_factor = 1.0 + random.random() * 0.5
+            await asyncio.sleep(base_delay * jitter_factor)
 
         results.append(
             CrossRefResult(
@@ -221,18 +261,25 @@ async def crossref_entities(
     )
 
 
-def _get_available_sources(icij_data_dir: str | None = None) -> dict[str, Any]:
-    """Discover which cross-reference sources are available."""
+def _get_available_sources(
+    icij_data_dir: str | None = None, egress: EgressPolicy | None = None
+) -> dict[str, Any]:
+    """Discover which cross-reference sources are available.
+
+    *egress* is bound into each checker closure so every source-checking
+    call ends up routed through the same DIRECT-vs-TOR policy — the caller
+    of crossref_entities() picks the policy once, not each `_check_<source>`.
+    """
     sources: dict[str, Any] = {}
 
     # MuckRock — always available (public API, no key)
-    sources["muckrock"] = _check_muckrock
+    sources["muckrock"] = lambda name, etype: _check_muckrock(name, etype, egress)
 
     # OpenCorporates — always available (free tier)
-    sources["opencorporates"] = _check_opencorporates
+    sources["opencorporates"] = lambda name, etype: _check_opencorporates(name, etype, egress)
 
     # SEC EDGAR — always available (free)
-    sources["sec"] = _check_sec
+    sources["sec"] = lambda name, etype: _check_sec(name, etype, egress)
 
     # ICIJ Offshore Leaks — available if CSVs downloaded locally
     if icij_data_dir:
@@ -242,25 +289,25 @@ def _get_available_sources(icij_data_dir: str | None = None) -> dict[str, Any]:
             sources["icij"] = lambda name, etype: _check_icij(name, etype, icij_data_dir)
 
     # DocumentCloud — always available (public API, no key)
-    sources["documentcloud"] = _check_documentcloud
+    sources["documentcloud"] = lambda name, etype: _check_documentcloud(name, etype, egress)
 
     # USAspending — always available (no key, no rate limit)
-    sources["usaspending"] = _check_usaspending
+    sources["usaspending"] = lambda name, etype: _check_usaspending(name, etype, egress)
 
     # ProPublica Nonprofit — always available (no key)
-    sources["nonprofits"] = _check_nonprofits
+    sources["nonprofits"] = lambda name, etype: _check_nonprofits(name, etype, egress)
 
     # GovInfo — court opinions, congressional reports, Federal Register (DEMO_KEY)
-    sources["govinfo"] = _check_govinfo
+    sources["govinfo"] = lambda name, etype: _check_govinfo(name, etype, egress)
 
     # FEC — campaign finance contributions (DEMO_KEY)
-    sources["fec"] = _check_fec
+    sources["fec"] = lambda name, etype: _check_fec(name, etype, egress)
 
     # Regulations.gov — federal rulemaking documents (DEMO_KEY)
-    sources["regulations"] = _check_regulations
+    sources["regulations"] = lambda name, etype: _check_regulations(name, etype, egress)
 
     # OpenSanctions — available if data downloaded or API key set
-    sources["opensanctions"] = _check_opensanctions
+    sources["opensanctions"] = lambda name, etype: _check_opensanctions(name, etype, egress)
 
     return sources
 
@@ -270,11 +317,13 @@ def _get_available_sources(icij_data_dir: str | None = None) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-async def _check_muckrock(name: str, entity_type: EntityType) -> list[CrossRefHit]:
+async def _check_muckrock(
+    name: str, entity_type: EntityType, egress: EgressPolicy | None = None
+) -> list[CrossRefHit]:
     """Search MuckRock for FOIA requests mentioning this entity."""
     from .records.muckrock import MuckRockAdapter
 
-    adapter = MuckRockAdapter()
+    adapter = MuckRockAdapter(egress=egress)
     try:
         result = await adapter.search(name, page_size=5)
         _check_rate_limit(result)
@@ -312,14 +361,16 @@ async def _check_muckrock(name: str, entity_type: EntityType) -> list[CrossRefHi
     return hits
 
 
-async def _check_opencorporates(name: str, entity_type: EntityType) -> list[CrossRefHit]:
+async def _check_opencorporates(
+    name: str, entity_type: EntityType, egress: EgressPolicy | None = None
+) -> list[CrossRefHit]:
     """Search OpenCorporates for company registrations."""
     if entity_type == EntityType.PERSON:
         return []  # OpenCorporates is for companies
 
     from .records.opencorporates import OpenCorporatesAdapter
 
-    adapter = OpenCorporatesAdapter()
+    adapter = OpenCorporatesAdapter(egress=egress)
     try:
         result = await adapter.search(name, page_size=5)
         _check_rate_limit(result)
@@ -353,14 +404,16 @@ async def _check_opencorporates(name: str, entity_type: EntityType) -> list[Cros
     return hits
 
 
-async def _check_sec(name: str, entity_type: EntityType) -> list[CrossRefHit]:
+async def _check_sec(
+    name: str, entity_type: EntityType, egress: EgressPolicy | None = None
+) -> list[CrossRefHit]:
     """Search SEC EDGAR for filings."""
     if entity_type == EntityType.PERSON:
         return []  # SEC is mostly company filings
 
     from .records.sec_edgar import SECEdgarAdapter
 
-    adapter = SECEdgarAdapter()
+    adapter = SECEdgarAdapter(egress=egress)
     try:
         result = await adapter.search(name, page_size=5)
         _check_rate_limit(result)
@@ -433,11 +486,13 @@ async def _check_icij(name: str, entity_type: EntityType, data_dir: str) -> list
     return hits[:10]  # cap to avoid flooding
 
 
-async def _check_fec(name: str, entity_type: EntityType) -> list[CrossRefHit]:
+async def _check_fec(
+    name: str, entity_type: EntityType, egress: EgressPolicy | None = None
+) -> list[CrossRefHit]:
     """Search FEC for campaign finance contributions involving this entity."""
     from .records.fec import FECAdapter
 
-    adapter = FECAdapter()
+    adapter = FECAdapter(egress=egress)
     try:
         result = await adapter.search(name, page_size=5)
         _check_rate_limit(result)
@@ -464,11 +519,13 @@ async def _check_fec(name: str, entity_type: EntityType) -> list[CrossRefHit]:
     return hits[:5]
 
 
-async def _check_regulations(name: str, entity_type: EntityType) -> list[CrossRefHit]:
+async def _check_regulations(
+    name: str, entity_type: EntityType, egress: EgressPolicy | None = None
+) -> list[CrossRefHit]:
     """Search Regulations.gov for federal rulemaking mentioning this entity."""
     from .records.regulations import RegulationsGovAdapter
 
-    adapter = RegulationsGovAdapter()
+    adapter = RegulationsGovAdapter(egress=egress)
     try:
         result = await adapter.search(name, page_size=5)
         _check_rate_limit(result)
@@ -497,11 +554,13 @@ async def _check_regulations(name: str, entity_type: EntityType) -> list[CrossRe
     return hits
 
 
-async def _check_govinfo(name: str, entity_type: EntityType) -> list[CrossRefHit]:
+async def _check_govinfo(
+    name: str, entity_type: EntityType, egress: EgressPolicy | None = None
+) -> list[CrossRefHit]:
     """Search GovInfo for court opinions, congressional reports, and federal rules."""
     from .records.govinfo import GovInfoAdapter
 
-    adapter = GovInfoAdapter()
+    adapter = GovInfoAdapter(egress=egress)
     try:
         result = await adapter.search(name, page_size=5)
         _check_rate_limit(result)
@@ -532,14 +591,16 @@ async def _check_govinfo(name: str, entity_type: EntityType) -> list[CrossRefHit
     return hits
 
 
-async def _check_nonprofits(name: str, entity_type: EntityType) -> list[CrossRefHit]:
+async def _check_nonprofits(
+    name: str, entity_type: EntityType, egress: EgressPolicy | None = None
+) -> list[CrossRefHit]:
     """Search ProPublica for nonprofit organizations matching this entity."""
     if entity_type == EntityType.PERSON:
         return []
 
     from .records.propublica_nonprofit import ProPublicaNonprofitAdapter
 
-    adapter = ProPublicaNonprofitAdapter()
+    adapter = ProPublicaNonprofitAdapter(egress=egress)
     try:
         result = await adapter.search(name, page_size=5)
         _check_rate_limit(result)
@@ -572,14 +633,16 @@ async def _check_nonprofits(name: str, entity_type: EntityType) -> list[CrossRef
     return hits
 
 
-async def _check_usaspending(name: str, entity_type: EntityType) -> list[CrossRefHit]:
+async def _check_usaspending(
+    name: str, entity_type: EntityType, egress: EgressPolicy | None = None
+) -> list[CrossRefHit]:
     """Search USAspending for federal contracts and grants involving this entity."""
     if entity_type == EntityType.PERSON:
         return []  # USAspending tracks organizations, not individuals
 
     from .records.usaspending import USASpendingAdapter
 
-    adapter = USASpendingAdapter()
+    adapter = USASpendingAdapter(egress=egress)
     try:
         result = await adapter.search(name, page_size=5)
         _check_rate_limit(result)
@@ -614,11 +677,13 @@ async def _check_usaspending(name: str, entity_type: EntityType) -> list[CrossRe
     return hits
 
 
-async def _check_documentcloud(name: str, entity_type: EntityType) -> list[CrossRefHit]:
+async def _check_documentcloud(
+    name: str, entity_type: EntityType, egress: EgressPolicy | None = None
+) -> list[CrossRefHit]:
     """Search DocumentCloud's 10M+ public document archive."""
     from .records.documentcloud import DocumentCloudAdapter
 
-    adapter = DocumentCloudAdapter()
+    adapter = DocumentCloudAdapter(egress=egress)
     try:
         result = await adapter.search(name, page_size=5)
         _check_rate_limit(result)
@@ -655,17 +720,17 @@ async def _check_documentcloud(name: str, entity_type: EntityType) -> list[Cross
     return hits
 
 
-async def _check_opensanctions(name: str, entity_type: EntityType) -> list[CrossRefHit]:
+async def _check_opensanctions(
+    name: str, entity_type: EntityType, egress: EgressPolicy | None = None
+) -> list[CrossRefHit]:
     """Search OpenSanctions for sanctions/PEP matches.
 
     Uses the free API (rate limited, non-commercial use).
     """
-    import httpx
-
     hits = []
 
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with egress_client(egress, timeout=15) as client:
             resp = await client.get(
                 "https://api.opensanctions.org/search/default",
                 params={"q": name, "limit": 5},

@@ -6,16 +6,27 @@ Your data never leaves your machine.
 
 from __future__ import annotations
 
+import contextlib
 import secrets
-from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import FastAPI, Request, HTTPException, Depends, Query, UploadFile, File
-from fastapi.responses import HTMLResponse
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import func
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+from .models import utcnow as _utcnow
+
+#: Hard cap on a single uploaded document (100 MiB), matching CLI ingest.
+MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+
+
+class _UploadTooLarge(Exception):
+    """Internal signal that an upload exceeded MAX_UPLOAD_BYTES."""
 
 
 class CreateRequestBody(BaseModel):
@@ -25,6 +36,13 @@ class CreateRequestBody(BaseModel):
     method: str = "email"
     fee_waiver: bool = True
     expedited: bool = False
+
+
+def _default_data_dir() -> Path:
+    """Resolve the data dir the same way the rest of the toolkit does."""
+    from .db import get_data_dir
+
+    return get_data_dir()
 
 
 def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
@@ -40,8 +58,21 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
 
     # Store token and data directory in app state
     app.state.auth_token = token
-    app.state.data_dir = data_dir or Path.home() / ".openfoia"
-    app.state.data_dir.mkdir(parents=True, exist_ok=True)
+    from .db import _ensure_private_dir
+
+    app.state.data_dir = _ensure_private_dir(Path(data_dir) if data_dir else _default_data_dir())
+
+    # Serve the vendored stylesheet from disk — no CDN, works air-gapped.
+    static_dir = Path(__file__).parent / "static"
+    if static_dir.is_dir():
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+    # Reject requests that did not arrive addressed to loopback (DNS rebinding).
+    # Starlette compares the Host header with the port stripped.
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=["127.0.0.1", "localhost", "::1", "[::1]"],
+    )
 
     # CORS - only allow localhost
     app.add_middleware(
@@ -53,6 +84,32 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        """Structurally forbid the page from talking to anything off-machine.
+
+        Defence in depth behind the escaping fixes: even if untrusted document
+        text did reach the DOM as markup, `connect-src 'self'` blocks the
+        exfiltration step, and `default-src 'self'` blocks remote subresources.
+        """
+        response = await call_next(request)
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; "
+            "connect-src 'self'; "
+            "form-action 'self'; "
+            "frame-ancestors 'none'; "
+            "base-uri 'none'"
+        )
+        # Keep the ?token= out of outbound Referer headers and shared caches.
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        return response
+
     # Token verification dependency
     async def verify_token(
         request: Request,
@@ -60,7 +117,8 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
     ):
         # Check query param first, then cookie
         auth_token = token or request.cookies.get("openfoia_token")
-        if auth_token != app.state.auth_token:
+        # Constant-time: a plain != leaks the token prefix through timing.
+        if not secrets.compare_digest(auth_token or "", app.state.auth_token):
             raise HTTPException(status_code=401, detail="Invalid or missing token")
         return auth_token
 
@@ -81,11 +139,13 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
         """Get overview statistics."""
         from .db import get_session
         from .models import (
-            Request as FOIARequest,
             Document,
             Entity,
-            RequestStatus,
             EntityType,
+            RequestStatus,
+        )
+        from .models import (
+            Request as FOIARequest,
         )
 
         with get_session() as session:
@@ -168,7 +228,8 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
     ):
         """List FOIA requests."""
         from .db import get_session
-        from .models import Request as FOIARequest, RequestStatus, Agency
+        from .models import Agency, RequestStatus
+        from .models import Request as FOIARequest
 
         with get_session() as session:
             query = session.query(FOIARequest).join(Agency)
@@ -181,7 +242,7 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
                     raise HTTPException(
                         status_code=400,
                         detail=f"Invalid status '{status}'. Valid: {', '.join(s.value for s in RequestStatus)}",
-                    )
+                    ) from None
 
             requests = query.order_by(FOIARequest.created_at.desc()).limit(limit).all()
 
@@ -210,11 +271,13 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
         """Create a new FOIA request."""
         from .db import get_session
         from .models import (
-            Request as FOIARequest,
             Agency,
-            User,
-            RequestStatus,
             DeliveryMethod,
+            RequestStatus,
+            User,
+        )
+        from .models import (
+            Request as FOIARequest,
         )
 
         with get_session() as session:
@@ -233,7 +296,7 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
                 session.add(user)
                 session.flush()
 
-            req_num = f"REQ-{datetime.utcnow().strftime('%Y%m%d')}-{uuid4().hex[:6].upper()}"
+            req_num = f"REQ-{_utcnow().strftime('%Y%m%d')}-{uuid4().hex[:6].upper()}"
 
             try:
                 method = DeliveryMethod(request_data.method)
@@ -341,8 +404,6 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
         token: str = Depends(verify_token),
     ):
         """Upload a document for processing."""
-        import shutil
-
         if not request_id:
             raise HTTPException(
                 status_code=400, detail="request_id is required for document uploads"
@@ -355,10 +416,28 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
         safe_name = Path(file.filename).name if file.filename else "upload"
         stored_name = f"{uuid4().hex[:12]}_{safe_name}"
         dest = docs_dir / stored_name
-        with open(dest, "wb") as f:
-            shutil.copyfileobj(file.file, f)
 
-        file_size = dest.stat().st_size
+        # Stream with a hard cap. Without one, a single upload (or a crafted
+        # "response" the user was lured into importing) fills the disk.
+        written = 0
+        try:
+            with open(dest, "wb") as f:
+                while chunk := await file.read(1024 * 1024):
+                    written += len(chunk)
+                    if written > MAX_UPLOAD_BYTES:
+                        raise _UploadTooLarge()
+                    f.write(chunk)
+        except _UploadTooLarge:
+            dest.unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=413,
+                detail=f"File exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MiB upload limit.",
+            ) from None
+        except Exception:
+            dest.unlink(missing_ok=True)
+            raise
+
+        file_size = written
         mime = file.content_type or "application/octet-stream"
 
         # Extract text from the uploaded file
@@ -366,10 +445,8 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
 
         ingester = DocumentIngester(storage_path=docs_dir)
         extracted_text = None
-        try:
+        with contextlib.suppress(Exception):
             extracted_text = await ingester._extract_text(dest, mime)
-        except Exception:
-            pass
 
         from .db import get_session
         from .models import Document, DocumentType
@@ -441,7 +518,8 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
     async def deadlines(token: str = Depends(verify_token)):
         """Get upcoming deadlines for pending requests."""
         from .db import get_session
-        from .models import Request as FOIARequest, RequestStatus, Agency
+        from .models import Agency, RequestStatus
+        from .models import Request as FOIARequest
 
         with get_session() as session:
             active_statuses = [
@@ -487,7 +565,7 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
     ):
         """Get entity relationship graph."""
         from .db import get_session
-        from .models import Entity, Document, entity_links
+        from .models import Document, Entity, entity_links
 
         with get_session() as session:
             q = session.query(Entity)
@@ -544,10 +622,10 @@ def get_index_html() -> str:
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OpenFOIA</title>
-    <!-- NOTE: Tailwind CSS loaded from CDN for styling convenience.
-         For air-gapped/high-security deployments, pre-build Tailwind CSS
-         and serve from disk. See docs/AIRGAP.md -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Styles are served from disk (openfoia/static/app.css). Nothing is
+         loaded from a CDN: an external subresource would tell the CDN and any
+         on-path observer when this machine is running an investigation. -->
+    <link rel="stylesheet" href="/static/app.css">
     <style>
         .gradient-bg {
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
@@ -1171,6 +1249,7 @@ def run_server(
 ) -> None:
     """Run the OpenFOIA server."""
     import socket
+
     import uvicorn
 
     # Generate token if not provided

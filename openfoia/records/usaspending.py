@@ -16,6 +16,7 @@ from typing import Any
 
 import httpx
 
+from ..net import egress_client
 from .base import RecordAdapter, RecordEntity, SearchResult
 
 logger = logging.getLogger(__name__)
@@ -90,7 +91,7 @@ class USASpendingAdapter(RecordAdapter):
         }
 
         try:
-            async with httpx.AsyncClient(timeout=20) as client:
+            async with egress_client(self._egress, timeout=20) as client:
                 resp = await client.post(
                     f"{API_BASE}/search/spending_by_award/",
                     json=payload,
@@ -185,7 +186,7 @@ class USASpendingAdapter(RecordAdapter):
     async def fetch(self, identifier: str, **kwargs: Any) -> RecordEntity | None:
         """Search for a specific recipient by name and return their spending summary."""
         try:
-            async with httpx.AsyncClient(timeout=20) as client:
+            async with egress_client(self._egress, timeout=20) as client:
                 resp = await client.post(
                     f"{API_BASE}/recipient/",
                     json={

@@ -21,7 +21,8 @@ from typing import Any
 
 import httpx
 
-from .base import RecordAdapter, RecordEntity, SearchResult
+from ..net import EgressPolicy, egress_client
+from .base import RecordAdapter, RecordEntity, SearchResult, validate_download_url
 
 logger = logging.getLogger(__name__)
 
@@ -45,12 +46,13 @@ class DocumentCloudAdapter(RecordAdapter):
 
     source_name = "documentcloud"
 
-    def __init__(self, auth_token: str | None = None):
+    def __init__(self, auth_token: str | None = None, *, egress: EgressPolicy | None = None):
         """Initialize. Auth token optional — public docs are freely searchable.
 
         For higher rate limits, register at https://accounts.muckrock.com/
         and pass the JWT access token.
         """
+        super().__init__(egress=egress)
         self._headers: dict[str, str] = {}
         if auth_token:
             self._headers["Authorization"] = f"Bearer {auth_token}"
@@ -76,7 +78,7 @@ class DocumentCloudAdapter(RecordAdapter):
         # For page 1, just send the query
 
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
+            async with egress_client(self._egress, timeout=15) as client:
                 resp = await client.get(
                     f"{API_BASE}/documents/search/",
                     params=params,
@@ -194,7 +196,7 @@ class DocumentCloudAdapter(RecordAdapter):
         DocumentCloud already extracted the text — no need for local OCR.
         """
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with egress_client(self._egress, timeout=30) as client:
                 # Get document metadata
                 resp = await client.get(
                     f"{API_BASE}/documents/{identifier}/",
@@ -213,6 +215,9 @@ class DocumentCloudAdapter(RecordAdapter):
                 if text_url:
                     txt_url = f"{text_url}documents/{doc_id}/{slug}.txt"
                     try:
+                        # asset_url comes from the API response, so it is
+                        # attacker-influenced if the upstream is compromised.
+                        validate_download_url(txt_url)
                         txt_resp = await client.get(txt_url, timeout=15)
                         if txt_resp.status_code == 200:
                             full_text = txt_resp.text

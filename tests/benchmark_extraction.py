@@ -15,12 +15,12 @@ import json
 import time
 from pathlib import Path
 
+from openfoia.config import load_config
 from openfoia.pipeline.extract import (
     EntityExtractor,
     _gliner_available,
     _llm_available,
 )
-from openfoia.config import load_config
 
 # Richer test doc with more entities and relationships
 DOC = """
@@ -312,7 +312,7 @@ def main():
 
         p_found, p_total, p_missed = check_recall(result, EXPECTED_PERSONS, "person")
         o_found, o_total, o_missed = check_recall(result, EXPECTED_ORGS, "organization")
-        m_found, m_total, m_missed = check_recall(result, EXPECTED_MONEY, "money")
+        m_found, m_total, _m_missed = check_recall(result, EXPECTED_MONEY, "money")
         r_found, r_total, r_missed = check_relationship_recall(result, EXPECTED_RELATIONSHIPS)
 
         pr = p_found / p_total if p_total else 0

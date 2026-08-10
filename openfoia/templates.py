@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 
 
 @dataclass
@@ -20,13 +19,13 @@ class RequesterInfo:
     """Information about the person filing the request."""
 
     name: str
-    organization: Optional[str] = None
+    organization: str | None = None
     address: str = ""
     email: str = ""
     phone: str = ""
     is_journalist: bool = False
     is_educational: bool = False
-    publication: Optional[str] = None
+    publication: str | None = None
 
 
 @dataclass
@@ -35,10 +34,10 @@ class RequestDetails:
 
     subject: str
     description: str
-    date_range_start: Optional[datetime] = None
-    date_range_end: Optional[datetime] = None
-    keywords: list[str] = None
-    exclusions: Optional[str] = None
+    date_range_start: datetime | None = None
+    date_range_end: datetime | None = None
+    keywords: list[str] | None = None
+    exclusions: str | None = None
 
 
 # === Base Request Template ===
@@ -57,7 +56,9 @@ def standard_request(
     This is the core template that works for most federal agencies.
     Uses language proven to be effective based on RCFP guidance.
     """
-    date_str = datetime.now().strftime("%B %d, %Y")
+    # Local date is intended: this is the date printed on a letter the
+    # requester is sending, not a stored timestamp.
+    date_str = datetime.now().strftime("%B %d, %Y")  # noqa: DTZ005
 
     # Build date range clause if provided
     date_clause = ""
@@ -243,7 +244,9 @@ def appeal_denial(
 
     Appeals must generally be filed within 90 days of the denial.
     """
-    date_str = datetime.now().strftime("%B %d, %Y")
+    # Local date is intended: this is the date printed on a letter the
+    # requester is sending, not a stored timestamp.
+    date_str = datetime.now().strftime("%B %d, %Y")  # noqa: DTZ005
     request_date = original_request_date.strftime("%B %d, %Y")
     denial_date_str = denial_date.strftime("%B %d, %Y")
 
@@ -348,7 +351,9 @@ def records_about_self(
 
     This template combines FOIA and Privacy Act requests for maximum coverage.
     """
-    date_str = datetime.now().strftime("%B %d, %Y")
+    # Local date is intended: this is the date printed on a letter the
+    # requester is sending, not a stored timestamp.
+    date_str = datetime.now().strftime("%B %d, %Y")  # noqa: DTZ005
 
     letter = f"""{date_str}
 
@@ -412,7 +417,7 @@ Sincerely,
 # === CLI Integration ===
 
 
-def list_templates() -> list[dict]:
+def list_templates() -> list[dict[str, str]]:
     """Return list of available templates for CLI display."""
     return [
         {

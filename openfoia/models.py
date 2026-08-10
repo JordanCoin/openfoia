@@ -11,7 +11,7 @@ Core entities:
 from __future__ import annotations
 
 import enum
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -24,11 +24,28 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
-    Text,
     Table,
+    Text,
     create_engine,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+def utcnow() -> datetime:
+    """Current UTC time as a **naive** datetime.
+
+    The ORM's ``DateTime`` columns are timezone-naive, and model helpers such
+    as ``Request.days_pending`` compare stored values against "now". Returning
+    an aware datetime here would raise
+    ``TypeError: can't subtract offset-naive and offset-aware datetimes``
+    against every existing row.
+
+    This replaces the deprecated ``utcnow()`` (removed in a future
+    Python; CI already targets 3.13) while preserving the naive-UTC storage
+    convention exactly. Moving to timezone-aware columns is a separate,
+    deliberate migration.
+    """
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class Base(DeclarativeBase):
@@ -135,11 +152,11 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(255))
     organization: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_journalist: Mapped[bool] = mapped_column(default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     # Relationships
-    requests: Mapped[list["Request"]] = relationship(back_populates="requester")
-    campaigns: Mapped[list["Campaign"]] = relationship(
+    requests: Mapped[list[Request]] = relationship(back_populates="requester")
+    campaigns: Mapped[list[Campaign]] = relationship(
         secondary=campaign_participants, back_populates="participants"
     )
 
@@ -174,7 +191,7 @@ class Agency(Base):
     total_requests_tracked: Mapped[int] = mapped_column(Integer, default=0)
 
     # Relationships
-    requests: Mapped[list["Request"]] = relationship(back_populates="agency")
+    requests: Mapped[list[Request]] = relationship(back_populates="agency")
 
 
 class Request(Base):
@@ -209,7 +226,7 @@ class Request(Base):
     agency_tracking_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # Dates
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     due_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -224,23 +241,23 @@ class Request(Base):
     extra_data: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSON, nullable=True)
 
     # Relationships
-    requester: Mapped["User"] = relationship(back_populates="requests")
-    agency: Mapped["Agency"] = relationship(back_populates="requests")
-    campaign: Mapped["Campaign | None"] = relationship(back_populates="requests")
-    documents: Mapped[list["Document"]] = relationship(back_populates="request")
-    timeline: Mapped[list["TimelineEvent"]] = relationship(back_populates="request")
+    requester: Mapped[User] = relationship(back_populates="requests")
+    agency: Mapped[Agency] = relationship(back_populates="requests")
+    campaign: Mapped[Campaign | None] = relationship(back_populates="requests")
+    documents: Mapped[list[Document]] = relationship(back_populates="request")
+    timeline: Mapped[list[TimelineEvent]] = relationship(back_populates="request")
 
     def days_pending(self) -> int:
         """Days since request was sent."""
         if not self.sent_at:
             return 0
-        return (datetime.utcnow() - self.sent_at).days
+        return (utcnow() - self.sent_at).days
 
     def is_overdue(self) -> bool:
         """Whether the request is past its due date."""
         if not self.due_date:
             return False
-        return datetime.utcnow() > self.due_date
+        return utcnow() > self.due_date
 
 
 class Document(Base):
@@ -271,12 +288,12 @@ class Document(Base):
     )  # e.g., ["b(6)", "b(7)(A)"]
 
     # Dates
-    received_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Relationships
-    request: Mapped["Request"] = relationship(back_populates="documents")
-    entities: Mapped[list["Entity"]] = relationship(back_populates="source_document")
+    request: Mapped[Request] = relationship(back_populates="documents")
+    entities: Mapped[list[Entity]] = relationship(back_populates="source_document")
 
 
 class Entity(Base):
@@ -304,8 +321,8 @@ class Entity(Base):
     extra_data: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSON, nullable=True)
 
     # Relationships
-    source_document: Mapped["Document"] = relationship(back_populates="entities")
-    linked_entities: Mapped[list["Entity"]] = relationship(
+    source_document: Mapped[Document] = relationship(back_populates="entities")
+    linked_entities: Mapped[list[Entity]] = relationship(
         secondary=entity_links,
         primaryjoin=id == entity_links.c.source_id,
         secondaryjoin=id == entity_links.c.target_id,
@@ -333,14 +350,14 @@ class Campaign(Base):
 
     # Status
     is_active: Mapped[bool] = mapped_column(default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     ends_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Relationships
-    participants: Mapped[list["User"]] = relationship(
+    participants: Mapped[list[User]] = relationship(
         secondary=campaign_participants, back_populates="campaigns"
     )
-    requests: Mapped[list["Request"]] = relationship(back_populates="campaign")
+    requests: Mapped[list[Request]] = relationship(back_populates="campaign")
 
     def request_count(self) -> int:
         return len(self.requests)
@@ -364,11 +381,11 @@ class TimelineEvent(Base):
         String(50)
     )  # sent, acknowledged, response, appeal, etc.
     description: Mapped[str] = mapped_column(Text)
-    occurred_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     extra_data: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSON, nullable=True)
 
     # Relationships
-    request: Mapped["Request"] = relationship(back_populates="timeline")
+    request: Mapped[Request] = relationship(back_populates="timeline")
 
 
 # === Database Setup ===

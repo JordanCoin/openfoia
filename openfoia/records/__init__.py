@@ -39,15 +39,15 @@ def list_sources() -> list[str]:
 
 def _auto_register() -> None:
     """Auto-register built-in adapters."""
-    from .opencorporates import OpenCorporatesAdapter
-    from .sec_edgar import SECEdgarAdapter
-    from .muckrock import MuckRockAdapter
     from .documentcloud import DocumentCloudAdapter
-    from .usaspending import USASpendingAdapter
-    from .propublica_nonprofit import ProPublicaNonprofitAdapter
-    from .govinfo import GovInfoAdapter
     from .fec import FECAdapter
+    from .govinfo import GovInfoAdapter
+    from .muckrock import MuckRockAdapter
+    from .opencorporates import OpenCorporatesAdapter
+    from .propublica_nonprofit import ProPublicaNonprofitAdapter
     from .regulations import RegulationsGovAdapter
+    from .sec_edgar import SECEdgarAdapter
+    from .usaspending import USASpendingAdapter
 
     register("opencorporates", OpenCorporatesAdapter)
     register("sec", SECEdgarAdapter)

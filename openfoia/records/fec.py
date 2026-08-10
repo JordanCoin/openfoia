@@ -14,6 +14,7 @@ from typing import Any
 
 import httpx
 
+from ..net import EgressPolicy, egress_client
 from .base import RecordAdapter, RecordEntity, SearchResult
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,8 @@ class FECAdapter(RecordAdapter):
 
     source_name = "fec"
 
-    def __init__(self, api_key: str | None = None):
+    def __init__(self, api_key: str | None = None, *, egress: EgressPolicy | None = None):
+        super().__init__(egress=egress)
         self._api_key = api_key or "DEMO_KEY"
 
     async def search(
@@ -56,7 +58,7 @@ class FECAdapter(RecordAdapter):
         }
 
         try:
-            async with httpx.AsyncClient(timeout=20) as client:
+            async with egress_client(self._egress, timeout=20) as client:
                 resp = await client.get(
                     f"{API_BASE}/schedules/schedule_a/",
                     params=params,
@@ -146,7 +148,7 @@ class FECAdapter(RecordAdapter):
     async def fetch(self, identifier: str, **kwargs: Any) -> RecordEntity | None:
         """Search for a candidate by name."""
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
+            async with egress_client(self._egress, timeout=15) as client:
                 resp = await client.get(
                     f"{API_BASE}/candidates/search/",
                     params={

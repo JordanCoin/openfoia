@@ -8,9 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
-import httpx
-
-from .base import RecordAdapter, RecordEntity, SearchResult
+from ..net import egress_client
+from .base import AdapterRequestError, RecordAdapter, RecordEntity, SearchResult
 
 API_BASE = "https://api.opencorporates.com/v0.4"
 
@@ -40,10 +39,11 @@ class OpenCorporatesAdapter(RecordAdapter):
         page = kwargs.get("page", 1)
         params["page"] = page
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(f"{API_BASE}/companies/search", params=params)
-            response.raise_for_status()
-            data = response.json()
+        try:
+            data = await self._request(f"{API_BASE}/companies/search", params=params)
+        except AdapterRequestError as exc:
+            # A failed lookup must not read as "this company does not exist".
+            return self._failed(query, str(exc), page=page)
 
         results = data.get("results", {})
         companies = results.get("companies", [])
@@ -77,7 +77,7 @@ class OpenCorporatesAdapter(RecordAdapter):
         Returns:
             RecordEntity if found, None otherwise.
         """
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with egress_client(self._egress, timeout=15.0) as client:
             response = await client.get(f"{API_BASE}/companies/{identifier}")
             if response.status_code == 404:
                 return None

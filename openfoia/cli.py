@@ -3,16 +3,22 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import typer
+
+if TYPE_CHECKING:
+    from .net import EgressPolicy
 from rich import print as rprint
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
+
+from .models import utcnow as _utcnow
 
 app = typer.Typer(
     name="openfoia",
@@ -30,13 +36,26 @@ def init(
         False, "--force", "-f", help="Re-initialize even if database exists"
     ),
     no_seed: bool = typer.Option(False, "--no-seed", help="Don't seed agency data"),
-    password: Optional[str] = typer.Option(
-        None, "--password", help="Encrypt database with this password (AES-256 via SQLCipher)"
+    encrypt: bool = typer.Option(
+        False, "--encrypt", help="Encrypt the database at rest (prompts for a passphrase)"
     ),
-    duress_password: Optional[str] = typer.Option(
+    duress: bool = typer.Option(
+        False, "--duress", help="Also set up a decoy database (prompts for a passphrase)"
+    ),
+    password: str | None = typer.Option(
+        None,
+        "--password",
+        prompt=False,
+        hide_input=True,
+        help="Encryption passphrase. Prefer --encrypt, which prompts: a passphrase "
+        "passed here is recorded in shell history and visible in the process list.",
+    ),
+    duress_password: str | None = typer.Option(
         None,
         "--duress-password",
-        help="Create a decoy database that opens when this password is used",
+        prompt=False,
+        hide_input=True,
+        help="Duress passphrase. Prefer --duress, which prompts (see --password).",
     ),
 ):
     """Initialize the OpenFOIA database.
@@ -55,20 +74,42 @@ def init(
         openfoia init                        # Initialize with agency data
         openfoia init --no-seed              # Initialize without seed data
         openfoia init --force                # Re-initialize (WARNING: loses data)
-        openfoia init --password SECRET      # Initialize with encryption
-        openfoia init --duress-password DURESS  # Set up duress/decoy database
+        openfoia init --encrypt              # Initialize with encryption (prompts)
+        openfoia init --encrypt --duress     # Also set up a decoy database
     """
-    from .db import get_data_dir, get_db_path, init_db, has_sqlcipher
+    from .db import get_data_dir, get_db_path, has_sqlcipher, init_db
 
     data_dir = get_data_dir()
-    db_path = get_db_path()
 
     rprint("\n[bold green]🔒 OpenFOIA Initialization[/bold green]")
     rprint("─" * 50)
 
-    if password and not has_sqlcipher():
+    # Prefer prompting: a passphrase in argv is written to shell history and
+    # is readable from the process list while the command runs.
+    if password:
+        rprint(
+            "[yellow]WARNING: --password was read from the command line. It is now in "
+            "your shell history and was visible in the process list. "
+            "Prefer --encrypt, which prompts.[/yellow]"
+        )
+    elif encrypt:
+        password = typer.prompt("Encryption passphrase", hide_input=True, confirmation_prompt=True)
+
+    if duress_password:
+        rprint(
+            "[yellow]WARNING: --duress-password was read from the command line "
+            "(shell history + process list). Prefer --duress, which prompts.[/yellow]"
+        )
+    elif duress:
+        duress_password = typer.prompt(
+            "Duress passphrase", hide_input=True, confirmation_prompt=True
+        )
+
+    db_path = get_db_path(password=password)
+
+    if (password or duress_password) and not has_sqlcipher():
         rprint("[bold red]ERROR: pysqlcipher3 is not installed.[/bold red]")
-        rprint("[red]Cannot create encrypted database without it.[/red]")
+        rprint("[red]Cannot create an encrypted database or decoy profile without it.[/red]")
         rprint("[yellow]Install with: openfoia install-extras encryption[/yellow]")
         raise typer.Exit(1)
 
@@ -78,7 +119,7 @@ def init(
 
         # Show stats
         from .db import get_session
-        from .models import Agency, Request, Document
+        from .models import Agency, Document, Request
 
         with get_session(password=password) as session:
             agency_count = session.query(Agency).count()
@@ -347,7 +388,7 @@ def guide():
 def serve(
     port: int = typer.Option(0, "--port", "-p", help="Port to run on (0 = random)"),
     host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host to bind to"),
-    browser: Optional[str] = typer.Option(
+    browser: str | None = typer.Option(
         None, "--browser", "-b", help="Browser to open (safari/firefox/chrome/brave/tor)"
     ),
     private: bool = typer.Option(
@@ -370,7 +411,7 @@ def serve(
     import secrets
     import socket
 
-    from .browser import detect_browsers, launch_browser, print_browser_menu, BrowserType
+    from .browser import BrowserType, detect_browsers, launch_browser, print_browser_menu
 
     # Generate session token for security
     token = secrets.token_urlsafe(16)
@@ -438,8 +479,8 @@ def serve(
             rprint("[yellow]No browser auto-selected. Copy the URL above.[/yellow]\n")
 
     # Start the server
-    from .server import run_server
     from .db import get_data_dir
+    from .server import run_server
 
     run_server(host=host, port=port, token=token, data_dir=get_data_dir())
 
@@ -483,19 +524,19 @@ def upgrade(
         openfoia db upgrade          # Upgrade to latest
         openfoia db upgrade head     # Same as above
     """
-    from .db import get_db_path
+    from .db import get_db_path, run_migrations
 
     db_path = get_db_path()
     rprint(f"\n[cyan]Database:[/cyan] {db_path}")
     rprint(f"[cyan]Upgrading to:[/cyan] {revision}")
 
-    from alembic import command
-    from alembic.config import Config
+    if revision != "head":
+        rprint("[yellow]Only 'head' is supported for encrypted databases.[/yellow]")
 
-    alembic_cfg = Config()
-    alembic_cfg.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
-    alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
-    command.upgrade(alembic_cfg, revision)
+    # Route through run_migrations so an encrypted database is migrated with
+    # its key attached. Building a bare sqlite:/// URL here silently failed
+    # on encrypted databases.
+    run_migrations()
 
     rprint("[bold green]Database upgraded successfully.[/bold green]\n")
 
@@ -521,7 +562,7 @@ def encrypt(
         openfoia db encrypt --password SECRET
         openfoia db encrypt   # will prompt for password
     """
-    from .db import get_db_path, encrypt_database, has_sqlcipher
+    from .db import encrypt_database, get_db_path, has_sqlcipher
 
     if not has_sqlcipher():
         rprint("[bold red]Error:[/bold red] pysqlcipher3 is not installed.")
@@ -540,14 +581,15 @@ def encrypt(
         encrypt_database(password)
     except Exception as e:
         rprint(f"[bold red]Encryption failed:[/bold red] {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
-    rprint(f"[green]Backup saved:[/green] {db_path.with_suffix('.db.bak')}")
     rprint("[bold green]Database encrypted successfully.[/bold green]")
+    rprint("[green]Plaintext database and its WAL/journal files were shredded in place.[/green]")
     rprint("")
     rprint("[dim]Set OPENFOIA_DB_PASSWORD env var or pass --password to commands.[/dim]")
     rprint(
-        "[dim]You can safely delete the .bak file after verifying the encrypted DB works.[/dim]\n"
+        "[dim]No plaintext backup was kept. On SSDs, overwriting is best-effort — "
+        "use full-disk encryption. See docs/THREAT_MODEL.md.[/dim]\n"
     )
 
 
@@ -620,8 +662,13 @@ def config(
 
     elif show:
         if config_path.exists():
+            from .config import redact_secrets
+
             config_data = json.loads(config_path.read_text())
-            rprint(json.dumps(config_data, indent=2))
+            # Never print secrets: terminal scrollback outlives the session,
+            # and this file can hold the database decryption password.
+            rprint(json.dumps(redact_secrets(config_data), indent=2))
+            rprint(f"\n[dim]Secrets are masked. File: {config_path}[/dim]")
         else:
             rprint(
                 "[yellow]No configuration found. Run 'openfoia config --init' to create one.[/yellow]"
@@ -637,8 +684,8 @@ def config(
 def request_new(
     agency: str = typer.Option(..., "--agency", "-a", help="Target agency name or ID"),
     subject: str = typer.Option(..., "--subject", "-s", help="Request subject"),
-    body: Optional[str] = typer.Option(None, "--body", "-b", help="Request body (or use --file)"),
-    body_file: Optional[Path] = typer.Option(
+    body: str | None = typer.Option(None, "--body", "-b", help="Request body (or use --file)"),
+    body_file: Path | None = typer.Option(
         None, "--file", "-f", help="File containing request body"
     ),
     method: str = typer.Option("email", "--method", "-m", help="Delivery method (email/fax/mail)"),
@@ -647,13 +694,18 @@ def request_new(
 ):
     """Create a new FOIA request."""
     from uuid import uuid4
+
     from .db import get_db_path, get_session, init_db
     from .models import (
         Agency as AgencyModel,
-        Request as RequestModel,
-        User,
-        RequestStatus,
+    )
+    from .models import (
         DeliveryMethod,
+        RequestStatus,
+        User,
+    )
+    from .models import (
+        Request as RequestModel,
     )
 
     if body_file:
@@ -694,7 +746,7 @@ def request_new(
             session.flush()
 
         # Create request
-        req_num = f"REQ-{datetime.now().strftime('%Y%m%d')}-{uuid4().hex[:6].upper()}"
+        req_num = f"REQ-{_utcnow().strftime('%Y%m%d')}-{uuid4().hex[:6].upper()}"
 
         try:
             delivery = DeliveryMethod(method.lower())
@@ -735,13 +787,15 @@ def request_new(
 
 @request_app.command("list")
 def request_list(
-    status: Optional[str] = typer.Option(None, "--status", "-s", help="Filter by status"),
-    agency: Optional[str] = typer.Option(None, "--agency", "-a", help="Filter by agency"),
+    status: str | None = typer.Option(None, "--status", "-s", help="Filter by status"),
+    agency: str | None = typer.Option(None, "--agency", "-a", help="Filter by agency"),
     limit: int = typer.Option(20, "--limit", "-n", help="Maximum results"),
 ):
     """List FOIA requests."""
-    from .db import get_session, get_db_path
-    from .models import Request as RequestModel, Agency as AgencyModel, RequestStatus
+    from .db import get_db_path, get_session
+    from .models import Agency as AgencyModel
+    from .models import Request as RequestModel
+    from .models import RequestStatus
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -757,7 +811,7 @@ def request_list(
                 query = query.filter(RequestModel.status == status_enum)
             except ValueError:
                 rprint(f"[red]Invalid status '{status}'.[/red]")
-                raise typer.Exit(1)
+                raise typer.Exit(1) from None
 
         if agency:
             query = query.filter(
@@ -808,8 +862,9 @@ def request_status(
     request_id: str = typer.Argument(..., help="Request ID or number"),
 ):
     """Check status of a FOIA request."""
-    from .db import get_session, get_db_path
-    from .models import Request as RequestModel, TimelineEvent
+    from .db import get_db_path, get_session
+    from .models import Request as RequestModel
+    from .models import TimelineEvent
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -889,17 +944,17 @@ def request_status(
 def request_send(
     agency: str = typer.Option(..., "--agency", "-a", help="Target agency (name or abbreviation)"),
     subject: str = typer.Option(..., "--subject", "-s", help="Request subject"),
-    body: Optional[str] = typer.Option(None, "--body", "-b", help="Request body text"),
-    body_file: Optional[Path] = typer.Option(
+    body: str | None = typer.Option(None, "--body", "-b", help="Request body text"),
+    body_file: Path | None = typer.Option(
         None, "--file", "-f", help="File containing request body"
     ),
-    template: Optional[str] = typer.Option(
+    template: str | None = typer.Option(
         None, "--template", "-t", help="Use template (standard/self)"
     ),
     name: str = typer.Option(..., "--name", "-n", help="Your full name"),
     email: str = typer.Option(..., "--email", "-e", help="Your email address"),
     method: str = typer.Option("email", "--method", "-m", help="Delivery method (email/fax/mail)"),
-    to_address: Optional[str] = typer.Option(
+    to_address: str | None = typer.Option(
         None, "--to", help="Override recipient address (email, fax number, or mailing address)"
     ),
     dry_run: bool = typer.Option(
@@ -930,9 +985,10 @@ def request_send(
         openfoia request send -a FBI -s "Test" -t standard -n "Test User" -e test@example.com --dry-run
     """
     import asyncio
+
     from .db import get_db_path, get_session
-    from .models import Agency
     from .gateways.base import DeliveryPayload
+    from .models import Agency
 
     if method not in ("email", "fax", "mail"):
         rprint(f"[red]Unknown method '{method}'. Use: email, fax, mail[/red]")
@@ -981,7 +1037,7 @@ def request_send(
 
     # Get body content
     if template:
-        from .templates import standard_request, records_about_self, RequesterInfo, RequestDetails
+        from .templates import RequestDetails, RequesterInfo, records_about_self, standard_request
 
         requester = RequesterInfo(name=name, email=email)
         details = RequestDetails(subject=subject, description=subject)
@@ -1048,15 +1104,13 @@ def request_send(
     from .db import get_data_dir
 
     config_path = get_data_dir() / "config.json"
-    import os
     import json
+    import os
 
     config = {}
     if config_path.exists():
-        try:
+        with contextlib.suppress(json.JSONDecodeError):
             config = json.loads(config_path.read_text())
-        except json.JSONDecodeError:
-            pass
 
     # Build and send via the appropriate gateway
     if method == "email":
@@ -1165,9 +1219,12 @@ def request_send(
                     rprint(f"  Expected delivery: {result.metadata['expected_delivery_date']}")
 
         # Update the matching Request in the DB if one exists
-        from .db import get_session, get_db_path
-        from .models import Request as RequestModel, RequestStatus, Agency as AgencyModel
         from datetime import timedelta
+
+        from .db import get_db_path, get_session
+        from .models import Agency as AgencyModel
+        from .models import Request as RequestModel
+        from .models import RequestStatus
 
         db_path = get_db_path()
         if db_path.exists():
@@ -1186,7 +1243,7 @@ def request_send(
                 )
                 if req:
                     req.status = RequestStatus.SENT
-                    req.sent_at = datetime.now()
+                    req.sent_at = _utcnow()
                     req.delivery_reference = result.reference_id
                     # Auto-set due date
                     response_days = req.agency.typical_response_days if req.agency else 20
@@ -1211,9 +1268,7 @@ def request_send(
 @docs_app.command("ingest")
 def docs_ingest(
     path: Path = typer.Argument(..., help="File or directory to ingest"),
-    request_id: Optional[str] = typer.Option(
-        None, "--request", "-r", help="Associate with request"
-    ),
+    request_id: str | None = typer.Option(None, "--request", "-r", help="Associate with request"),
     recursive: bool = typer.Option(
         True, "--recursive/--no-recursive", help="Recurse into directories"
     ),
@@ -1236,6 +1291,7 @@ def docs_ingest(
         openfoia docs ingest ./doc.pdf --keep-metadata
     """
     import asyncio
+
     from .db import get_data_dir, get_db_path, init_db
     from .pipeline.ingest import DocumentIngester
 
@@ -1318,9 +1374,10 @@ def docs_ingest(
 
     # Persist Document rows to database
     if results:
+        from uuid import uuid4
+
         from .db import get_session
         from .models import Document, DocumentType
-        from uuid import uuid4
 
         with get_session() as session:
             for r in results:
@@ -1339,7 +1396,7 @@ def docs_ingest(
                 # Check if request_id is valid, otherwise create without it
                 if not request_id:
                     # Create a placeholder request for unassociated documents
-                    from .models import Request, User, RequestStatus, DeliveryMethod
+                    from .models import DeliveryMethod, Request, RequestStatus, User
 
                     user = session.query(User).first()
                     if not user:
@@ -1407,7 +1464,7 @@ def docs_ocr(
     backend: str = typer.Option(
         "tesseract", "--backend", "-b", help="OCR backend (tesseract/google/aws)"
     ),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output text file"),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output text file"),
 ):
     """Run OCR on a PDF document.
 
@@ -1423,6 +1480,7 @@ def docs_ocr(
         openfoia docs ocr document.pdf --backend google
     """
     import asyncio
+
     from .pipeline.ocr import OCREngine, RedactionDetector
 
     if not file_path.exists():
@@ -1448,10 +1506,10 @@ def docs_ocr(
             rprint(f"[red]Missing dependency: {e}[/red]")
             rprint("[dim]Install with: pip install pytesseract pdf2image[/dim]")
             rprint("[dim]Also need: brew install tesseract poppler (macOS)[/dim]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
         except Exception as e:
             rprint(f"[red]OCR failed: {e}[/red]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
         progress.update(task, description="Detecting redactions...")
         redactions = asyncio.run(detector.analyze(result.text, file_path))
@@ -1494,16 +1552,14 @@ def docs_ocr(
 
 @agency_app.command("list")
 def agency_list(
-    level: Optional[str] = typer.Option(
+    level: str | None = typer.Option(
         None, "--level", "-l", help="Filter by level (federal/state/local)"
     ),
-    state: Optional[str] = typer.Option(
-        None, "--state", "-s", help="Filter by state (2-letter code)"
-    ),
+    state: str | None = typer.Option(None, "--state", "-s", help="Filter by state (2-letter code)"),
     limit: int = typer.Option(50, "--limit", "-n", help="Maximum results"),
 ):
     """List agencies in the database."""
-    from .db import get_session, get_db_path
+    from .db import get_db_path, get_session
     from .models import Agency, AgencyLevel
 
     db_path = get_db_path()
@@ -1520,7 +1576,7 @@ def agency_list(
                 query = query.filter(Agency.level == level_enum)
             except ValueError:
                 rprint(f"[red]Invalid level '{level}'. Use: federal, state, local, tribal[/red]")
-                raise typer.Exit(1)
+                raise typer.Exit(1) from None
 
         if state:
             query = query.filter(Agency.state == state.upper())
@@ -1557,7 +1613,7 @@ def agency_search(
     limit: int = typer.Option(20, "--limit", "-n", help="Maximum results"),
 ):
     """Search for agencies by name or abbreviation."""
-    from .db import get_session, get_db_path
+    from .db import get_db_path, get_session
     from .models import Agency
 
     db_path = get_db_path()
@@ -1601,7 +1657,7 @@ def agency_info(
     agency_id: str = typer.Argument(..., help="Agency abbreviation or name"),
 ):
     """Show detailed information about an agency."""
-    from .db import get_session, get_db_path
+    from .db import get_db_path, get_session
     from .models import Agency
 
     db_path = get_db_path()
@@ -1688,9 +1744,9 @@ def template_generate(
     name: str = typer.Option(..., "--name", "-n", help="Your full name"),
     email: str = typer.Option(..., "--email", "-e", help="Your email address"),
     address: str = typer.Option("", "--address", help="Your mailing address"),
-    organization: Optional[str] = typer.Option(None, "--org", help="Your organization"),
+    organization: str | None = typer.Option(None, "--org", help="Your organization"),
     journalist: bool = typer.Option(False, "--journalist", "-j", help="You are a journalist"),
-    output: Optional[Path] = typer.Option(
+    output: Path | None = typer.Option(
         None, "--output", "-o", help="Output file (default: stdout)"
     ),
     no_fee_waiver: bool = typer.Option(
@@ -1704,7 +1760,7 @@ def template_generate(
         openfoia template generate standard -a FBI -s "Records on X" -n "Jane Doe" -e jane@example.com
         openfoia template generate standard -a EPA -s "Pollution data" -n "John Smith" -e john@example.com -j
     """
-    from .templates import standard_request, records_about_self, RequesterInfo, RequestDetails
+    from .templates import RequestDetails, RequesterInfo, records_about_self, standard_request
 
     # Build requester info
     requester = RequesterInfo(
@@ -1848,6 +1904,7 @@ def campaign_create(
 ):
     """Create a new crowdsourced campaign."""
     from uuid import uuid4
+
     from .db import get_db_path, get_session, init_db
     from .models import Campaign, User
 
@@ -1891,7 +1948,7 @@ def campaign_create(
 @campaign_app.command("list")
 def campaign_list():
     """List all campaigns."""
-    from .db import get_session, get_db_path
+    from .db import get_db_path, get_session
     from .models import Campaign
 
     db_path = get_db_path()
@@ -1933,7 +1990,7 @@ def campaign_status(
     campaign_id: str = typer.Argument(..., help="Campaign ID (or prefix)"),
 ):
     """Check campaign progress."""
-    from .db import get_session, get_db_path
+    from .db import get_db_path, get_session
     from .models import Campaign, RequestStatus
 
     db_path = get_db_path()
@@ -1994,7 +2051,8 @@ def campaign_join(
 ):
     """Join a campaign as a participant."""
     from uuid import uuid4
-    from .db import get_session, get_db_path
+
+    from .db import get_db_path, get_session
     from .models import Campaign, User
 
     db_path = get_db_path()
@@ -2050,13 +2108,18 @@ def campaign_distribute(
     target agency and assigns them round-robin to participants.
     """
     from uuid import uuid4
-    from .db import get_session, get_db_path
+
+    from .db import get_db_path, get_session
+    from .models import (
+        Agency as AgencyModel,
+    )
     from .models import (
         Campaign,
-        Agency as AgencyModel,
-        Request as RequestModel,
-        RequestStatus,
         DeliveryMethod,
+        RequestStatus,
+    )
+    from .models import (
+        Request as RequestModel,
     )
 
     db_path = get_db_path()
@@ -2122,7 +2185,7 @@ def campaign_distribute(
                 skipped += 1
                 continue
 
-            req_num = f"REQ-{datetime.now().strftime('%Y%m%d')}-{uuid4().hex[:6].upper()}"
+            req_num = f"REQ-{_utcnow().strftime('%Y%m%d')}-{uuid4().hex[:6].upper()}"
             request = RequestModel(
                 id=str(uuid4()),
                 request_number=req_num,
@@ -2154,8 +2217,9 @@ def campaign_progress(
     campaign_id: str = typer.Argument(..., help="Campaign ID (or prefix)"),
 ):
     """Show per-participant, per-agency status grid for a campaign."""
-    from .db import get_session, get_db_path
-    from .models import Campaign, Agency as AgencyModel
+    from .db import get_db_path, get_session
+    from .models import Agency as AgencyModel
+    from .models import Campaign
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -2250,9 +2314,9 @@ def campaign_progress(
 @analyze_app.command("extract")
 def analyze_extract(
     document_id: str = typer.Argument(..., help="Document ID to analyze"),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file"),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output file"),
     force: bool = typer.Option(False, "--force", help="Re-extract even if already done"),
-    model: Optional[str] = typer.Option(
+    model: str | None = typer.Option(
         None, "--model", "-m", help="LLM model (e.g. llama3.1:8b, llama3.2:3b)"
     ),
     ensemble: bool = typer.Option(
@@ -2264,7 +2328,7 @@ def analyze_extract(
     Pipeline: regex + NER → merge → LLM validation (if available).
     Use --ensemble to run ALL NER backends (GLiNER + spaCy) together.
     """
-    from .db import get_session, get_db_path
+    from .db import get_db_path, get_session
     from .models import Document, Entity
 
     db_path = get_db_path()
@@ -2314,6 +2378,7 @@ def analyze_extract(
 
         # Run extraction
         import asyncio
+
         from .pipeline.extract import EntityExtractor
 
         extractor = EntityExtractor(model=model) if model else EntityExtractor()
@@ -2336,7 +2401,7 @@ def analyze_extract(
         except Exception as e:
             rprint(f"[red]Extraction failed: {e}[/red]")
             rprint("[dim]Ensure AI provider is configured: openfoia config --init[/dim]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
         if not result.entities:
             rprint("[yellow]No entities found in document.[/yellow]")
@@ -2344,6 +2409,7 @@ def analyze_extract(
 
         # Save entities to database
         from uuid import uuid4
+
         from .models import entity_links
 
         entity_id_map: dict[str, str] = {}  # normalized_text.lower() -> entity.id
@@ -2480,7 +2546,8 @@ def analyze_graphs_list():
 
         size = f.stat().st_size
         size_str = f"{size / 1024:.0f}KB" if size > 1024 else f"{size}B"
-        modified = datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+        # Local time is intended: this is a file listing shown to the user.
+        modified = datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")  # noqa: DTZ006
 
         table.add_row(name, " + ".join(types), size_str, modified)
 
@@ -2491,13 +2558,11 @@ def analyze_graphs_list():
 
 @analyze_app.command("graph")
 def analyze_graph(
-    request_id: Optional[str] = typer.Option(
-        None, "--request", "-r", help="Analyze single request"
-    ),
-    campaign_id: Optional[str] = typer.Option(
+    request_id: str | None = typer.Option(None, "--request", "-r", help="Analyze single request"),
+    campaign_id: str | None = typer.Option(
         None, "--campaign", "-c", help="Analyze entire campaign"
     ),
-    name: Optional[str] = typer.Option(
+    name: str | None = typer.Option(
         None, "--name", "-n", help="Save as named graph (stored in ~/.openfoia/graphs/)"
     ),
     output: Path = typer.Option(
@@ -2518,8 +2583,9 @@ def analyze_graph(
         openfoia analyze graph --request REQ-001 --name epa    # filter + save
         openfoia analyze graphs                                # list saved graphs
     """
-    from .db import get_session, get_db_path
-    from .models import Entity, Document, Request as RequestModel, entity_links
+    from .db import get_db_path, get_session
+    from .models import Document, Entity, entity_links
+    from .models import Request as RequestModel
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -2586,8 +2652,10 @@ def analyze_graph(
         doc_ids = {e.document_id for e in entities if e.document_id}
         documents = {}
         if doc_ids:
-            from .models import Document as DocModel, Request as ReqModel
             import re as re_mod
+
+            from .models import Document as DocModel
+            from .models import Request as ReqModel
 
             for doc in session.query(DocModel).filter(DocModel.id.in_(doc_ids)).all():
                 # Derive source URL from request body or filename
@@ -2669,10 +2737,7 @@ def _load_config_data() -> tuple[Path, dict]:
     from .db import get_data_dir
 
     config_path = get_data_dir() / "config.json"
-    if config_path.exists():
-        data = json.loads(config_path.read_text())
-    else:
-        data = {}
+    data = json.loads(config_path.read_text()) if config_path.exists() else {}
     return config_path, data
 
 
@@ -2725,7 +2790,7 @@ def entities_add(
         re.compile(pattern)
     except re.error as e:
         rprint(f"[red]Invalid regex pattern: {e}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     name = name.upper().replace(" ", "_")
 
@@ -2817,8 +2882,8 @@ def _fuzzy_match_column(header: str) -> str | None:
 
 def _llm_map_columns(headers: list[str], sample_rows: list[list[str]]) -> dict[str, int] | None:
     """Use the configured LLM to figure out which columns map to name/pattern/description."""
-    from .pipeline.extract import _llm_available, _call_ollama
     from .config import load_config
+    from .pipeline.extract import _call_ollama, _llm_available
 
     cfg = load_config()
     if not _llm_available(cfg.ai.provider, cfg.ai.api_key, cfg.ai.base_url):
@@ -2872,8 +2937,8 @@ def _llm_generate_regex(description: str) -> str | None:
     2. Matches at least one example from the description (if examples are present)
     3. Is reasonably short (not hallucinated garbage)
     """
-    from .pipeline.extract import _llm_available
     from .config import load_config
+    from .pipeline.extract import _llm_available
 
     cfg = load_config()
     if not _llm_available(cfg.ai.provider, cfg.ai.api_key, cfg.ai.base_url):
@@ -3177,7 +3242,7 @@ def entities_export(
 @entities_app.command("test")
 def entities_test(
     text: str = typer.Option(None, "--text", "-t", help="Test text (or reads from stdin)"),
-    file: Optional[Path] = typer.Option(None, "--file", "-f", help="Test against a file"),
+    file: Path | None = typer.Option(None, "--file", "-f", help="Test against a file"),
 ):
     """Test your custom entity types against sample text.
 
@@ -3262,8 +3327,10 @@ def deadline_list(
     Federal agencies have 20 business days to respond (5 U.S.C. 552).
     This command shows what's due, what's overdue, and what needs follow-up.
     """
-    from .db import get_session, get_db_path
-    from .models import Request as RequestModel, Agency as AgencyModel, RequestStatus
+    from .db import get_db_path, get_session
+    from .models import Agency as AgencyModel
+    from .models import Request as RequestModel
+    from .models import RequestStatus
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -3321,7 +3388,7 @@ def deadline_list(
             table.add_column("Days Over", style="red")
 
             for r in overdue:
-                days_over = (datetime.utcnow() - r.due_date).days
+                days_over = (_utcnow() - r.due_date).days
                 table.add_row(
                     r.request_number,
                     r.agency.abbreviation or r.agency.name,
@@ -3343,7 +3410,7 @@ def deadline_list(
             table.add_column("Days Left", style="green")
 
             for r in upcoming:
-                days_left = (r.due_date - datetime.utcnow()).days
+                days_left = (r.due_date - _utcnow()).days
                 color = "green" if days_left > 5 else "yellow"
                 table.add_row(
                     r.request_number,
@@ -3370,8 +3437,9 @@ def deadline_check():
     Example (add to .bashrc):
         openfoia deadlines check 2>/dev/null
     """
-    from .db import get_session, get_db_path
-    from .models import Request as RequestModel, RequestStatus
+    from .db import get_db_path, get_session
+    from .models import Request as RequestModel
+    from .models import RequestStatus
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -3399,7 +3467,7 @@ def deadline_check():
                 r.due_date = _foia_due_date(r.sent_at)
             if r.is_overdue():
                 overdue_count += 1
-                days_over = (datetime.utcnow() - r.due_date).days
+                days_over = (_utcnow() - r.due_date).days
                 rprint(f"[red]OVERDUE:[/red] {r.request_number} — {r.subject} (+{days_over} days)")
 
         if overdue_count:
@@ -3407,6 +3475,100 @@ def deadline_check():
                 f"\n[red]{overdue_count} overdue request(s). Run 'openfoia deadlines list' for details.[/red]"
             )
             raise typer.Exit(1)
+
+
+# === Egress (Tor) Helpers ===
+#
+# Shared by every command that touches the network through openfoia.net's
+# egress choke point (crossref, ingest/web fetch). Keeps the "opt-in, fail
+# closed, be honest" contract in one place instead of re-implemented per
+# command.
+
+
+def _egress_policy_from(config, *, tor: bool | None = None) -> EgressPolicy:
+    """Build an EgressPolicy from config.network, with an optional CLI override.
+
+    tor=None uses the configured default (config.network.tor). tor=True or
+    tor=False overrides that default for this invocation only — e.g. a CLI
+    `--tor/--no-tor` flag left unset by the user should pass tor=None here so
+    the configured default wins.
+    """
+    from .net import EgressMode, EgressPolicy
+
+    use_tor = config.network.tor if tor is None else tor
+    return EgressPolicy(
+        mode=EgressMode.TOR if use_tor else EgressMode.DIRECT,
+        tor_host=config.network.tor_host,
+        tor_port=config.network.tor_port,
+        isolate_streams=config.network.isolate_streams,
+    )
+
+
+def _check_tor_or_exit(policy: EgressPolicy) -> None:
+    """Fail-closed Tor readiness gate.
+
+    If *policy* is DIRECT this is a no-op. If it is TOR, probe the SOCKS
+    port before any request is made; if it is not reachable, print a clear
+    error and abort (typer.Exit) rather than silently falling through to a
+    clearnet request — that silent fallback is exactly the deanonymization
+    leak Principle 1 rules out.
+    """
+    from .net import check_tor
+
+    if not policy.is_tor:
+        return
+
+    if not asyncio.run(check_tor(policy)):
+        rprint(
+            f"[red]Tor egress requested but the SOCKS proxy at "
+            f"{policy.tor_host}:{policy.tor_port} is not reachable.[/red]"
+        )
+        rprint(
+            "[yellow]Start Tor (e.g. `tor` / `sudo systemctl start tor`) or drop --tor.[/yellow]"
+        )
+        raise typer.Exit(1)
+
+
+def _report_tor_unavailable() -> None:
+    """Print the fix for TorUnavailableError (missing socksio) and exit."""
+    rprint("[red]Tor egress requires the 'socksio' package, which is not installed.[/red]")
+    rprint("[yellow]Run: openfoia install-extras tor[/yellow]")
+    raise typer.Exit(1)
+
+
+@app.command("egress-status")
+def egress_status(
+    tor: bool | None = typer.Option(
+        None, "--tor/--no-tor", help="Check this mode instead of the configured default"
+    ),
+):
+    """Show the current network egress policy, honestly.
+
+    Reports whether requests go out DIRECT or via TOR, whether the Tor SOCKS
+    proxy is actually reachable right now, and exactly what is and is not
+    protected — see docs/THREAT_MODEL.md for the full picture.
+    """
+    from .config import load_config
+    from .net import check_tor, describe_egress
+
+    cfg = load_config()
+    policy = _egress_policy_from(cfg, tor=tor)
+    info = describe_egress(policy)
+
+    rprint("[bold]Egress Configuration[/bold]")
+    rprint(f"  Mode: {'tor' if policy.is_tor else 'direct'}")
+    if policy.is_tor:
+        reachable = asyncio.run(check_tor(policy))
+        status = "[green]reachable[/green]" if reachable else "[red]NOT reachable[/red]"
+        rprint(f"  Tor SOCKS proxy ({policy.tor_host}:{policy.tor_port}): {status}")
+        rprint(f"  Stream isolation: {policy.isolate_streams}")
+        rprint("  The destination servers will NOT see your real IP.")
+    else:
+        rprint("  The destination servers WILL see your real IP.")
+
+    rprint("\n[bold]What this does NOT protect[/bold]")
+    for item in info["not_protected"]:
+        rprint(f"  - {item}")
 
 
 # === Browse Command ===
@@ -3440,6 +3602,7 @@ def browse(
         openfoia browse https://example.com --tor --headless --save  # Headless Tor
     """
     import asyncio
+
     from .tor_browse import browse as _browse
 
     try:
@@ -3452,10 +3615,10 @@ def browse(
             )
         )
     except SystemExit:
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except Exception as e:
         rprint(f"[red]Browse failed:[/red] {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     rprint(f"\n[cyan]Title:[/cyan] {result.get('title', 'N/A')}")
     rprint(f"[cyan]URL:[/cyan]   {result.get('url', url)}")
@@ -3501,6 +3664,7 @@ def purge(
         print_ssd_warning,
         secure_delete_dir,
     )
+
     from .db import get_data_dir as _get_data_dir
 
     data_dir = _get_data_dir()
@@ -3577,10 +3741,12 @@ def purge(
 @app.command("ingest")
 def ingest_url(
     url: str = typer.Option(..., "--url", "-u", help="URL to fetch and ingest"),
-    tor: bool = typer.Option(False, "--tor", help="Route through Tor SOCKS5 proxy"),
-    output: Optional[Path] = typer.Option(
-        None, "--output", "-o", help="Save extracted text to file"
+    tor: bool | None = typer.Option(
+        None,
+        "--tor/--no-tor",
+        help="Route through Tor SOCKS5 proxy (default: config, see 'openfoia egress-status')",
     ),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Save extracted text to file"),
 ):
     """Ingest a web page into the document pipeline.
 
@@ -3588,15 +3754,23 @@ def ingest_url(
     and archives the HTML + text locally.
 
     Use --tor to route the request through the Tor network (requires
-    Tor running on localhost:9050).
+    Tor running on localhost:9050). --tor/--no-tor overrides config for this
+    run only; with neither flag, config.network.tor decides.
 
     Examples:
         openfoia ingest --url https://example.gov/report.html
         openfoia ingest --url https://example.onion/docs --tor
     """
     import asyncio
+
+    from .config import load_config
     from .db import get_data_dir
+    from .net import TorUnavailableError
     from .pipeline.web import archive_url
+
+    cfg = load_config()
+    policy = _egress_policy_from(cfg, tor=tor)
+    _check_tor_or_exit(policy)
 
     storage_path = get_data_dir() / "web"
 
@@ -3605,16 +3779,20 @@ def ingest_url(
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
-        mode = " via Tor" if tor else ""
+        mode = " via Tor" if policy.is_tor else ""
         progress.add_task(f"Fetching{mode}: {url}", total=None)
 
         try:
-            result = asyncio.run(archive_url(url, storage_path, use_tor=tor))
+            result = asyncio.run(
+                archive_url(url, storage_path, use_tor=policy.is_tor, egress=policy)
+            )
+        except TorUnavailableError:
+            _report_tor_unavailable()
         except Exception as e:
             rprint(f"[red]Failed to fetch URL: {e}[/red]")
-            if tor:
+            if policy.is_tor:
                 rprint("[dim]Make sure Tor is running: brew install tor && tor[/dim]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
     rprint("\n[bold green]Archived web page[/bold green]")
     rprint("=" * 50)
@@ -3631,7 +3809,7 @@ def ingest_url(
     table.add_row("HTML saved", result.html_path)
     table.add_row("Text saved", result.text_path)
     table.add_row("Checksum", result.checksum[:16] + "...")
-    if tor:
+    if policy.is_tor:
         table.add_row("Tor", "Yes")
 
     console.print(table)
@@ -3655,10 +3833,10 @@ def records_search(
         "-s",
         help="Data source (muckrock, opencorporates, sec)",
     ),
-    jurisdiction: Optional[str] = typer.Option(
+    jurisdiction: str | None = typer.Option(
         None, "--jurisdiction", "-j", help="Jurisdiction filter (e.g. us_ca, gb)"
     ),
-    filing_type: Optional[str] = typer.Option(
+    filing_type: str | None = typer.Option(
         None, "--type", "-t", help="Filing type filter for SEC (e.g. 10-K, 8-K)"
     ),
     limit: int = typer.Option(10, "--limit", "-n", help="Maximum results to display"),
@@ -3681,6 +3859,7 @@ def records_search(
         openfoia records search "EPA water" --source muckrock
     """
     import asyncio
+
     from .records import get_adapter, list_sources
 
     # Validate source
@@ -3708,7 +3887,7 @@ def records_search(
             result = asyncio.run(adapter.search(query, **kwargs))
         except Exception as e:
             rprint(f"[red]Search failed: {e}[/red]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
     if raw:
         rprint(
@@ -3954,7 +4133,7 @@ def records_fetch(
                 result_id, text = asyncio.run(adapter.pull_text(doc_id))
             except Exception as e:
                 rprint(f"[red]Fetch failed: {e}[/red]")
-                raise typer.Exit(1)
+                raise typer.Exit(1) from None
 
         if not result_id or not text:
             rprint(f"[red]Could not fetch text for document {doc_id}.[/red]")
@@ -4010,7 +4189,7 @@ def records_download(
             entity = asyncio.run(adapter.fetch(request_id))
         except Exception as e:
             rprint(f"[red]Failed to fetch request: {e}[/red]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
     if not entity:
         rprint(f"[red]Request {request_id} not found on MuckRock.[/red]")
@@ -4043,7 +4222,7 @@ def records_download(
             downloaded = asyncio.run(adapter.download_files(request_id, str(output)))
         except Exception as e:
             rprint(f"[red]Download failed: {e}[/red]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
     rprint(f"\n[green]{len(downloaded)} file(s) downloaded to {output}/[/green]")
 
@@ -4078,9 +4257,10 @@ def records_download(
 
         # Persist Document rows to database
         if ingest_results:
-            from .db import get_session
-            from .models import Document, DocumentType, Request, User, RequestStatus, DeliveryMethod
             from uuid import uuid4
+
+            from .db import get_session
+            from .models import DeliveryMethod, Document, DocumentType, Request, RequestStatus, User
 
             with get_session() as session:
                 # Create a placeholder request for downloaded docs
@@ -4134,23 +4314,30 @@ def records_download(
 
 @app.command()
 def crossref(
-    request_id: Optional[str] = typer.Option(
+    request_id: str | None = typer.Option(
         None, "--request", "-r", help="Cross-ref entities from a specific request"
     ),
-    document_id: Optional[str] = typer.Option(
+    document_id: str | None = typer.Option(
         None, "--document", "-d", help="Cross-ref entities from a specific document"
     ),
-    sources: Optional[str] = typer.Option(
+    sources: str | None = typer.Option(
         None,
         "--sources",
         help="Comma-separated sources (muckrock,opencorporates,sec,opensanctions,documentcloud)",
     ),
-    icij_data: Optional[Path] = typer.Option(
+    icij_data: Path | None = typer.Option(
         None, "--icij-data", help="Path to downloaded ICIJ CSV data"
     ),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Save report to file"),
-    ftm: Optional[Path] = typer.Option(
+    output: Path | None = typer.Option(None, "--output", "-o", help="Save report to file"),
+    ftm: Path | None = typer.Option(
         None, "--ftm", help="Export results as FollowTheMoney JSON-lines"
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the network confirmation prompt"),
+    tor: bool | None = typer.Option(
+        None,
+        "--tor/--no-tor",
+        help="Route lookups through Tor to hide your IP from these APIs "
+        "(default: config, see 'openfoia egress-status')",
     ),
 ):
     """Cross-reference extracted entities against external databases.
@@ -4166,10 +4353,14 @@ def crossref(
         openfoia crossref -r REQ-20260322-ABC123    # from one request
         openfoia crossref --icij-data ./icij-csvs/  # include Offshore Leaks
         openfoia crossref --ftm results.ftm.json    # export as FollowTheMoney
+        openfoia crossref --tor                     # hide your IP from the APIs
     """
-    from .db import get_session, get_db_path
-    from .models import Entity, Document, Request as RequestModel
+    from .config import load_config
     from .crossref import crossref_entities
+    from .db import get_db_path, get_session
+    from .models import Document, Entity
+    from .models import Request as RequestModel
+    from .net import TorUnavailableError, describe_egress
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -4237,30 +4428,69 @@ def crossref(
         )
         if s != "icij"
     ]
+    cfg = load_config()
+    policy = _egress_policy_from(cfg, tor=tor)
+
     if network_sources:
+        # Fail closed before asking the user to confirm anything — no point
+        # walking through the leak report if Tor was requested and isn't
+        # actually there to protect the request that follows.
+        _check_tor_or_exit(policy)
+
         rprint(
             "\n[yellow]WARNING: Cross-reference will send entity names to external APIs:[/yellow]"
         )
         rprint(f"[yellow]  {', '.join(network_sources)}[/yellow]")
+        rprint(
+            "[yellow]  The names of the people and organizations you are "
+            "investigating will leave this machine.[/yellow]"
+        )
+
+        egress_info = describe_egress(policy)
+        if policy.is_tor:
+            rprint(
+                "[cyan]  Egress: Tor — the destination servers will NOT see your real IP "
+                f"(stream isolation: {egress_info['stream_isolation']}).[/cyan]"
+            )
+        else:
+            rprint(
+                "[yellow]  Egress: direct — the destination servers WILL see your real IP.[/yellow]"
+            )
+        rprint(
+            "[dim]  Either way, the query itself (the subject names above) still reaches "
+            "each endpoint — Tor hides who is asking, not what is asked. A global "
+            "adversary watching both ends of the connection can still correlate timing.[/dim]"
+        )
         rprint("[dim]  Use --sources icij for offline-only (requires downloaded ICIJ CSVs)[/dim]")
+        rprint(
+            "[dim]  Use --tor to hide your IP from these endpoints (requires Tor running).[/dim]"
+        )
         rprint("")
+
+        # A warning you cannot answer is not consent. Confirm before leaking.
+        if not yes and not typer.confirm("Send these names to the sources listed above?"):
+            rprint("[green]Aborted. Nothing left your machine.[/green]")
+            raise typer.Exit(0)
 
     rprint("[bold]Cross-referencing entities...[/bold]")
 
     def _progress(event: str, msg: str) -> None:
-        if event == "start":
-            rprint(f"[dim]  {msg}[/dim]")
-        elif event == "entity":
+        if event == "start" or event == "entity":
             rprint(f"[dim]  {msg}[/dim]")
 
-    report = asyncio.run(
-        crossref_entities(
-            entities,
-            sources=source_list,
-            icij_data_dir=str(icij_data) if icij_data else None,
-            on_progress=_progress,
+    try:
+        report = asyncio.run(
+            crossref_entities(
+                entities,
+                sources=source_list,
+                icij_data_dir=str(icij_data) if icij_data else None,
+                on_progress=_progress,
+                allow_network=True,  # user was warned and confirmed above
+                egress=policy,
+            )
         )
-    )
+    except TorUnavailableError:
+        _report_tor_unavailable()
 
     # Display results
     rprint("\n[bold]Cross-Reference Report[/bold]")
@@ -4341,7 +4571,7 @@ def crossref(
 @analyze_app.command("export")
 def analyze_export(
     output: Path = typer.Option("entities.ftm.json", "--output", "-o", help="Output file path"),
-    request_id: Optional[str] = typer.Option(
+    request_id: str | None = typer.Option(
         None, "--request", "-r", help="Export from specific request"
     ),
 ):
@@ -4354,10 +4584,11 @@ def analyze_export(
         openfoia analyze export
         openfoia analyze export -o investigation.ftm.json -r REQ-20260322-ABC
     """
-    from .db import get_session, get_db_path
-    from .models import Entity, Document, Request as RequestModel, entity_links
-    from .pipeline.extract import ExtractedEntity
+    from .db import get_db_path, get_session
     from .ftm import export_ftm
+    from .models import Document, Entity, entity_links
+    from .models import Request as RequestModel
+    from .pipeline.extract import ExtractedEntity
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -4413,7 +4644,7 @@ def analyze_export(
 @analyze_app.command("import")
 def analyze_import(
     file: Path = typer.Argument(..., help="FtM JSON-lines file to import"),
-    tag: Optional[str] = typer.Option(None, "--tag", "-t", help="Tag for this import batch"),
+    tag: str | None = typer.Option(None, "--tag", "-t", help="Tag for this import batch"),
 ):
     """Import entities from a FollowTheMoney JSON-lines file.
 

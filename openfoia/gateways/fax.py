@@ -15,14 +15,39 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
-import tempfile
-from datetime import datetime, timezone
+import os
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from .base import DeliveryGateway, DeliveryPayload, DeliveryResult, DeliveryStatus
 
 logger = logging.getLogger(__name__)
+
+
+def _esc(value: Any) -> str:
+    """Escape a field interpolated into reportlab Paragraph markup.
+
+    Paragraph parses a small HTML dialect, so an unescaped '<' in a recipient
+    name (which can come from fetched agency data) corrupts or injects into
+    the rendered cover page.
+    """
+    import html
+
+    return html.escape(str(value or ""), quote=True)
+
+
+def get_fax_media_dir() -> Path:
+    """Owner-only staging directory for outbound fax PDFs.
+
+    Previously these were written to the shared system temp dir and never
+    deleted: a world-readable copy of the FOIA request survived
+    `openfoia purge --secure`, which only covers the data directory.
+    """
+    from ..db import _ensure_private_dir, get_data_dir
+
+    return _ensure_private_dir(get_data_dir() / "fax_media")
 
 
 class TwilioFaxGateway(DeliveryGateway):
@@ -53,12 +78,16 @@ class TwilioFaxGateway(DeliveryGateway):
         from_number: str,
         webhook_url: str | None = None,
         media_base_url: str | None = None,
+        store_media_on_provider: bool = False,
     ):
         self.account_sid = account_sid
         self.auth_token = auth_token
         self.from_number = from_number
         self.webhook_url = webhook_url
         self.media_base_url = media_base_url
+        # Off by default: a retained copy on Twilio is outside the user's
+        # control and survives any local purge.
+        self.store_media_on_provider = store_media_on_provider
         self._client: Any = None
 
     def _get_client(self) -> Any:
@@ -98,7 +127,9 @@ class TwilioFaxGateway(DeliveryGateway):
                 from_=self.from_number,
                 media_url=media_url,
                 quality="fine",  # Higher quality for legal documents
-                store_media=True,  # Keep a copy on Twilio
+                # Do NOT leave a copy of the request on Twilio's servers by
+                # default — it is outside the user's control and outside purge.
+                store_media=self.store_media_on_provider,
                 status_callback=self.webhook_url,
             )
 
@@ -107,7 +138,7 @@ class TwilioFaxGateway(DeliveryGateway):
             return DeliveryResult(
                 status=DeliveryStatus.PENDING,
                 reference_id=fax.sid,
-                sent_at=datetime.now(timezone.utc),
+                sent_at=datetime.now(UTC),
                 cost_cents=pages * self.COST_PER_PAGE_CENTS,
                 metadata={
                     "to": payload.recipient_address,
@@ -237,9 +268,9 @@ class TwilioFaxGateway(DeliveryGateway):
     def _generate_pdf_reportlab(self, payload: DeliveryPayload) -> bytes:
         """Generate PDF using reportlab with proper legal formatting."""
         from reportlab.lib.pagesizes import letter
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import inch
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(
@@ -277,14 +308,14 @@ class TwilioFaxGateway(DeliveryGateway):
         if payload.cover_page:
             story.append(Paragraph("FACSIMILE TRANSMITTAL", header_style))
             story.append(Spacer(1, 12))
-            story.append(Paragraph(f"<b>TO:</b> {payload.recipient_name}", body_style))
-            story.append(Paragraph(f"<b>FAX:</b> {payload.recipient_address}", body_style))
+            story.append(Paragraph(f"<b>TO:</b> {_esc(payload.recipient_name)}", body_style))
+            story.append(Paragraph(f"<b>FAX:</b> {_esc(payload.recipient_address)}", body_style))
             story.append(
-                Paragraph(
-                    f"<b>DATE:</b> {datetime.now(timezone.utc).strftime('%B %d, %Y')}", body_style
-                )
+                Paragraph(f"<b>DATE:</b> {datetime.now(UTC).strftime('%B %d, %Y')}", body_style)
             )
-            story.append(Paragraph(f"<b>RE:</b> FOIA Request - {payload.subject}", body_style))
+            story.append(
+                Paragraph(f"<b>RE:</b> FOIA Request - {_esc(payload.subject)}", body_style)
+            )
             story.append(
                 Paragraph(
                     f"<b>PAGES:</b> {self._estimate_pages(payload)} (including cover)",
@@ -359,7 +390,7 @@ class TwilioFaxGateway(DeliveryGateway):
 
         This is a fallback that creates a bare-bones but valid PDF.
         """
-        date_str = datetime.now(timezone.utc).strftime("%B %d, %Y")
+        date_str = datetime.now(UTC).strftime("%B %d, %Y")
         sender = (payload.return_address or "[Requester Name]").split("\n")[0]
 
         text_lines = [
@@ -451,22 +482,21 @@ class TwilioFaxGateway(DeliveryGateway):
             file_hash = hashlib.sha256(pdf_bytes).hexdigest()[:16]
             filename = f"foia_fax_{file_hash}.pdf"
 
-            # Save locally for the configured server to serve
-            temp_dir = Path(tempfile.gettempdir()) / "openfoia_fax_media"
-            temp_dir.mkdir(parents=True, exist_ok=True)
-            pdf_path = temp_dir / filename
+            # Stage inside the data dir (0700) so the PDF is owner-only and is
+            # covered by `openfoia purge`. It contains the requester's name,
+            # return address and the subject of the investigation.
+            pdf_path = get_fax_media_dir() / filename
             pdf_path.write_bytes(pdf_bytes)
+            os.chmod(pdf_path, 0o600)
 
             base = self.media_base_url.rstrip("/")
             return f"{base}/{filename}"
 
-        # Fallback: save to temp directory. Caller must ensure Twilio can reach
+        # Fallback: stage in the data dir. Caller must ensure Twilio can reach
         # this file (e.g., via ngrok tunnel or local dev server).
-        with tempfile.NamedTemporaryFile(
-            suffix=".pdf", prefix="foia_fax_", delete=False, dir=None
-        ) as f:
-            f.write(pdf_bytes)
-            temp_path = f.name
+        temp_path = str(get_fax_media_dir() / f"foia_fax_{uuid4().hex}.pdf")
+        Path(temp_path).write_bytes(pdf_bytes)
+        os.chmod(temp_path, 0o600)
 
         logger.warning(
             "No media_base_url configured. PDF saved to %s. "

@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
-from jinja2 import Template
+from jinja2.sandbox import SandboxedEnvironment
 
 from .models import (
     Agency,
@@ -23,6 +23,18 @@ from .models import (
     RequestStatus,
     User,
 )
+from .models import utcnow as _utcnow
+
+
+def _sandbox_env() -> SandboxedEnvironment:
+    """Build the sandboxed Jinja2 environment used for campaign templates.
+
+    ``SandboxedEnvironment`` blocks access to underscore-prefixed attributes
+    and unsafe callables, which is what turns the classic
+    ``{{ ''.__class__.__mro__[1].__subclasses__() }}`` escape into a
+    ``SecurityError`` instead of code execution.
+    """
+    return SandboxedEnvironment(autoescape=False)
 
 
 @dataclass
@@ -60,7 +72,7 @@ class CampaignTemplate:
         context = {
             "participant": participant,
             "agency": agency,
-            "date": datetime.utcnow().strftime("%B %d, %Y"),
+            "date": _utcnow().strftime("%B %d, %Y"),
             "custom": custom_params or {},
         }
 
@@ -72,9 +84,17 @@ class CampaignTemplate:
         if randomize and self.closing_variations:
             context["closing_variation"] = random.choice(self.closing_variations)
 
-        # Render templates
-        subject = Template(self.subject_template).render(**context)
-        body = Template(self.body_template).render(**context)
+        # Render templates.
+        #
+        # Campaign templates are a SHARED artifact — the whole point of a
+        # campaign is that an organizer distributes one template to many
+        # participants. That makes the template string untrusted input on
+        # every participant's machine, so it is rendered in a sandbox: an
+        # unsandboxed jinja2.Template allows `{{ ''.__class__... }}` gadget
+        # chains that reach os.popen and execute arbitrary code.
+        env = _sandbox_env()
+        subject = env.from_string(self.subject_template).render(**context)
+        body = env.from_string(self.body_template).render(**context)
 
         return subject, body
 
@@ -148,7 +168,7 @@ class CampaignCoordinator:
         )
 
         # Generate request number
-        request_number = f"REQ-{datetime.utcnow().strftime('%Y%m%d')}-{uuid4().hex[:6].upper()}"
+        request_number = f"REQ-{_utcnow().strftime('%Y%m%d')}-{uuid4().hex[:6].upper()}"
 
         # Determine delivery method
         if agency.foia_email and template.recommended_method == DeliveryMethod.EMAIL:
@@ -192,7 +212,7 @@ class CampaignCoordinator:
         2. Overwhelming agency systems
         3. Making it easy to identify and block
         """
-        start = start_time or datetime.utcnow()
+        start = start_time or _utcnow()
         schedule = []
 
         # Distribute evenly with some randomness
@@ -288,7 +308,7 @@ class CampaignCoordinator:
 - **Active:** {"Yes" if stats["is_active"] else "No"}
 
 ---
-*Generated: {datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")}*
+*Generated: {_utcnow().strftime("%Y-%m-%d %H:%M UTC")}*
         """.strip()
 
 

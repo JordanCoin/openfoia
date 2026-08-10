@@ -13,17 +13,17 @@ Tor daemon must be running locally on port 9050 when --tor is used.
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import Any
 
 from rich import print as rprint
 
+from .models import utcnow as _utcnow
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-
-TOR_SOCKS_PROXY = "socks5://127.0.0.1:9050"
 
 # A common, non-unique user-agent string to blend in
 _COMMON_UA = "Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0"
@@ -35,17 +35,31 @@ _TOR_WARNING = """
 The Tor daemon must be running. On macOS: brew install tor && tor
 On Debian/Tails: sudo apt install tor && sudo systemctl start tor
 
-Fingerprint hardening is enabled:
-  - WebGL disabled
-  - WebRTC disabled (prevents IP leaks)
+Best-effort fingerprint hardening is applied:
+  - WebGL vendor/renderer spoofed
+  - RTCPeerConnection removed from the page (reduces, does not eliminate,
+    the risk of a WebRTC IP leak)
   - Timezone forced to UTC
   - Common user-agent applied
 
-This is NOT a guarantee of anonymity. Avoid logging into personal
-accounts. Do not download files you do not trust.
+These are page-level mitigations, NOT the Tor Browser's defenses. A
+determined site can still fingerprint this browser, and script execution
+inside the page may find ways around the patches above. For real anonymity
+use the Tor Browser itself, or Tails. Avoid logging into personal accounts.
+Do not download files you do not trust.
 [/yellow]
 [yellow]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/yellow]
 """
+
+
+def _tor_proxy_server(tor_host: str, tor_port: int) -> str:
+    """Build the Playwright proxy server string for *tor_host*:*tor_port*.
+
+    Scheme is socks5h to make remote-DNS intent explicit for anyone reading
+    this — Chromium already resolves hostnames through the SOCKS proxy
+    either way, so this is not a fix for a DNS leak, just a clearer intent.
+    """
+    return f"socks5h://{tor_host}:{tor_port}"
 
 
 # ---------------------------------------------------------------------------
@@ -78,22 +92,28 @@ async def browse(
             "[yellow]Run: openfoia install-extras browser[/yellow]\n"
             "[dim]Then: playwright install chromium[/dim]"
         )
-        raise SystemExit(1)
+        raise SystemExit(1) from None
 
     if use_tor:
         rprint(_TOR_WARNING)
 
+    # Note: "--disable-webrtc" is not a real Chromium switch; the WebRTC
+    # mitigation that actually takes effect is the RTCPeerConnection removal
+    # in the init script below. Keep the flags that do exist.
     launch_args: dict[str, Any] = {
         "headless": headless,
         "args": [
             "--disable-webgl",
-            "--disable-webrtc",
+            "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
             "--disable-features=WebRtcHideLocalIpsWithMdns",
         ],
     }
 
     if use_tor:
-        launch_args["proxy"] = {"server": TOR_SOCKS_PROXY}
+        from .config import load_config
+
+        net_cfg = load_config().network
+        launch_args["proxy"] = {"server": _tor_proxy_server(net_cfg.tor_host, net_cfg.tor_port)}
 
     result: dict[str, Any] = {}
 
@@ -175,17 +195,16 @@ async def browse(
 
             # Sanitize filename from URL
             import re
-            from datetime import datetime
 
             safe_name = re.sub(r"[^\w\-.]", "_", url.split("//", 1)[-1][:60])
-            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            timestamp = _utcnow().strftime("%Y%m%d_%H%M%S")
             filename = f"{timestamp}_{safe_name}.txt"
             out_path = save_dir / filename
 
             out_path.write_text(
                 f"URL: {result['url']}\n"
                 f"Title: {result['title']}\n"
-                f"Captured: {datetime.utcnow().isoformat()}Z\n"
+                f"Captured: {_utcnow().isoformat()}Z\n"
                 f"Tor: {use_tor}\n"
                 f"{'=' * 60}\n\n"
                 f"{content}"
@@ -197,10 +216,8 @@ async def browse(
             rprint(
                 "\n[dim]Browser is open. Close the browser window or press Ctrl+C to exit.[/dim]"
             )
-            try:
+            with contextlib.suppress(KeyboardInterrupt):
                 await page.wait_for_event("close", timeout=0)
-            except KeyboardInterrupt:
-                pass
 
         await browser.close()
 

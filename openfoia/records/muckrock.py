@@ -11,11 +11,22 @@ Rate limit: 1 req/sec average, 20 burst
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 
-from .base import RecordAdapter, RecordEntity, SearchResult
+from ..net import EgressPolicy, egress_client
+from .base import (
+    RecordAdapter,
+    RecordEntity,
+    SearchResult,
+    download_to_file,
+    safe_download_filename,
+    validate_download_url,
+)
+
+#: Cap on a single downloaded response file (100 MiB), matching ingest.
+MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +53,9 @@ class MuckRockAdapter(RecordAdapter):
 
     source_name = "muckrock"
 
-    def __init__(self, api_key: str | None = None):
+    def __init__(self, api_key: str | None = None, *, egress: EgressPolicy | None = None):
         """Initialize. API key is optional — public requests are freely accessible."""
+        super().__init__(egress=egress)
         self.api_key = api_key
         self._headers: dict[str, str] = {"content-type": "application/json"}
         if api_key:
@@ -86,7 +98,7 @@ class MuckRockAdapter(RecordAdapter):
 
         data: dict = {"count": 0, "results": []}
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with egress_client(self._egress, timeout=30) as client:
             # Layer 1: Tags
             tag_params = {**params, "tags": query.lower().strip().replace(" ", "-")}
             resp = await client.get(f"{API_BASE}/foia/", params=tag_params, headers=self._headers)
@@ -169,7 +181,7 @@ class MuckRockAdapter(RecordAdapter):
         )
 
     # Common abbreviation → full agency name mapping
-    _AGENCY_NAMES: dict[str, str] = {
+    _AGENCY_NAMES: ClassVar[dict[str, str]] = {
         "fbi": "Federal Bureau of Investigation",
         "cia": "Central Intelligence Agency",
         "nsa": "National Security Agency",
@@ -234,7 +246,7 @@ class MuckRockAdapter(RecordAdapter):
             "search": query,
         }
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with egress_client(self._egress, timeout=30) as client:
             resp = await client.get(
                 f"{API_BASE}/agency/",
                 params=params,
@@ -280,7 +292,7 @@ class MuckRockAdapter(RecordAdapter):
 
         Returns the full request with all communications and file URLs.
         """
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with egress_client(self._egress, timeout=30) as client:
             resp = await client.get(
                 f"{API_BASE}/foia/{identifier}/",
                 params={"format": "json"},
@@ -358,23 +370,28 @@ class MuckRockAdapter(RecordAdapter):
         if not files:
             return []
 
-        async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+        # follow_redirects is off: a redirect is a second, unvalidated URL and
+        # would bypass the scheme/host checks below.
+        async with egress_client(self._egress, timeout=60, follow_redirects=False) as client:
             for f in files:
                 url = f.get("url")
                 if not url:
                     continue
 
                 try:
-                    resp = await client.get(url)
-                    resp.raise_for_status()
+                    validate_download_url(url)
 
-                    # Extract filename from URL
-                    filename = url.split("/")[-1]
+                    filename = safe_download_filename(url)
                     dest = output_path / filename
 
-                    dest.write_bytes(resp.content)
+                    # Streamed with an incremental cap: buffering the whole
+                    # body first would let a compromised upstream force a
+                    # large allocation before the size check ran.
+                    written = await download_to_file(
+                        client, url, dest, max_bytes=MAX_DOWNLOAD_BYTES
+                    )
                     downloaded.append(str(dest))
-                    logger.info("Downloaded %s (%d bytes)", filename, len(resp.content))
+                    logger.info("Downloaded %s (%d bytes)", filename, written)
                 except Exception as e:
                     logger.warning("Failed to download %s: %s", url, e)
 

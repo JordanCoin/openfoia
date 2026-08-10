@@ -13,12 +13,15 @@ protection on modern SSDs.
 
 from __future__ import annotations
 
+import contextlib
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
 from rich import print as rprint
 
+from .models import utcnow as _utcnow
 
 # ---------------------------------------------------------------------------
 # Secure file deletion
@@ -75,16 +78,13 @@ def secure_delete_dir(path: Path | str) -> int:
                 secure_delete(item)
             count += 1
         elif item.is_dir():
-            try:
+            # Non-empty dir — will retry after its children are removed.
+            with contextlib.suppress(OSError):
                 item.rmdir()
-            except OSError:
-                pass  # non-empty dir — will retry after children removed
 
     # Remove the root directory itself
-    try:
+    with contextlib.suppress(OSError):
         path.rmdir()
-    except OSError:
-        pass
 
     return count
 
@@ -170,16 +170,12 @@ def fill_free_space(path: Path | str, chunk_size_mb: int = 100) -> None:
 
     # Clean up fill files
     for fp in fill_files:
-        try:
+        with contextlib.suppress(OSError):
             fp.unlink()
-        except OSError:
-            pass
 
     # Try to remove the directory if we created it
-    try:
+    with contextlib.suppress(OSError):
         path.rmdir()
-    except OSError:
-        pass
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +217,13 @@ def print_ssd_warning() -> None:
 _PROFILE_SLOTS = ["profile_0.db", "profile_1.db"]
 
 
+def _has_sqlcipher() -> bool:
+    """Return True if SQLCipher support is importable."""
+    from .db import has_sqlcipher
+
+    return has_sqlcipher()
+
+
 def get_profile_paths() -> list[Path]:
     """Return paths for both profile slots."""
     from .db import get_data_dir
@@ -229,13 +232,77 @@ def get_profile_paths() -> list[Path]:
     return [data_dir / name for name in _PROFILE_SLOTS]
 
 
+def real_profile_path() -> Path:
+    """Path of the slot holding the real database."""
+    return get_profile_paths()[0]
+
+
+def migrate_db_to_profile_slot() -> Path:
+    """Move a legacy ``data.db`` (and its sidecars) into the real profile slot.
+
+    The sidecars must travel with it. A ``data.db-wal`` left behind holds
+    recent writes in plaintext *and* re-labels the layout — an examiner seeing
+    it next to profile_0/profile_1 learns which slot is real, which is exactly
+    what moving into an opaque slot was meant to prevent.
+
+    Idempotent, and never clobbers an existing slot.
+    """
+    from .db import _DB_SIDECAR_SUFFIXES, get_data_dir
+
+    data_dir = get_data_dir()
+    legacy = data_dir / "data.db"
+    real = real_profile_path()
+
+    if real.exists():
+        # Already migrated. Remove any stale legacy leftovers so nothing in
+        # the directory listing points at which slot is real.
+        for suffix in ("", *_DB_SIDECAR_SUFFIXES):
+            stale = Path(str(legacy) + suffix)
+            if stale.is_file():
+                stale.unlink()
+        return real
+
+    if not legacy.exists():
+        return real
+
+    shutil.move(str(legacy), str(real))
+    for suffix in _DB_SIDECAR_SUFFIXES:
+        sidecar = Path(str(legacy) + suffix)
+        if sidecar.is_file():
+            shutil.move(str(sidecar), str(real) + suffix)
+
+    return real
+
+
+def duress_mode_active() -> bool:
+    """True once the real database has been migrated into a profile slot."""
+    return real_profile_path().exists()
+
+
 def setup_duress_mode(duress_password: str) -> Path:
     """Create and seed a decoy profile encrypted with the duress password.
 
     Returns the path to the decoy database. No password hash is stored
     anywhere — the password is verified by attempting to open the DB.
+
+    The real database is moved into slot 0 at the same time. Leaving it as
+    ``data.db`` next to a file named ``profile_1.db`` would tell any examiner
+    both that duress mode is configured and which file is the decoy — the
+    opposite of the "opaque filenames" the design promises.
     """
     from .db import get_data_dir
+
+    if not _has_sqlcipher():
+        # A plaintext decoy contradicts the guarantee. Fail closed.
+        raise RuntimeError(
+            "Duress mode requires database encryption, but no SQLCipher driver is "
+            "installed. A plaintext decoy would provide no protection. "
+            "Install encryption support: openfoia install-extras encryption"
+        )
+
+    # Migrate the real database (with its sidecars) into slot 0 so both slots
+    # look alike on disk.
+    migrate_db_to_profile_slot()
 
     # Use the second slot for the decoy
     decoy_path = get_data_dir() / _PROFILE_SLOTS[1]
@@ -277,11 +344,16 @@ def _can_open_db(db_path: Path, password: str) -> bool:
 
     Returns True if the password works (SQLCipher can read the schema).
     """
-    try:
-        import pysqlcipher3.dbapi2 as sqlcipher
+    # Encryption support missing entirely is a configuration error, not a
+    # wrong password. Swallowing it would make the duress password silently
+    # never match, so the decoy would never open under coercion.
+    from .db import get_sqlcipher_driver, sqlcipher_key_pragma
 
+    sqlcipher = get_sqlcipher_driver()
+
+    try:
         conn = sqlcipher.connect(str(db_path))
-        conn.execute(f"PRAGMA key='{password}'")
+        conn.execute(sqlcipher_key_pragma(password))
         conn.execute("PRAGMA cipher_compatibility = 4")
         conn.execute("SELECT count(*) FROM sqlite_master")
         conn.close()
@@ -322,7 +394,7 @@ def seed_decoy_db(db_path: Path, password: str | None = None) -> None:
     If password is provided, the decoy is encrypted with SQLCipher.
     """
     import random
-    from datetime import datetime, timedelta
+    from datetime import timedelta
     from uuid import uuid4
 
     from sqlalchemy import create_engine
@@ -348,18 +420,27 @@ def seed_decoy_db(db_path: Path, password: str | None = None) -> None:
 
     if password:
         try:
-            import pysqlcipher3.dbapi2 as sqlcipher
+            from .db import get_sqlcipher_driver, sqlcipher_key_pragma
+
+            sqlcipher = get_sqlcipher_driver()
 
             def _creator():
                 conn = sqlcipher.connect(str(db_path))
-                conn.execute(f"PRAGMA key='{password}'")
+                conn.execute(sqlcipher_key_pragma(password))
                 conn.execute("PRAGMA cipher_compatibility = 4")
                 conn.execute("PRAGMA cipher_memory_security = ON")
                 return conn
 
             engine = create_engine("sqlite+pysqlite:///", creator=_creator, echo=False)
-        except ImportError:
-            engine = create_engine(f"sqlite:///{db_path}", echo=False)
+        except RuntimeError as exc:
+            # Fail closed. Falling back to plain SQLite here would write an
+            # UNENCRYPTED decoy database while telling the user duress mode
+            # is configured — the opposite of the promised guarantee.
+            raise RuntimeError(
+                "Cannot create the decoy profile: no SQLCipher driver is installed. "
+                "A plaintext decoy would contradict the duress-mode guarantee. "
+                "Install encryption support: openfoia install-extras encryption"
+            ) from exc
     else:
         engine = create_engine(f"sqlite:///{db_path}", echo=False)
 
@@ -424,7 +505,7 @@ def seed_decoy_db(db_path: Path, password: str | None = None) -> None:
     session.flush()
 
     # --- Requests (bland, non-sensitive) ---
-    now = datetime.utcnow()
+    now = _utcnow()
     requests_data = [
         {
             "subject": "Monthly weather data summaries for Portland, OR (2024)",

@@ -6,13 +6,16 @@ Supports optional AES-256 encryption at rest via SQLCipher.
 
 from __future__ import annotations
 
+import importlib
 import os
 import shutil
 import sqlite3
+import stat
 import tempfile
-from contextlib import contextmanager
+from collections.abc import Generator
+from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Generator
+from typing import Any
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
@@ -20,19 +23,50 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from .models import Agency, AgencyLevel, DeliveryMethod
 
-# Check for SQLCipher availability
-_HAS_SQLCIPHER = False
-try:
-    import pysqlcipher3.dbapi2 as sqlcipher  # noqa: F401
+# Check for SQLCipher availability.
+#
+# Two drivers expose the same DB-API surface:
+#   * pysqlcipher3  — the original, unmaintained since 2021, source-only, and
+#                     no longer pip-installable on modern Python.
+#   * sqlcipher3    — the maintained fork; `sqlcipher3-binary` ships wheels.
+# Accept either, preferring whichever is already installed, so the encryption
+# feature is actually reachable for users (and testable in CI).
+sqlcipher: Any = None
+_SQLCIPHER_DRIVER_NAME: str | None = None
 
-    _HAS_SQLCIPHER = True
-except ImportError:
-    pass
+for _candidate in ("pysqlcipher3.dbapi2", "sqlcipher3.dbapi2"):
+    try:
+        sqlcipher = importlib.import_module(_candidate)
+        _SQLCIPHER_DRIVER_NAME = _candidate.split(".")[0]
+        break
+    except ImportError:
+        continue
+
+_HAS_SQLCIPHER = sqlcipher is not None
 
 
 def has_sqlcipher() -> bool:
-    """Return True if pysqlcipher3 is installed and usable."""
+    """Return True if a SQLCipher driver is installed and usable."""
     return _HAS_SQLCIPHER
+
+
+def get_sqlcipher_driver() -> Any:
+    """Return the imported SQLCipher DB-API module.
+
+    Raises RuntimeError when no driver is installed, rather than returning
+    None and failing later with an opaque AttributeError.
+    """
+    if sqlcipher is None:
+        raise RuntimeError(
+            "No SQLCipher driver installed. Install encryption support: "
+            "openfoia install-extras encryption"
+        )
+    return sqlcipher
+
+
+def sqlcipher_driver_name() -> str | None:
+    """Name of the active SQLCipher driver, or None."""
+    return _SQLCIPHER_DRIVER_NAME
 
 
 def get_db_password() -> str | None:
@@ -53,6 +87,67 @@ def get_db_password() -> str | None:
     return cfg.encryption.password
 
 
+#: Sidecar files SQLite writes next to the database. They hold recent writes
+#: in plaintext, so they must be shredded whenever the main file is.
+_DB_SIDECAR_SUFFIXES = ("-wal", "-shm", "-journal")
+
+
+def secure_delete_plaintext_db(db_path: Path) -> None:
+    """Shred a plaintext database *in place*, along with its sidecar files.
+
+    Overwriting the file's own blocks matters: renaming it away and deleting a
+    copy (the previous behaviour) frees the original blocks without ever
+    touching them, leaving the whole pre-encryption database recoverable by
+    file carving. Best-effort on SSDs — see docs/THREAT_MODEL.md.
+    """
+    from .security import secure_delete
+
+    db_path = Path(db_path)
+    for candidate in (db_path, *(Path(str(db_path) + s) for s in _DB_SIDECAR_SUFFIXES)):
+        if candidate.is_file():
+            secure_delete(candidate)
+
+
+def sqlcipher_key_literal(password: str) -> str:
+    """Return *password* as a safely-quoted SQL string literal.
+
+    SQLCipher's ``PRAGMA key`` cannot be parameterized through every driver
+    path, so the passphrase has to be embedded in the statement text. Escaping
+    is not optional: a passphrase containing an apostrophe (``it's ...``) used
+    to terminate the literal early, turning the remainder into a SQL comment
+    and silently reducing the effective key to the few characters before the
+    quote — on both create and unlock, so nothing looked broken.
+    """
+    escaped = password.replace("'", "''")
+    return f"'{escaped}'"
+
+
+def sqlcipher_key_pragma(password: str) -> str:
+    """Build the ``PRAGMA key`` statement for *password*."""
+    return f"PRAGMA key = {sqlcipher_key_literal(password)}"
+
+
+def _ensure_private_dir(path: Path) -> Path:
+    """Create *path* if needed and make it owner-only (0700).
+
+    The data directory holds the investigation database, ingested documents
+    and config.json (which can carry SMTP/Twilio/Lob credentials). On a shared
+    machine the default 0755 let any other local account read all of it.
+    Directories created before this fix are tightened on next use.
+    """
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if os.name != "nt":
+        try:
+            current = stat.S_IMODE(path.stat().st_mode)
+            if current & 0o077:
+                os.chmod(path, 0o700)
+        except OSError:
+            # Read-only media or a filesystem without POSIX modes — the caller
+            # still gets a usable directory; permissions just cannot be fixed.
+            pass
+    return path
+
+
 def get_data_dir() -> Path:
     """Get the OpenFOIA data directory, creating if needed.
 
@@ -70,8 +165,7 @@ def get_data_dir() -> Path:
     env_dir = os.environ.get("OPENFOIA_DATA_DIR")
     if env_dir:
         data_dir = Path(env_dir)
-        data_dir.mkdir(parents=True, exist_ok=True)
-        return data_dir
+        return _ensure_private_dir(data_dir)
 
     # 2. Portable mode — check for marker file
     # Check next to this package
@@ -79,20 +173,17 @@ def get_data_dir() -> Path:
     portable_marker = package_dir / ".openfoia-portable"
     if portable_marker.exists():
         data_dir = package_dir / "openfoia-data"
-        data_dir.mkdir(parents=True, exist_ok=True)
-        return data_dir
+        return _ensure_private_dir(data_dir)
 
     # Also check current working directory
     cwd_marker = Path.cwd() / ".openfoia-portable"
     if cwd_marker.exists():
         data_dir = Path.cwd() / "openfoia-data"
-        data_dir.mkdir(parents=True, exist_ok=True)
-        return data_dir
+        return _ensure_private_dir(data_dir)
 
     # 3. Default
     data_dir = Path.home() / ".openfoia"
-    data_dir.mkdir(parents=True, exist_ok=True)
-    return data_dir
+    return _ensure_private_dir(data_dir)
 
 
 def get_db_path(password: str | None = None) -> Path:
@@ -105,10 +196,18 @@ def get_db_path(password: str | None = None) -> Path:
         password = get_db_password()
 
     if password:
-        from .security import is_duress_password, get_decoy_db_path
+        from .security import get_decoy_db_path, is_duress_password
 
         if is_duress_password(password):
             return get_decoy_db_path()
+
+    # Once duress mode is configured the real database lives in an opaque
+    # profile slot; before that it is the legacy data.db.
+    from .security import real_profile_path
+
+    real_slot = real_profile_path()
+    if real_slot.exists():
+        return real_slot
 
     return get_data_dir() / "data.db"
 
@@ -130,8 +229,11 @@ def get_engine(db_path: Path | None = None, password: str | None = None) -> Engi
         # Use pysqlcipher3 as the DBAPI driver via creator pattern
         def _sqlcipher_creator():
             conn = sqlcipher.connect(str(db_path))
-            conn.execute(f"PRAGMA key='{password}'")
+            conn.execute(sqlcipher_key_pragma(password))
             conn.execute("PRAGMA cipher_compatibility = 4")
+            # Keep key material and plaintext pages out of memory longer than
+            # necessary (wiped on free rather than left for a core dump).
+            conn.execute("PRAGMA cipher_memory_security = ON")
             return conn
 
         engine = create_engine(
@@ -220,6 +322,23 @@ def init_db(seed: bool = True, password: str | None = None) -> None:
         engine = get_engine(password=password)
         seed_agencies(engine)
 
+    _restrict_db_permissions(get_db_path(password=password))
+
+
+def _restrict_db_permissions(db_path: Path) -> None:
+    """Make the database (and its sidecars) owner-only.
+
+    The 0700 data directory is the primary protection; this is defence in
+    depth for the case where the directory mode is changed or the data lives
+    on a volume with looser semantics.
+    """
+    if os.name == "nt":
+        return
+    for candidate in (db_path, *(Path(str(db_path) + s) for s in _DB_SIDECAR_SUFFIXES)):
+        if candidate.is_file():
+            with suppress(OSError):
+                os.chmod(candidate, 0o600)
+
 
 def encrypt_database(password: str) -> None:
     """Encrypt an existing plaintext SQLite database with SQLCipher.
@@ -246,7 +365,7 @@ def encrypt_database(password: str) -> None:
 
         # Open new encrypted database with SQLCipher
         enc_conn = sqlcipher.connect(tmp_path)
-        enc_conn.execute(f"PRAGMA key='{password}'")
+        enc_conn.execute(sqlcipher_key_pragma(password))
         enc_conn.execute("PRAGMA cipher_compatibility = 4")
 
         # Dump plaintext and replay into encrypted DB
@@ -257,20 +376,12 @@ def encrypt_database(password: str) -> None:
         enc_conn.close()
         plain_conn.close()
 
-        # Backup original, swap in encrypted version, then securely delete backup
-        backup_path = db_path.with_suffix(".db.bak")
-        shutil.copy2(db_path, backup_path)
+        # Shred the plaintext original IN PLACE before swapping the encrypted
+        # file in. Renaming it away first would free its blocks untouched and
+        # leave the entire unencrypted database recoverable.
+        secure_delete_plaintext_db(db_path)
         shutil.move(tmp_path, db_path)
-
-        # Remove the plaintext backup — don't leave unencrypted data on disk
-        try:
-            from .security import secure_delete
-
-            secure_delete(backup_path)
-        except Exception:
-            # If secure_delete isn't available, at least do a normal delete
-            if backup_path.exists():
-                backup_path.unlink()
+        os.chmod(db_path, 0o600)
     except Exception:
         # Clean up temp file on failure
         if Path(tmp_path).exists():
