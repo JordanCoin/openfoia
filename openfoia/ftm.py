@@ -10,11 +10,10 @@ FtM spec: https://followthemoney.tech
 from __future__ import annotations
 
 import json
-from typing import Any
 from pathlib import Path
+from typing import Any
 
 from .models import EntityType
-
 
 # Map OpenFOIA entity types to FtM schema types
 _ENTITY_TYPE_TO_FTM_SCHEMA: dict[str, str] = {
@@ -67,7 +66,7 @@ _RELATION_TO_FTM: dict[str, dict[str, str]] = {
 def _try_ftm_available() -> bool:
     """Check if followthemoney library is installed."""
     try:
-        import followthemoney  # noqa: F401
+        import followthemoney  # noqa: F401 - availability probe for the optional extra
 
         return True
     except ImportError:

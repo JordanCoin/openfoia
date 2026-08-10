@@ -91,8 +91,6 @@ class _RateLimited(BaseException):
     in individual checkers don't swallow it — the crossref loop catches it.
     """
 
-    pass
-
 
 def _check_rate_limit(result: Any) -> None:
     """Raise _RateLimited if the search result indicates a rate limit error."""

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import stat
 
 import pytest
@@ -252,7 +253,7 @@ def test_download_is_streamed_with_an_incremental_cap(tmp_path):
             return _Stream(_Resp())
 
     dest = tmp_path / "out.bin"
-    with pytest.raises(ValueError, match="(?i)size|large|bytes"):
+    with pytest.raises(ValueError, match=re.compile("size|large|bytes", re.I)):
         asyncio.run(download_to_file(_Client(), "https://x.test/a.pdf", dest, max_bytes=8 * 1024))
 
     # It must have stopped early, not consumed the whole stream.

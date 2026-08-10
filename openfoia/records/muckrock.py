@@ -11,7 +11,7 @@ Rate limit: 1 req/sec average, 20 burst
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 
@@ -181,7 +181,7 @@ class MuckRockAdapter(RecordAdapter):
         )
 
     # Common abbreviation → full agency name mapping
-    _AGENCY_NAMES: dict[str, str] = {
+    _AGENCY_NAMES: ClassVar[dict[str, str]] = {
         "fbi": "Federal Bureau of Investigation",
         "cia": "Central Intelligence Agency",
         "nsa": "National Security Agency",

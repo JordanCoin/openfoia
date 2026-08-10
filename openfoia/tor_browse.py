@@ -13,11 +13,13 @@ Tor daemon must be running locally on port 9050 when --tor is used.
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import Any
 
 from rich import print as rprint
 
+from .models import utcnow as _utcnow
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -90,7 +92,7 @@ async def browse(
             "[yellow]Run: openfoia install-extras browser[/yellow]\n"
             "[dim]Then: playwright install chromium[/dim]"
         )
-        raise SystemExit(1)
+        raise SystemExit(1) from None
 
     if use_tor:
         rprint(_TOR_WARNING)
@@ -193,17 +195,16 @@ async def browse(
 
             # Sanitize filename from URL
             import re
-            from datetime import datetime
 
             safe_name = re.sub(r"[^\w\-.]", "_", url.split("//", 1)[-1][:60])
-            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            timestamp = _utcnow().strftime("%Y%m%d_%H%M%S")
             filename = f"{timestamp}_{safe_name}.txt"
             out_path = save_dir / filename
 
             out_path.write_text(
                 f"URL: {result['url']}\n"
                 f"Title: {result['title']}\n"
-                f"Captured: {datetime.utcnow().isoformat()}Z\n"
+                f"Captured: {_utcnow().isoformat()}Z\n"
                 f"Tor: {use_tor}\n"
                 f"{'=' * 60}\n\n"
                 f"{content}"
@@ -215,10 +216,8 @@ async def browse(
             rprint(
                 "\n[dim]Browser is open. Close the browser window or press Ctrl+C to exit.[/dim]"
             )
-            try:
+            with contextlib.suppress(KeyboardInterrupt):
                 await page.wait_for_event("close", timeout=0)
-            except KeyboardInterrupt:
-                pass
 
         await browser.close()
 

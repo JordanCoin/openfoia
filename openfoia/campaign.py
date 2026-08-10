@@ -23,6 +23,7 @@ from .models import (
     RequestStatus,
     User,
 )
+from .models import utcnow as _utcnow
 
 
 def _sandbox_env() -> SandboxedEnvironment:
@@ -71,7 +72,7 @@ class CampaignTemplate:
         context = {
             "participant": participant,
             "agency": agency,
-            "date": datetime.utcnow().strftime("%B %d, %Y"),
+            "date": _utcnow().strftime("%B %d, %Y"),
             "custom": custom_params or {},
         }
 
@@ -167,7 +168,7 @@ class CampaignCoordinator:
         )
 
         # Generate request number
-        request_number = f"REQ-{datetime.utcnow().strftime('%Y%m%d')}-{uuid4().hex[:6].upper()}"
+        request_number = f"REQ-{_utcnow().strftime('%Y%m%d')}-{uuid4().hex[:6].upper()}"
 
         # Determine delivery method
         if agency.foia_email and template.recommended_method == DeliveryMethod.EMAIL:
@@ -211,7 +212,7 @@ class CampaignCoordinator:
         2. Overwhelming agency systems
         3. Making it easy to identify and block
         """
-        start = start_time or datetime.utcnow()
+        start = start_time or _utcnow()
         schedule = []
 
         # Distribute evenly with some randomness
@@ -307,7 +308,7 @@ class CampaignCoordinator:
 - **Active:** {"Yes" if stats["is_active"] else "No"}
 
 ---
-*Generated: {datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")}*
+*Generated: {_utcnow().strftime("%Y-%m-%d %H:%M UTC")}*
         """.strip()
 
 

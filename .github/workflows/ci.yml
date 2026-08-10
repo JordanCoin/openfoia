@@ -3,8 +3,11 @@ name: CI
 on:
   push:
     branches: [main]
+  # Run on every pull request, not just those targeting main. Restricting
+  # this to `branches: [main]` meant a stacked PR (one branch based on
+  # another) got no test run at all — it looked reviewed and green when
+  # nothing had actually executed.
   pull_request:
-    branches: [main]
 
 jobs:
   test:

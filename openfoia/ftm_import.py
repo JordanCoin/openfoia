@@ -192,7 +192,7 @@ def import_ftm_to_db(
     Returns:
         (entities_imported, relationships_imported)
     """
-    from .db import get_session, get_db_path, init_db
+    from .db import get_db_path, get_session, init_db
     from .models import Entity
 
     db_path = get_db_path()
@@ -293,7 +293,7 @@ def _get_or_create_import_doc(session: Any, tag: str | None = None) -> str:
     if _IMPORT_DOC_ID:
         return _IMPORT_DOC_ID
 
-    from .models import Document, DocumentType, Request, User, Agency, RequestStatus, DeliveryMethod
+    from .models import Agency, DeliveryMethod, Document, DocumentType, Request, RequestStatus, User
 
     # Need a request to hang the document on
     user = session.query(User).first()

@@ -13,6 +13,7 @@ Secrets (API keys, tokens) can be provided via:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 from dataclasses import dataclass, field
@@ -469,7 +470,6 @@ def save_config(config: OpenFOIAConfig, config_path: Path | str | None = None) -
         json.dump(data, f, indent=2)
 
     if os.name != "nt":
-        try:
-            os.chmod(path, 0o600)  # tighten a pre-existing looser file
-        except OSError:
-            pass
+        # Tighten a pre-existing looser file; best-effort on odd filesystems.
+        with contextlib.suppress(OSError):
+            os.chmod(path, 0o600)

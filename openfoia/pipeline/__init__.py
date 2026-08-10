@@ -8,12 +8,12 @@ Stages:
 5. Link - Connect entities across documents
 """
 
+from .extract import EntityExtractor
 from .ingest import DocumentIngester
 from .ocr import OCREngine
-from .extract import EntityExtractor
 
 __all__ = [
     "DocumentIngester",
-    "OCREngine",
     "EntityExtractor",
+    "OCREngine",
 ]

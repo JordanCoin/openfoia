@@ -6,19 +6,20 @@ Your data never leaves your machine.
 
 from __future__ import annotations
 
+import contextlib
 import secrets
-from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import FastAPI, Request, HTTPException, Depends, Query, UploadFile, File
-from fastapi.responses import HTMLResponse
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel
 from sqlalchemy import func
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from .models import utcnow as _utcnow
 
 #: Hard cap on a single uploaded document (100 MiB), matching CLI ingest.
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
@@ -138,11 +139,13 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
         """Get overview statistics."""
         from .db import get_session
         from .models import (
-            Request as FOIARequest,
             Document,
             Entity,
-            RequestStatus,
             EntityType,
+            RequestStatus,
+        )
+        from .models import (
+            Request as FOIARequest,
         )
 
         with get_session() as session:
@@ -225,7 +228,8 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
     ):
         """List FOIA requests."""
         from .db import get_session
-        from .models import Request as FOIARequest, RequestStatus, Agency
+        from .models import Agency, RequestStatus
+        from .models import Request as FOIARequest
 
         with get_session() as session:
             query = session.query(FOIARequest).join(Agency)
@@ -238,7 +242,7 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
                     raise HTTPException(
                         status_code=400,
                         detail=f"Invalid status '{status}'. Valid: {', '.join(s.value for s in RequestStatus)}",
-                    )
+                    ) from None
 
             requests = query.order_by(FOIARequest.created_at.desc()).limit(limit).all()
 
@@ -267,11 +271,13 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
         """Create a new FOIA request."""
         from .db import get_session
         from .models import (
-            Request as FOIARequest,
             Agency,
-            User,
-            RequestStatus,
             DeliveryMethod,
+            RequestStatus,
+            User,
+        )
+        from .models import (
+            Request as FOIARequest,
         )
 
         with get_session() as session:
@@ -290,7 +296,7 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
                 session.add(user)
                 session.flush()
 
-            req_num = f"REQ-{datetime.utcnow().strftime('%Y%m%d')}-{uuid4().hex[:6].upper()}"
+            req_num = f"REQ-{_utcnow().strftime('%Y%m%d')}-{uuid4().hex[:6].upper()}"
 
             try:
                 method = DeliveryMethod(request_data.method)
@@ -426,7 +432,7 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
             raise HTTPException(
                 status_code=413,
                 detail=f"File exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MiB upload limit.",
-            )
+            ) from None
         except Exception:
             dest.unlink(missing_ok=True)
             raise
@@ -439,10 +445,8 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
 
         ingester = DocumentIngester(storage_path=docs_dir)
         extracted_text = None
-        try:
+        with contextlib.suppress(Exception):
             extracted_text = await ingester._extract_text(dest, mime)
-        except Exception:
-            pass
 
         from .db import get_session
         from .models import Document, DocumentType
@@ -514,7 +518,8 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
     async def deadlines(token: str = Depends(verify_token)):
         """Get upcoming deadlines for pending requests."""
         from .db import get_session
-        from .models import Request as FOIARequest, RequestStatus, Agency
+        from .models import Agency, RequestStatus
+        from .models import Request as FOIARequest
 
         with get_session() as session:
             active_statuses = [
@@ -560,7 +565,7 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
     ):
         """Get entity relationship graph."""
         from .db import get_session
-        from .models import Entity, Document, entity_links
+        from .models import Document, Entity, entity_links
 
         with get_session() as session:
             q = session.query(Entity)
@@ -1244,6 +1249,7 @@ def run_server(
 ) -> None:
     """Run the OpenFOIA server."""
     import socket
+
     import uvicorn
 
     # Generate token if not provided
