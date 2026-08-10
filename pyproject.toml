@@ -1,6 +1,6 @@
 [project]
 name = "openfoia"
-version = "3.0.0"
+version = "4.0.0"
 description = "Local-first investigation toolkit for journalists, researchers, and citizens"
 readme = "README.md"
 license = "AGPL-3.0"

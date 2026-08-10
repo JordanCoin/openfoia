@@ -264,7 +264,7 @@ def test_sec_edgar_sends_descriptive_user_agent_not_generic_default(monkeypatch)
     adapter = SECEdgarAdapter()
     asyncio.run(adapter.search("Palantir"))
 
-    method, url, kwargs = fake_client.calls[0]
+    _method, _url, kwargs = fake_client.calls[0]
     sent_headers = kwargs.get("headers") or {}
     assert sent_headers.get("User-Agent") == SEC_DEFAULT_USER_AGENT
     assert sent_headers.get("User-Agent") != DEFAULT_USER_AGENT
