@@ -15,6 +15,7 @@ from typing import Any
 
 import httpx
 
+from ..net import EgressPolicy, egress_client
 from .base import (
     RecordAdapter,
     RecordEntity,
@@ -52,8 +53,9 @@ class MuckRockAdapter(RecordAdapter):
 
     source_name = "muckrock"
 
-    def __init__(self, api_key: str | None = None):
+    def __init__(self, api_key: str | None = None, *, egress: EgressPolicy | None = None):
         """Initialize. API key is optional — public requests are freely accessible."""
+        super().__init__(egress=egress)
         self.api_key = api_key
         self._headers: dict[str, str] = {"content-type": "application/json"}
         if api_key:
@@ -96,7 +98,7 @@ class MuckRockAdapter(RecordAdapter):
 
         data: dict = {"count": 0, "results": []}
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with egress_client(self._egress, timeout=30) as client:
             # Layer 1: Tags
             tag_params = {**params, "tags": query.lower().strip().replace(" ", "-")}
             resp = await client.get(f"{API_BASE}/foia/", params=tag_params, headers=self._headers)
@@ -244,7 +246,7 @@ class MuckRockAdapter(RecordAdapter):
             "search": query,
         }
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with egress_client(self._egress, timeout=30) as client:
             resp = await client.get(
                 f"{API_BASE}/agency/",
                 params=params,
@@ -290,7 +292,7 @@ class MuckRockAdapter(RecordAdapter):
 
         Returns the full request with all communications and file URLs.
         """
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with egress_client(self._egress, timeout=30) as client:
             resp = await client.get(
                 f"{API_BASE}/foia/{identifier}/",
                 params={"format": "json"},
@@ -370,7 +372,7 @@ class MuckRockAdapter(RecordAdapter):
 
         # follow_redirects is off: a redirect is a second, unvalidated URL and
         # would bypass the scheme/host checks below.
-        async with httpx.AsyncClient(timeout=60, follow_redirects=False) as client:
+        async with egress_client(self._egress, timeout=60, follow_redirects=False) as client:
             for f in files:
                 url = f.get("url")
                 if not url:

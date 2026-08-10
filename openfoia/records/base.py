@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import unquote, urlparse
 
+from ..net import EgressPolicy, egress_client
+
 
 def validate_download_url(url: str) -> str:
     """Return *url* if it is safe to fetch, else raise ValueError.
@@ -180,6 +182,9 @@ class RecordAdapter(ABC):
 
     source_name: str = ""
 
+    def __init__(self, *, egress: EgressPolicy | None = None) -> None:
+        self._egress = egress if egress is not None else EgressPolicy()
+
     async def _request(
         self,
         url: str,
@@ -187,16 +192,17 @@ class RecordAdapter(ABC):
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
         timeout: float = 15.0,
+        isolation_token: str | None = None,
     ) -> Any:
         """GET *url* and return decoded JSON, raising AdapterRequestError.
 
         Centralized so every adapter reports transport and HTTP failures the
         same way instead of letting them surface as empty result sets.
         """
-        import httpx
-
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            async with egress_client(
+                self._egress, timeout=timeout, isolation_token=isolation_token
+            ) as client:
                 response = await client.get(url, params=params, headers=headers)
                 response.raise_for_status()
                 return response.json()

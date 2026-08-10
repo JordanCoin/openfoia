@@ -14,6 +14,7 @@ from typing import Any
 
 import httpx
 
+from ..net import egress_client
 from .base import RecordAdapter, RecordEntity, SearchResult
 
 logger = logging.getLogger(__name__)
@@ -53,7 +54,7 @@ class ProPublicaNonprofitAdapter(RecordAdapter):
             params["state[id]"] = state.upper()
 
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
+            async with egress_client(self._egress, timeout=15) as client:
                 resp = await client.get(f"{API_BASE}/search.json", params=params)
                 if resp.status_code == 404:
                     # ProPublica returns 404 for some queries with special chars
@@ -139,7 +140,7 @@ class ProPublicaNonprofitAdapter(RecordAdapter):
         ein = identifier.replace("-", "")
 
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
+            async with egress_client(self._egress, timeout=15) as client:
                 resp = await client.get(f"{API_BASE}/organizations/{ein}.json")
                 if resp.status_code == 404:
                     return None

@@ -8,8 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import httpx
-
+from ..net import egress_client
 from .base import AdapterRequestError, RecordAdapter, RecordEntity, SearchResult
 
 API_BASE = "https://api.opencorporates.com/v0.4"
@@ -78,7 +77,7 @@ class OpenCorporatesAdapter(RecordAdapter):
         Returns:
             RecordEntity if found, None otherwise.
         """
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with egress_client(self._egress, timeout=15.0) as client:
             response = await client.get(f"{API_BASE}/companies/{identifier}")
             if response.status_code == 404:
                 return None
