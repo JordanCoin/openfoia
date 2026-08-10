@@ -13,8 +13,16 @@ investigations.
   (`~/.openfoia/data.db`). Nothing is uploaded to a server by default.
 - **Offline analysis.** Document ingestion, PDF text extraction, entity
   extraction (GLiNER), and the entity graph all run locally.
-- **Tor-routed fetches.** When you use `--tor`, web requests are routed through
-  Tor's SOCKS5 proxy so the target server does not see your IP.
+- **Tor-routed fetches, crossref, and records lookups.** With `--tor` (or
+  `network.tor: true` / `OPENFOIA_TOR=1` in config), `openfoia ingest`,
+  `openfoia crossref`, and records lookups route through Tor's SOCKS5 proxy
+  with a non-identifying browser User-Agent and a fresh circuit per request
+  (stream isolation via unique SOCKS credentials), so the destination server
+  does not see your real IP. **This hides who is asking, not what is
+  asked**: the request content — the URL you fetch, or the subject names you
+  cross-reference — still reaches the destination either way. Run
+  `openfoia egress-status` to see the current policy and whether the Tor
+  proxy is actually reachable right now.
 - **Encrypted database.** `openfoia db encrypt` encrypts the SQLite database at
   rest with a password you choose. It shreds the plaintext original and its
   WAL/journal files in place — no plaintext backup is kept.
@@ -50,9 +58,17 @@ investigations.
   are recorded in `~/.bash_history`, `~/.zsh_history`, etc.
   `openfoia purge --secure` attempts to scrub these, but other shells or
   session managers may retain copies.
-- **Network-level surveillance.** Even with Tor, traffic analysis by a global
-  adversary may correlate timing. Without Tor, your ISP sees which FOIA portals
-  you visit.
+- **Network-level surveillance.** Without Tor, your ISP (and every network hop
+  in between) sees which FOIA portals, records APIs, and websites you visit,
+  from your real IP. **With Tor, the destination endpoint still receives the
+  request content** — the URL you fetch, or the subject names sent to
+  `crossref` — Tor hides who is asking, not what is asked. A global passive
+  adversary able to watch both your connection into Tor and the traffic
+  leaving the exit node can still correlate timing to link a request back to
+  you; this is a known limitation of Tor generally, not something OpenFOIA
+  adds or removes. DNS resolution for `.onion` and plain hostnames happens
+  through the SOCKS proxy (not locally) when Tor is used, but that is a
+  routing detail, not an anonymity guarantee.
 
 ---
 
@@ -63,14 +79,17 @@ OpenFOIA is local-first, but certain features make network requests:
 | Feature | Destination | What is sent |
 |---|---|---|
 | `openfoia request send` | Agency FOIA portal / email gateway | Your FOIA request text, your contact info |
-| `--tor` fetches | Tor network, then target server | The URL you are fetching (visible to exit node) |
-| `openfoia analyze crossref` | CrossRef API (`api.crossref.org`) | DOI or bibliographic query terms |
+| `openfoia ingest` (web fetch/archive) | The URL's host | The URL you are fetching. Without `--tor`, from your real IP; the exit node also sees it when `--tor` is used |
+| `openfoia crossref` | MuckRock, OpenCorporates, SEC EDGAR, DocumentCloud, OpenSanctions, USASpending, and other configured record sources | **The names of the people and organizations you are investigating** (the subject names extracted from your documents), from your real IP unless `--tor` is used. CLI warns and asks you to confirm before this happens; `--sources icij` stays fully offline |
 | Cloud AI summarization (opt-in) | Configured LLM API (OpenAI, etc.) | Document text sent to the API endpoint |
 | `openfoia serve` | `localhost` only | Nothing leaves the machine, but browser records local activity |
 | `install.sh` | GitHub API, GitHub releases | Your IP address; what binary you download |
 
-If you never use `--tor`, send commands, crossref, or cloud AI, no data leaves
-your machine during normal operation.
+If you never use `send`, `ingest`, `crossref`, or cloud AI, no data leaves
+your machine during normal operation. `--tor` (or the `network.tor` config
+default) changes *who the destination sees* for `ingest` and `crossref` — it
+does not change *what* they receive: the URL or the subject names still
+arrive at the destination either way.
 
 ---
 

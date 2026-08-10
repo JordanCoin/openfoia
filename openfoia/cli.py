@@ -6,9 +6,12 @@ import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import typer
+
+if TYPE_CHECKING:
+    from .net import EgressPolicy
 from rich import print as rprint
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
@@ -3450,6 +3453,100 @@ def deadline_check():
             raise typer.Exit(1)
 
 
+# === Egress (Tor) Helpers ===
+#
+# Shared by every command that touches the network through openfoia.net's
+# egress choke point (crossref, ingest/web fetch). Keeps the "opt-in, fail
+# closed, be honest" contract in one place instead of re-implemented per
+# command.
+
+
+def _egress_policy_from(config, *, tor: bool | None = None) -> EgressPolicy:
+    """Build an EgressPolicy from config.network, with an optional CLI override.
+
+    tor=None uses the configured default (config.network.tor). tor=True or
+    tor=False overrides that default for this invocation only — e.g. a CLI
+    `--tor/--no-tor` flag left unset by the user should pass tor=None here so
+    the configured default wins.
+    """
+    from .net import EgressMode, EgressPolicy
+
+    use_tor = config.network.tor if tor is None else tor
+    return EgressPolicy(
+        mode=EgressMode.TOR if use_tor else EgressMode.DIRECT,
+        tor_host=config.network.tor_host,
+        tor_port=config.network.tor_port,
+        isolate_streams=config.network.isolate_streams,
+    )
+
+
+def _check_tor_or_exit(policy: EgressPolicy) -> None:
+    """Fail-closed Tor readiness gate.
+
+    If *policy* is DIRECT this is a no-op. If it is TOR, probe the SOCKS
+    port before any request is made; if it is not reachable, print a clear
+    error and abort (typer.Exit) rather than silently falling through to a
+    clearnet request — that silent fallback is exactly the deanonymization
+    leak Principle 1 rules out.
+    """
+    from .net import check_tor
+
+    if not policy.is_tor:
+        return
+
+    if not asyncio.run(check_tor(policy)):
+        rprint(
+            f"[red]Tor egress requested but the SOCKS proxy at "
+            f"{policy.tor_host}:{policy.tor_port} is not reachable.[/red]"
+        )
+        rprint(
+            "[yellow]Start Tor (e.g. `tor` / `sudo systemctl start tor`) or drop --tor.[/yellow]"
+        )
+        raise typer.Exit(1)
+
+
+def _report_tor_unavailable() -> None:
+    """Print the fix for TorUnavailableError (missing socksio) and exit."""
+    rprint("[red]Tor egress requires the 'socksio' package, which is not installed.[/red]")
+    rprint("[yellow]Run: openfoia install-extras tor[/yellow]")
+    raise typer.Exit(1)
+
+
+@app.command("egress-status")
+def egress_status(
+    tor: Optional[bool] = typer.Option(
+        None, "--tor/--no-tor", help="Check this mode instead of the configured default"
+    ),
+):
+    """Show the current network egress policy, honestly.
+
+    Reports whether requests go out DIRECT or via TOR, whether the Tor SOCKS
+    proxy is actually reachable right now, and exactly what is and is not
+    protected — see docs/THREAT_MODEL.md for the full picture.
+    """
+    from .config import load_config
+    from .net import check_tor, describe_egress
+
+    cfg = load_config()
+    policy = _egress_policy_from(cfg, tor=tor)
+    info = describe_egress(policy)
+
+    rprint("[bold]Egress Configuration[/bold]")
+    rprint(f"  Mode: {'tor' if policy.is_tor else 'direct'}")
+    if policy.is_tor:
+        reachable = asyncio.run(check_tor(policy))
+        status = "[green]reachable[/green]" if reachable else "[red]NOT reachable[/red]"
+        rprint(f"  Tor SOCKS proxy ({policy.tor_host}:{policy.tor_port}): {status}")
+        rprint(f"  Stream isolation: {policy.isolate_streams}")
+        rprint("  The destination servers will NOT see your real IP.")
+    else:
+        rprint("  The destination servers WILL see your real IP.")
+
+    rprint("\n[bold]What this does NOT protect[/bold]")
+    for item in info["not_protected"]:
+        rprint(f"  - {item}")
+
+
 # === Browse Command ===
 
 
@@ -3618,7 +3715,11 @@ def purge(
 @app.command("ingest")
 def ingest_url(
     url: str = typer.Option(..., "--url", "-u", help="URL to fetch and ingest"),
-    tor: bool = typer.Option(False, "--tor", help="Route through Tor SOCKS5 proxy"),
+    tor: Optional[bool] = typer.Option(
+        None,
+        "--tor/--no-tor",
+        help="Route through Tor SOCKS5 proxy (default: config, see 'openfoia egress-status')",
+    ),
     output: Optional[Path] = typer.Option(
         None, "--output", "-o", help="Save extracted text to file"
     ),
@@ -3629,15 +3730,21 @@ def ingest_url(
     and archives the HTML + text locally.
 
     Use --tor to route the request through the Tor network (requires
-    Tor running on localhost:9050).
+    Tor running on localhost:9050). --tor/--no-tor overrides config for this
+    run only; with neither flag, config.network.tor decides.
 
     Examples:
         openfoia ingest --url https://example.gov/report.html
         openfoia ingest --url https://example.onion/docs --tor
     """
-    import asyncio
+    from .config import load_config
     from .db import get_data_dir
+    from .net import TorUnavailableError
     from .pipeline.web import archive_url
+
+    cfg = load_config()
+    policy = _egress_policy_from(cfg, tor=tor)
+    _check_tor_or_exit(policy)
 
     storage_path = get_data_dir() / "web"
 
@@ -3646,14 +3753,18 @@ def ingest_url(
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
-        mode = " via Tor" if tor else ""
+        mode = " via Tor" if policy.is_tor else ""
         progress.add_task(f"Fetching{mode}: {url}", total=None)
 
         try:
-            result = asyncio.run(archive_url(url, storage_path, use_tor=tor))
+            result = asyncio.run(
+                archive_url(url, storage_path, use_tor=policy.is_tor, egress=policy)
+            )
+        except TorUnavailableError:
+            _report_tor_unavailable()
         except Exception as e:
             rprint(f"[red]Failed to fetch URL: {e}[/red]")
-            if tor:
+            if policy.is_tor:
                 rprint("[dim]Make sure Tor is running: brew install tor && tor[/dim]")
             raise typer.Exit(1)
 
@@ -3672,7 +3783,7 @@ def ingest_url(
     table.add_row("HTML saved", result.html_path)
     table.add_row("Text saved", result.text_path)
     table.add_row("Checksum", result.checksum[:16] + "...")
-    if tor:
+    if policy.is_tor:
         table.add_row("Tor", "Yes")
 
     console.print(table)
@@ -4194,6 +4305,12 @@ def crossref(
         None, "--ftm", help="Export results as FollowTheMoney JSON-lines"
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip the network confirmation prompt"),
+    tor: Optional[bool] = typer.Option(
+        None,
+        "--tor/--no-tor",
+        help="Route lookups through Tor to hide your IP from these APIs "
+        "(default: config, see 'openfoia egress-status')",
+    ),
 ):
     """Cross-reference extracted entities against external databases.
 
@@ -4208,10 +4325,13 @@ def crossref(
         openfoia crossref -r REQ-20260322-ABC123    # from one request
         openfoia crossref --icij-data ./icij-csvs/  # include Offshore Leaks
         openfoia crossref --ftm results.ftm.json    # export as FollowTheMoney
+        openfoia crossref --tor                     # hide your IP from the APIs
     """
+    from .config import load_config
     from .db import get_session, get_db_path
     from .models import Entity, Document, Request as RequestModel
     from .crossref import crossref_entities
+    from .net import TorUnavailableError, describe_egress
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -4279,7 +4399,15 @@ def crossref(
         )
         if s != "icij"
     ]
+    cfg = load_config()
+    policy = _egress_policy_from(cfg, tor=tor)
+
     if network_sources:
+        # Fail closed before asking the user to confirm anything — no point
+        # walking through the leak report if Tor was requested and isn't
+        # actually there to protect the request that follows.
+        _check_tor_or_exit(policy)
+
         rprint(
             "\n[yellow]WARNING: Cross-reference will send entity names to external APIs:[/yellow]"
         )
@@ -4288,7 +4416,26 @@ def crossref(
             "[yellow]  The names of the people and organizations you are "
             "investigating will leave this machine.[/yellow]"
         )
+
+        egress_info = describe_egress(policy)
+        if policy.is_tor:
+            rprint(
+                "[cyan]  Egress: Tor — the destination servers will NOT see your real IP "
+                f"(stream isolation: {egress_info['stream_isolation']}).[/cyan]"
+            )
+        else:
+            rprint(
+                "[yellow]  Egress: direct — the destination servers WILL see your real IP.[/yellow]"
+            )
+        rprint(
+            "[dim]  Either way, the query itself (the subject names above) still reaches "
+            "each endpoint — Tor hides who is asking, not what is asked. A global "
+            "adversary watching both ends of the connection can still correlate timing.[/dim]"
+        )
         rprint("[dim]  Use --sources icij for offline-only (requires downloaded ICIJ CSVs)[/dim]")
+        rprint(
+            "[dim]  Use --tor to hide your IP from these endpoints (requires Tor running).[/dim]"
+        )
         rprint("")
 
         # A warning you cannot answer is not consent. Confirm before leaking.
@@ -4304,15 +4451,19 @@ def crossref(
         elif event == "entity":
             rprint(f"[dim]  {msg}[/dim]")
 
-    report = asyncio.run(
-        crossref_entities(
-            entities,
-            sources=source_list,
-            icij_data_dir=str(icij_data) if icij_data else None,
-            on_progress=_progress,
-            allow_network=True,  # user was warned and confirmed above
+    try:
+        report = asyncio.run(
+            crossref_entities(
+                entities,
+                sources=source_list,
+                icij_data_dir=str(icij_data) if icij_data else None,
+                on_progress=_progress,
+                allow_network=True,  # user was warned and confirmed above
+                egress=policy,
+            )
         )
-    )
+    except TorUnavailableError:
+        _report_tor_unavailable()
 
     # Display results
     rprint("\n[bold]Cross-Reference Report[/bold]")

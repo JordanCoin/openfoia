@@ -23,8 +23,6 @@ from rich import print as rprint
 # Constants
 # ---------------------------------------------------------------------------
 
-TOR_SOCKS_PROXY = "socks5://127.0.0.1:9050"
-
 # A common, non-unique user-agent string to blend in
 _COMMON_UA = "Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0"
 
@@ -50,6 +48,16 @@ Do not download files you do not trust.
 [/yellow]
 [yellow]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/yellow]
 """
+
+
+def _tor_proxy_server(tor_host: str, tor_port: int) -> str:
+    """Build the Playwright proxy server string for *tor_host*:*tor_port*.
+
+    Scheme is socks5h to make remote-DNS intent explicit for anyone reading
+    this — Chromium already resolves hostnames through the SOCKS proxy
+    either way, so this is not a fix for a DNS leak, just a clearer intent.
+    """
+    return f"socks5h://{tor_host}:{tor_port}"
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +108,10 @@ async def browse(
     }
 
     if use_tor:
-        launch_args["proxy"] = {"server": TOR_SOCKS_PROXY}
+        from .config import load_config
+
+        net_cfg = load_config().network
+        launch_args["proxy"] = {"server": _tor_proxy_server(net_cfg.tor_host, net_cfg.tor_port)}
 
     result: dict[str, Any] = {}
 

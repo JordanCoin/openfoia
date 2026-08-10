@@ -156,6 +156,25 @@ class ServerConfig:
 
 
 @dataclass
+class NetworkConfig:
+    """Outbound network / Tor egress configuration.
+
+    Governs how CLI commands that touch the network (crossref, records
+    lookups, web fetch/archive) build their `openfoia.net.EgressPolicy`.
+    See `openfoia/net.py` for what Tor mode does and does not protect.
+    """
+
+    # Route egress-aware network calls through Tor. Default OFF — Tor
+    # routing is opt-in (Principle 1: data never leaves the machine unless
+    # the user explicitly chooses; this extends to *how* it leaves).
+    tor: bool = False
+    tor_host: str = "127.0.0.1"
+    tor_port: int = 9050
+    # Unique SOCKS credentials per request -> a fresh Tor circuit each time.
+    isolate_streams: bool = True
+
+
+@dataclass
 class OpenFOIAConfig:
     """Main configuration container."""
 
@@ -167,6 +186,7 @@ class OpenFOIAConfig:
     privacy: PrivacyConfig = field(default_factory=PrivacyConfig)
     encryption: EncryptionConfig = field(default_factory=EncryptionConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
+    network: NetworkConfig = field(default_factory=NetworkConfig)
 
     # Data directory — override with OPENFOIA_DATA_DIR env var for portable / air-gapped installs
     data_dir: Path = field(
@@ -296,6 +316,13 @@ def _merge_config(config: OpenFOIAConfig, data: dict[str, Any]) -> OpenFOIAConfi
         config.server.host = srv.get("host", config.server.host)
         config.server.port = srv.get("port", config.server.port)
 
+    if "network" in data:
+        net = data["network"]
+        config.network.tor = net.get("tor", config.network.tor)
+        config.network.tor_host = net.get("tor_host", config.network.tor_host)
+        config.network.tor_port = net.get("tor_port", config.network.tor_port)
+        config.network.isolate_streams = net.get("isolate_streams", config.network.isolate_streams)
+
     return config
 
 
@@ -348,6 +375,17 @@ def _apply_env_overrides(config: OpenFOIAConfig, prefix: str) -> OpenFOIAConfig:
     # Data directory (for air-gapped / portable installs)
     if v := os.environ.get(f"{prefix}DATA_DIR"):
         config.data_dir = Path(v)
+
+    # Network / Tor egress
+    if v := os.environ.get(f"{prefix}TOR"):
+        config.network.tor = v.strip().lower() in ("1", "true", "yes", "on")
+    if v := os.environ.get(f"{prefix}TOR_HOST"):
+        config.network.tor_host = v
+    if v := os.environ.get(f"{prefix}TOR_PORT"):
+        try:
+            config.network.tor_port = int(v)
+        except ValueError:
+            print(f"Warning: {prefix}TOR_PORT={v!r} is not a valid integer, ignoring")
 
     return config
 
@@ -414,6 +452,12 @@ def save_config(config: OpenFOIAConfig, config_path: Path | str | None = None) -
         "server": {
             "host": config.server.host,
             "port": config.server.port,
+        },
+        "network": {
+            "tor": config.network.tor,
+            "tor_host": config.network.tor_host,
+            "tor_port": config.network.tor_port,
+            "isolate_streams": config.network.isolate_streams,
         },
     }
 
