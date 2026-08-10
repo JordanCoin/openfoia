@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from ..net import EgressMode, EgressPolicy, egress_client
+
 
 # Known tracker/analytics domains and script patterns to strip
 TRACKER_PATTERNS: list[str] = [
@@ -260,30 +262,29 @@ def _extract_content(html: str) -> tuple[str, str]:
     return extractor.get_content(), extractor.title.strip()
 
 
-async def fetch_url(url: str, use_tor: bool = False) -> WebFetchResult:
+async def fetch_url(
+    url: str, use_tor: bool = False, *, egress: EgressPolicy | None = None
+) -> WebFetchResult:
     """Fetch a web page and extract its content.
 
     Args:
         url: The URL to fetch.
-        use_tor: If True, route through Tor SOCKS5 proxy at localhost:9050.
+        use_tor: If True (and *egress* is not given), route through Tor via
+            the egress choke point. Kept for backward compatibility.
+        egress: How to route the request (DIRECT/TOR). Takes precedence over
+            *use_tor* when both are given. Defaults to a plain DIRECT policy,
+            or a TOR policy when use_tor=True.
 
     Returns:
         WebFetchResult with extracted text, title, and raw HTML.
     """
-    import httpx
+    policy = (
+        egress
+        if egress is not None
+        else (EgressPolicy(mode=EgressMode.TOR) if use_tor else EgressPolicy())
+    )
 
-    transport = None
-    if use_tor:
-        transport = httpx.AsyncHTTPTransport(proxy="socks5://127.0.0.1:9050")
-
-    async with httpx.AsyncClient(
-        transport=transport,
-        follow_redirects=True,
-        timeout=30.0,
-        headers={
-            "User-Agent": "Mozilla/5.0 (compatible; OpenFOIA/1.0; +https://github.com/JordanCoin/openfoia)",
-        },
-    ) as client:
+    async with egress_client(policy, timeout=30.0, follow_redirects=True) as client:
         response = await client.get(url)
         response.raise_for_status()
 
@@ -302,7 +303,7 @@ async def fetch_url(url: str, use_tor: bool = False) -> WebFetchResult:
         raw_html=raw_html,
         fetched_at=fetched_at,
         content_length=len(raw_html),
-        used_tor=use_tor,
+        used_tor=policy.is_tor,
     )
 
 
@@ -310,6 +311,8 @@ async def archive_url(
     url: str,
     storage_path: str | Path,
     use_tor: bool = False,
+    *,
+    egress: EgressPolicy | None = None,
 ) -> WebArchiveResult:
     """Fetch a URL and archive it locally.
 
@@ -319,7 +322,10 @@ async def archive_url(
     Args:
         url: The URL to fetch and archive.
         storage_path: Base directory for storing archived content.
-        use_tor: Route through Tor SOCKS5 proxy.
+        use_tor: If True (and *egress* is not given), route through Tor via
+            the egress choke point. Kept for backward compatibility.
+        egress: How to route the request (DIRECT/TOR). Takes precedence over
+            *use_tor* when both are given.
 
     Returns:
         WebArchiveResult with paths to saved files and metadata.
@@ -327,7 +333,7 @@ async def archive_url(
     storage = Path(storage_path)
     storage.mkdir(parents=True, exist_ok=True)
 
-    result = await fetch_url(url, use_tor=use_tor)
+    result = await fetch_url(url, use_tor=use_tor, egress=egress)
 
     doc_id = str(uuid4())
     dest_dir = storage / doc_id[:2] / doc_id[2:4]
