@@ -23,7 +23,11 @@ import enum
 import secrets
 import socket
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
+
+if TYPE_CHECKING:
+    import httpx
 
 # A common, non-identifying browser UA. This must NEVER mention "openfoia"
 # or a project URL — that would tell every server we talk to (and anyone
@@ -86,8 +90,8 @@ def egress_client(
     timeout: float = 15.0,
     isolation_token: str | None = None,
     headers: dict[str, str] | None = None,
-    **kwargs,
-) -> "httpx.AsyncClient":  # noqa: F821 - httpx is lazy-imported below
+    **kwargs: Any,
+) -> httpx.AsyncClient:
     """Build a configured httpx.AsyncClient for outbound requests.
 
     - policy=None behaves like EgressPolicy() (DIRECT).
@@ -136,7 +140,7 @@ async def check_tor(policy: EgressPolicy, *, timeout: float = 5.0) -> bool:
         return False
 
 
-def describe_egress(policy: EgressPolicy) -> dict:
+def describe_egress(policy: EgressPolicy) -> dict[str, Any]:
     """Honest, machine-readable summary of what this policy protects.
 
     Tor hides WHO is asking (the source IP), never WHAT is being asked (the
