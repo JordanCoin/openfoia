@@ -156,6 +156,25 @@ ollama serve &
 openfoia config --init  # Select "ollama" as the AI provider
 ```
 
+## The Web UI Works Fully Offline
+
+`openfoia serve` needs no internet. It binds to `127.0.0.1`, serves a single
+self-contained HTML page, and fetches nothing from any external host -- the
+stylesheet is hand-written and inlined, there are no web fonts, no CDN
+scripts, and no analytics. The only external URL anywhere on the page is a
+link to the project's GitHub repo in the footer, which does nothing unless
+you click it.
+
+This was not true before v4.0.0: the page loaded Tailwind CSS from
+`cdn.tailwindcss.com`, so every page load made a DNS lookup and a TLS request
+to a third party, and the UI was close to unreadable without one. If you are
+running an older version on an air-gapped machine, expect a broken-looking
+interface -- and on a networked machine, expect the request. Upgrade.
+
+Entity graphs (`openfoia analyze graph --view`) are self-contained too: a
+single HTML file with inline CSS and JS that opens from `file://` with no
+network access at all.
+
 ## Security Checklist
 
 - [ ] Air-gapped machine has no WiFi/Ethernet/Bluetooth enabled
@@ -165,4 +184,6 @@ openfoia config --init  # Select "ollama" as the AI provider
 - [ ] Duress mode configured (`--duress-password`)
 - [ ] Swap disabled or encrypted on the air-gapped machine
 - [ ] Ollama running locally for AI features (no cloud API keys)
+- [ ] Running v4.0.0 or later (earlier versions load CSS from a CDN on every
+      `openfoia serve` page load)
 - [ ] Physical security of the USB drive when not in use

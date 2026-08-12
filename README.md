@@ -14,6 +14,20 @@ Your data never leaves your machine. Works offline. Works everywhere.
 
 ## Install
 
+### With Claude Code (recommended)
+
+If you use [Claude Code](https://claude.ai/code), install the OpenFOIA plugin — you get the CLI plus a built-in copilot that knows every command:
+
+```
+/plugin marketplace add JordanCoin/openfoia
+/plugin install openfoia@openfoia
+/foia-install
+```
+
+The plugin ships a skill that teaches Claude how to run FOIA investigations, plus slash commands for the core loop: `/foia-search`, `/foia-investigate`, `/foia-graph`, `/foia-install`. The last one bootstraps the CLI on your machine.
+
+### Shell install (no Claude Code needed)
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/JordanCoin/openfoia/main/install.sh | bash
 ```
@@ -50,7 +64,7 @@ openfoia crossref                                          # check entities agai
 | **Encrypted storage** | SQLCipher AES-256. Decoy profile mode |
 | **Forensic purge** | 3-pass overwrite, shell history scrub, free space fill |
 | **Portable mode** | `openfoia portable` — everything stays on the USB, nothing on the host |
-| **Metadata stripping** | Auto-strips EXIF, PDF author, DOCX revision history on ingest |
+| **Metadata stripping** | Strips EXIF, PDF author, DOCX revision history on file and web-UI ingest. Email attachments and archived web pages are stored as received — see [THREAT_MODEL.md](docs/THREAT_MODEL.md) |
 
 ### PDF Extraction Engine
 

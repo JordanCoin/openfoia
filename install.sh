@@ -81,9 +81,18 @@ download_binary() {
 
     local url
     # Check all releases for binaries (they live on whichever release the
-    # glyph-api CI pushed them to — not necessarily the latest release)
+    # glyph-api CI pushed them to — not necessarily the latest release).
+    #
+    # Match the EXACT asset name: anchor on the leading '/' and the closing
+    # quote. Releases also carry a "<name>.sha256" asset, and an unanchored
+    # substring match hits both — with JSON asset order not guaranteed, the
+    # installer could download the checksum file, chmod +x it, and install
+    # that as the binary. The API lists releases newest-first, so head -1
+    # still picks the most recent release carrying this platform's binary.
+    local name_re
+    name_re=$(printf '%s' "$name" | sed 's/[][\.*^$/]/\\&/g')
     url=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases" \
-        | grep "browser_download_url.*${name}" \
+        | grep -Eo "\"browser_download_url\"[[:space:]]*:[[:space:]]*\"[^\"]*/${name_re}\"" \
         | head -1 \
         | cut -d '"' -f 4) || true
 
