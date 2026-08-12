@@ -1,0 +1,16 @@
+{
+  "name": "openfoia",
+  "owner": {
+    "name": "Jordan Coin Jackson"
+  },
+  "metadata": {
+    "description": "Claude Code plugin for OpenFOIA — local-first FOIA automation and AI document analysis for journalists and researchers."
+  },
+  "plugins": [
+    {
+      "name": "openfoia",
+      "source": "./plugin",
+      "description": "Help journalists and researchers run FOIA investigations using the openfoia CLI. Ships a skill covering the full records-search → download → OCR → extract → crossref → graph loop plus slash commands for each phase."
+    }
+  ]
+}

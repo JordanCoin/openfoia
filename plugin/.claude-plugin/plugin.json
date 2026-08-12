@@ -1,0 +1,10 @@
+{
+  "name": "openfoia",
+  "description": "Help journalists and researchers run FOIA investigations using the openfoia CLI. Ships a skill covering the full records-search → download → OCR → extract → crossref → graph loop plus slash commands for each phase.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Jordan Coin Jackson"
+  },
+  "repository": "https://github.com/JordanCoin/openfoia",
+  "license": "MIT"
+}
