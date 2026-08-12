@@ -27,6 +27,28 @@ app = typer.Typer(
 )
 
 
+def _version_callback(value: bool) -> None:
+    if value:
+        from . import __version__
+
+        rprint(f"openfoia {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _root(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        "-V",
+        help="Show the installed OpenFOIA version and exit.",
+        callback=_version_callback,
+        is_eager=True,
+    ),
+) -> None:
+    """Crowdsourced FOIA automation with AI-powered document analysis."""
+
+
 # === Init Command ===
 
 
@@ -2571,16 +2593,27 @@ def analyze_graph(
     view: bool = typer.Option(
         False, "--view", "-v", help="Open interactive HTML visualization in browser"
     ),
+    no_text: bool = typer.Option(
+        False,
+        "--no-text",
+        help="Omit full document text from the export (keeps entities, links and context snippets)",
+    ),
 ):
     """Build entity relationship graph from extracted entities.
 
     Use --name to save graphs by investigation name. Each investigation
     gets its own graph that you can revisit later.
 
+    The exported .json and .html files are plaintext and live outside the
+    encrypted database. By default they embed the full text of every document
+    behind the graph, which is what makes the reader view work. Pass --no-text
+    to export the structure without the document bodies.
+
     Examples:
         openfoia analyze graph --view                          # everything, open in browser
         openfoia analyze graph --name defense-contracts --view # save + view
         openfoia analyze graph --request REQ-001 --name epa    # filter + save
+        openfoia analyze graph --no-text --name epa            # structure only, no doc bodies
         openfoia analyze graphs                                # list saved graphs
     """
     from .db import get_db_path, get_session
@@ -2680,7 +2713,7 @@ def analyze_graph(
                     "id": doc.id,
                     "filename": doc.filename or "Unknown",
                     "page_count": doc.page_count,
-                    "text": doc.extracted_text or "",
+                    "text": "" if no_text else (doc.extracted_text or ""),
                     "request_id": doc.request_id,
                     "source_url": source_url,
                 }
@@ -2709,6 +2742,13 @@ def analyze_graph(
         rprint(f"  Relationships: {len(edges)}")
         if name:
             rprint(f"  Saved as: [cyan]{name}[/cyan]")
+        if no_text:
+            rprint("  [dim]Document text omitted (--no-text). The reader view will be empty.[/dim]")
+        elif documents:
+            rprint(
+                "[yellow]Note:[/yellow] this export embeds full document text in plaintext, "
+                "outside the encrypted database — share deliberately, or re-run with --no-text."
+            )
 
         if view:
             _generate_graph_html(graph_data, html_path)
