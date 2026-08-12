@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 from openfoia.config import load_config
+from openfoia.graph_template import escape_json_for_script
 from openfoia.pipeline.extract import (
     EntityExtractor,
     _gliner_available,
@@ -198,8 +199,11 @@ def generate_graph_html(result, output_path):
 
     graph_data = json.dumps({"nodes": nodes, "edges": edges})
 
-    # Write the HTML file with embedded graph data
-    output_path.write_text(_GRAPH_HTML_TEMPLATE.replace("__GRAPH_DATA__", graph_data))
+    # Write the HTML file with embedded graph data. The JSON is spliced straight
+    # into a <script> element, so it must be escaped — see escape_json_for_script.
+    output_path.write_text(
+        _GRAPH_HTML_TEMPLATE.replace("__GRAPH_DATA__", escape_json_for_script(graph_data))
+    )
     print(f"\nGraph saved to {output_path}")
 
 
@@ -226,7 +230,7 @@ canvas{display:block}
 </div>
 <div id="sel"></div>
 <script>
-const D=JSON.parse('__GRAPH_DATA__');
+const D=__GRAPH_DATA__;
 const N=D.nodes,E=D.edges;
 const cv=document.getElementById('c'),cx=cv.getContext('2d');
 let W,H;
