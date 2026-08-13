@@ -3942,6 +3942,16 @@ def records_search(
     if not result.entities:
         if result.error:
             rprint(f"[red]Search error ({source}): {result.error}[/red]")
+        elif source == "sec" and filing_type:
+            rprint(
+                f"[yellow]{source} returned {result.total_results} total results for '{query}'.[/yellow]"
+            )
+            rprint(f"[dim]Showing 0 of {result.total_results} results.[/dim]")
+            rprint(f"[dim]Applied SEC filing type filter: {filing_type}[/dim]")
+            rprint(
+                "[yellow]SEC EDGAR full-text search can be incomplete for a company or form type; "
+                "0 results is not proof that no filing exists.[/yellow]"
+            )
         else:
             rprint(f"[yellow]No results found for '{query}' on {source}.[/yellow]")
         return
