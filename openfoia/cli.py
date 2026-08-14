@@ -4538,6 +4538,10 @@ def crossref(
     rprint(f"  Sources used: {', '.join(report.sources_used)}")
     rprint(f"  Total hits: {report.total_hits}")
     rprint(f"  Entities flagged: {report.total_flagged}")
+    source_errors = getattr(report, "source_errors", {})
+    if source_errors:
+        details = ", ".join(f"{source} ({error})" for source, error in source_errors.items())
+        rprint(f"  [red]Sources errored: {len(source_errors)} — {details}[/red]")
     rprint("=" * 60)
 
     for result in report.results:
@@ -4567,7 +4571,13 @@ def crossref(
                 rprint(f"      {hit.url}")
 
     if not report.total_flagged:
-        rprint("\n  [green]No cross-reference hits found.[/green]")
+        if source_errors:
+            rprint(
+                "\n  [yellow]No cross-reference hits found among completed source checks; "
+                "report is incomplete.[/yellow]"
+            )
+        else:
+            rprint("\n  [green]No cross-reference hits found.[/green]")
 
     # Export as FollowTheMoney
     if ftm:
@@ -4583,10 +4593,12 @@ def crossref(
             "total_hits": report.total_hits,
             "total_flagged": report.total_flagged,
             "sources": report.sources_used,
+            "source_errors": source_errors,
             "results": [
                 {
                     "entity": r.entity_name,
                     "type": r.entity_type,
+                    "source_statuses": getattr(r, "source_statuses", {}),
                     "hits": [
                         {
                             "source": h.source,
@@ -4599,6 +4611,7 @@ def crossref(
                 }
                 for r in report.results
                 if r.hits
+                or any(status != "checked" for status in getattr(r, "source_statuses", {}).values())
             ],
         }
         output.write_text(json.dumps(report_data, indent=2))
