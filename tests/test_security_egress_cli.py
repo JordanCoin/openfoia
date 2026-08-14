@@ -18,6 +18,7 @@ this file has no dependency on the parallel work landing in those modules.
 
 from __future__ import annotations
 
+import json
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -356,6 +357,46 @@ def test_crossref_direct_mode_never_probes_tor(monkeypatch, fake_entities_db):
     assert probed == []
     assert captured["allow_network"] is True
     assert captured["egress"].mode is EgressMode.DIRECT
+
+
+def test_crossref_reports_and_exports_source_errors(monkeypatch, fake_entities_db, tmp_path):
+    """A failed source must not be represented as an uneventful no-match."""
+
+    async def _crossref_entities(entities, **kwargs):
+        return SimpleNamespace(
+            total_entities=1,
+            sources_used=["sec", "muckrock"],
+            total_hits=0,
+            total_flagged=0,
+            source_errors={"sec": "RateLimited"},
+            results=[
+                SimpleNamespace(
+                    entity_name="Jane Doe",
+                    entity_type="PERSON",
+                    source_statuses={"sec": "ERRORED(RateLimited)", "muckrock": "checked"},
+                    hits=[],
+                ),
+                SimpleNamespace(
+                    entity_name="John Smith",
+                    entity_type="PERSON",
+                    source_statuses={"sec": "skipped(rate-limited)", "muckrock": "checked"},
+                    hits=[],
+                ),
+            ],
+        )
+
+    monkeypatch.setattr("openfoia.crossref.crossref_entities", _crossref_entities)
+    output = tmp_path / "crossref-report.json"
+
+    result = runner.invoke(app, ["crossref", "--no-tor", "--yes", "--output", str(output)])
+
+    assert result.exit_code == 0, result.output
+    assert "Sources errored: 1" in result.output
+    assert "incomplete." in result.output
+    saved = json.loads(output.read_text())
+    assert saved["source_errors"] == {"sec": "RateLimited"}
+    assert saved["results"][0]["source_statuses"]["sec"] == "ERRORED(RateLimited)"
+    assert saved["results"][1]["source_statuses"]["sec"] == "skipped(rate-limited)"
 
 
 def test_crossref_tor_mode_passes_egress_policy_through(monkeypatch, fake_entities_db):
