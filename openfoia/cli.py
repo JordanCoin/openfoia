@@ -4142,6 +4142,103 @@ def records_search(
     rprint(f"\n[dim]Showing {len(entities)} of {result.total_results} results.[/dim]")
 
 
+@records_app.command("filings")
+def records_filings(
+    ticker_or_cik: str = typer.Argument(..., help="Company ticker or SEC CIK"),
+    since: str | None = typer.Option(None, "--since", help="Earliest filing date (YYYY-MM-DD)"),
+    forms: str | None = typer.Option(None, "--forms", help="Comma-separated forms, e.g. 10-K,10-Q"),
+    limit: int = typer.Option(25, "--limit", "-n", help="Maximum filings to display"),
+    tor: bool | None = typer.Option(None, "--tor/--no-tor", help="Route SEC requests through Tor"),
+    yes: bool = typer.Option(False, "--yes", help="Confirm sending the query to SEC"),
+):
+    """List a company's SEC filings in reverse chronological order.
+
+    The ticker or CIK is sent to SEC. This command never downloads filing
+    documents; it only retrieves SEC metadata and archive indexes.
+    """
+    from datetime import date
+
+    from .config import load_config
+    from .net import describe_egress
+    from .records.sec_edgar import SECEdgarAdapter
+
+    if limit < 1:
+        rprint("[red]--limit must be at least 1.[/red]")
+        raise typer.Exit(2)
+    if since:
+        try:
+            date.fromisoformat(since)
+        except ValueError:
+            rprint("[red]--since must be an ISO date in YYYY-MM-DD format.[/red]")
+            raise typer.Exit(2) from None
+    try:
+        import re
+
+        SECEdgarAdapter._validate_forms(forms)
+        if ticker_or_cik.strip().isdigit():
+            SECEdgarAdapter.normalize_cik(ticker_or_cik)
+        elif not re.fullmatch(r"[A-Za-z][A-Za-z0-9.-]{0,9}", ticker_or_cik.strip()):
+            raise ValueError("ticker must be 1-10 letters, digits, periods, or hyphens")
+    except ValueError as exc:
+        rprint(f"[red]Invalid filing query: {exc}[/red]")
+        raise typer.Exit(2) from None
+
+    cfg = load_config()
+    policy = _egress_policy_from(cfg, tor=tor)
+    _check_tor_or_exit(policy)
+    egress_info = describe_egress(policy)
+    rprint("\n[yellow]WARNING: This will send the ticker/CIK and filing query to SEC.[/yellow]")
+    if policy.is_tor:
+        rprint(
+            f"[cyan]Egress: Tor — SEC will not see your real IP "
+            f"(stream isolation: {egress_info['stream_isolation']}).[/cyan]"
+        )
+    else:
+        rprint("[yellow]Egress: direct — SEC will see your real IP.[/yellow]")
+    rprint(
+        "[dim]Tor hides who is asking, not the ticker/CIK or query contents. "
+        "No filing documents will be downloaded.[/dim]"
+    )
+    if not yes and not typer.confirm("Send this query to SEC?"):
+        rprint("[green]Aborted. Nothing left your machine.[/green]")
+        raise typer.Exit(0)
+
+    import asyncio
+
+    adapter = SECEdgarAdapter(egress=policy)
+    try:
+        result = asyncio.run(adapter.filings(ticker_or_cik, since=since, forms=forms))
+    except ValueError as exc:
+        rprint(f"[red]Invalid filing query: {exc}[/red]")
+        raise typer.Exit(2) from None
+    if result.error:
+        rprint(f"[red]SEC source error: {result.error}[/red]")
+        raise typer.Exit(1)
+    if not result.entities:
+        rprint("[yellow]No SEC filings matched the requested filters.[/yellow]")
+        return
+    table = Table()
+    table.add_column("Date", width=12)
+    table.add_column("Form", width=10)
+    table.add_column("CIK", width=12)
+    table.add_column("Accession", width=22)
+    table.add_column("URL", max_width=70)
+    for entity in result.entities[:limit]:
+        table.add_row(
+            entity.extra_data.get("filing_date", "-"),
+            entity.extra_data.get("filing_type", "-"),
+            entity.identifiers.get("cik", "-"),
+            entity.identifiers.get("accession_number", "-"),
+            entity.source_url or "-",
+        )
+    rprint(f"\n[bold]SEC filings for {ticker_or_cik}[/bold]")
+    console.print(table)
+    rprint(
+        f"\n[dim]Showing {min(limit, len(result.entities))} of "
+        f"{len(result.entities)} filings.[/dim]"
+    )
+
+
 @records_app.command("fetch")
 def records_fetch(
     doc_id: str = typer.Argument(..., help="Document ID to fetch"),
