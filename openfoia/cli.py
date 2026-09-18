@@ -3933,7 +3933,10 @@ def records_search(
                 progress.add_task(f"Searching {source} for '{query}'...", total=None)
                 result = asyncio.run(adapter.search(query, **kwargs))
     except Exception as e:
-        rprint(f"[red]Search failed: {e}[/red]")
+        if raw:
+            typer.echo(f"Search failed: {e}", err=True)
+        else:
+            rprint(f"[red]Search failed: {e}[/red]")
         raise typer.Exit(1) from None
 
     if raw:
@@ -3957,12 +3960,13 @@ def records_search(
     if not result.entities:
         if result.error:
             rprint(f"[red]Search error ({source}): {result.error}[/red]")
-        elif source == "sec" and filing_type:
+        elif source == "sec":
             rprint(
                 f"[yellow]{source} returned {result.total_results} total results for '{query}'.[/yellow]"
             )
             rprint(f"[dim]Showing 0 of {result.total_results} results.[/dim]")
-            rprint(f"[dim]Applied SEC filing type filter: {filing_type}[/dim]")
+            if filing_type:
+                rprint(f"[dim]Applied SEC filing type filter: {filing_type}[/dim]")
             rprint(
                 "[yellow]SEC EDGAR full-text search can be incomplete for a company or form type; "
                 "0 results is not proof that no filing exists.[/yellow]"

@@ -6,6 +6,7 @@ https://efts.sec.gov/LATEST/search-index?q=<query>
 
 from __future__ import annotations
 
+import asyncio
 import re
 from datetime import date
 from typing import Any
@@ -16,6 +17,12 @@ EFTS_BASE = "https://efts.sec.gov/LATEST/search-index"
 EDGAR_FILING_BASE = "https://www.sec.gov/Archives/edgar/data"
 SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 SEC_SUBMISSIONS_BASE = "https://data.sec.gov/submissions"
+
+#: Seconds to wait between consecutive SEC requests. SEC's fair-access policy
+#: cuts off clients above 10 requests/second, and a long-lived filer's history
+#: is split across many archive shards -- fetching them back to back is exactly
+#: the burst that gets an IP blocked. 0.15s keeps a shard walk under ~7 req/s.
+SEC_REQUEST_DELAY = 0.15
 
 #: SEC requires a descriptive User-Agent. Keep it generic and overridable —
 #: announcing "OpenFOIA" tells a government endpoint that the requester is
@@ -76,6 +83,22 @@ class SECEdgarAdapter(RecordAdapter):
         return values
 
     @staticmethod
+    def _archive_ends_before(archive: dict[str, Any], since_date: date) -> bool:
+        """True only when SEC states this shard holds nothing on or after *since*.
+
+        ``filingTo`` is remote input, so anything that is not a plain ISO date
+        is treated as unknown and the shard is fetched -- skipping on a value we
+        cannot read would silently drop filings from the report.
+        """
+        filing_to = archive.get("filingTo")
+        if not isinstance(filing_to, str):
+            return False
+        try:
+            return date.fromisoformat(filing_to) < since_date
+        except ValueError:
+            return False
+
+    @staticmethod
     def _filing_rows(block: dict[str, Any], *, allow_empty: bool = True) -> list[dict[str, Any]]:
         """Validate and transpose SEC's column-oriented metadata into rows."""
         if not block:
@@ -96,9 +119,7 @@ class SECEdgarAdapter(RecordAdapter):
         ]
 
     @staticmethod
-    def _filing_entity(
-        filing: dict[str, Any], *, cik: str, company_name: str
-    ) -> RecordEntity | None:
+    def _filing_entity(filing: dict[str, Any], *, cik: str, company_name: str) -> RecordEntity:
         if not isinstance(filing, dict):
             raise AdapterRequestError("SEC filing row was not an object")
         accession = (
@@ -206,6 +227,11 @@ class SECEdgarAdapter(RecordAdapter):
                 name = archive["name"]
                 if not archive_pattern.fullmatch(name):
                     raise AdapterRequestError("SEC submissions archive name was malformed")
+                if since_date and self._archive_ends_before(archive, since_date):
+                    # Every filing in this shard predates --since, so fetching it
+                    # would spend a request on rows the filter drops anyway.
+                    continue
+                await asyncio.sleep(SEC_REQUEST_DELAY)
                 archived = await self._request(
                     f"{SEC_SUBMISSIONS_BASE}/{name}", headers=_edgar_headers()
                 )

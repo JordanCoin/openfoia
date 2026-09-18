@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import random
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -102,19 +103,37 @@ class _SourceCheckError(RuntimeError):
     matches the user would otherwise never see.
     """
 
-    def __init__(self, error: BaseException, partial_hits: list[CrossRefHit] | None = None):
-        self.error_type = type(error).__name__
+    def __init__(
+        self,
+        error: BaseException,
+        partial_hits: list[CrossRefHit] | None = None,
+        error_type: str | None = None,
+    ):
+        self.error_type = error_type or type(error).__name__
         self.partial_hits = partial_hits or []
         super().__init__(self.error_type)
 
 
+def _error_kind(message: str) -> str:
+    """Name the failure behind an adapter error string, without quoting it.
+
+    Adapters report failures as ``"<ExceptionName>: <detail>"``. The detail can
+    echo the URL — and therefore the entity name being looked up — so only the
+    leading exception name is carried into a report the user may share.
+    """
+    head = message.split(":", 1)[0].strip()
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", head):
+        return head
+    return "SourceError"
+
+
 def _check_rate_limit(result: Any) -> None:
-    """Raise _RateLimited if the search result indicates a rate limit error."""
+    """Raise if the search result reports a rate limit or any other failure."""
     err = getattr(result, "error", None)
     if err:
         if "rate limit" in err.lower() or "429" in err.lower():
             raise _RateLimited(err)
-        raise _SourceCheckError(RuntimeError(err))
+        raise _SourceCheckError(RuntimeError(err), error_type=_error_kind(err))
 
 
 def _deduplicate_entities(entities: list[Any]) -> list[Any]:
@@ -516,6 +535,15 @@ async def _check_icij(name: str, entity_type: EntityType, data_dir: str) -> list
         csv_files = sorted(data_path.glob("*.csv"))
     except Exception as exc:
         raise _SourceCheckError(exc) from exc
+
+    if not csv_files:
+        # A directory with no CSVs means the download or extraction did not
+        # land where the user thinks it did. Reporting "checked, no hits"
+        # would claim we searched the leaks when we read nothing at all.
+        raise _SourceCheckError(
+            FileNotFoundError("no ICIJ CSV files in data directory"),
+            error_type="NoICIJData",
+        )
 
     for csv_file in csv_files:
         try:

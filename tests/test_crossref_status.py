@@ -169,3 +169,33 @@ def test_partially_failed_source_reports_error_and_keeps_its_hits(monkeypatch):
     assert report.total_flagged == 1
     assert report.source_errors == {"icij": "OSError"}
     assert report.results[0].source_statuses == {"icij": "ERRORED(OSError)"}
+
+
+def test_adapter_error_reports_its_own_failure_kind(monkeypatch):
+    """Every remote failure must not collapse into one opaque 'RuntimeError'."""
+
+    kinds = []
+
+    for message, expected in (
+        ("HTTPStatusError: Server error '503' for url ...", "HTTPStatusError"),
+        ("ConnectError: [Errno -3] Temporary failure in name resolution", "ConnectError"),
+        ("something went wrong", "SourceError"),
+    ):
+        with pytest.raises(crossref_mod._SourceCheckError) as error:
+            crossref_mod._check_rate_limit(SimpleNamespace(error=message))
+        kinds.append(error.value.error_type)
+        # The detail can echo the looked-up name via the URL; only the kind travels.
+        assert message not in str(error.value)
+        assert error.value.error_type == expected
+
+    assert kinds == ["HTTPStatusError", "ConnectError", "SourceError"]
+
+
+def test_empty_icij_directory_is_reported_rather_than_called_clean(tmp_path):
+    """A data directory holding no CSVs means nothing was searched."""
+
+    with pytest.raises(crossref_mod._SourceCheckError) as error:
+        asyncio.run(_check_icij("Acme Corp", EntityType.ORGANIZATION, str(tmp_path)))
+
+    assert error.value.error_type == "NoICIJData"
+    assert error.value.partial_hits == []

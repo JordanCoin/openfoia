@@ -12,6 +12,7 @@ from openfoia.config import OpenFOIAConfig
 from openfoia.net import EgressMode, EgressPolicy
 from openfoia.records.base import AdapterRequestError, SearchResult
 from openfoia.records.sec_edgar import (
+    SEC_REQUEST_DELAY,
     SEC_SUBMISSIONS_BASE,
     SEC_TICKERS_URL,
     SECEdgarAdapter,
@@ -298,3 +299,70 @@ def test_cli_yes_forwards_policy_and_reports_source_error(monkeypatch) -> None: 
     assert result.exit_code == 1
     assert "SEC source error: offline" in result.output
     assert getattr(seen["egress"], "is_tor", False) is True
+
+
+def _shard_adapter(files: list[dict]) -> type[SECEdgarAdapter]:
+    class FakeAdapter(SECEdgarAdapter):
+        def __init__(self) -> None:
+            super().__init__(egress=EgressPolicy(mode=EgressMode.DIRECT))
+            self.calls: list[str] = []
+
+        async def _request(self, url: str, **kwargs):  # type: ignore[no-untyped-def]
+            self.calls.append(url)
+            if url.endswith("CIK0000000123.json"):
+                return {
+                    "name": "ABC Corp",
+                    "filings": {
+                        "recent": {
+                            "accessionNumber": ["0000000001-25-000001"],
+                            "filingDate": ["2025-01-02"],
+                            "form": ["10-K"],
+                        },
+                        "files": files,
+                    },
+                }
+            return {
+                "accessionNumber": ["0000000001-99-000001"],
+                "filingDate": ["1999-01-01"],
+                "form": ["10-K"],
+            }
+
+    return FakeAdapter
+
+
+def test_archive_shards_are_paced_to_respect_sec_fair_access(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Shard walks must not burst past SEC's documented request ceiling."""
+
+    slept: list[float] = []
+
+    async def record_sleep(duration: float) -> None:
+        slept.append(duration)
+
+    monkeypatch.setattr(asyncio, "sleep", record_sleep)
+    files = [{"name": f"CIK0000000123-submissions-00{n}.json"} for n in (1, 2, 3)]
+    adapter = _shard_adapter(files)()
+
+    result = asyncio.run(adapter.filings("123"))
+
+    assert len([url for url in adapter.calls if "submissions-" in url]) == 3
+    assert slept == [SEC_REQUEST_DELAY] * 3
+    assert len(result.entities) == 4
+
+
+def test_shards_entirely_before_since_are_not_fetched() -> None:
+    """A dated shard that cannot satisfy --since must not cost a request."""
+
+    files = [
+        {"name": "CIK0000000123-submissions-001.json", "filingTo": "1999-12-31"},
+        {"name": "CIK0000000123-submissions-002.json", "filingTo": "2024-12-31"},
+        {"name": "CIK0000000123-submissions-003.json"},
+    ]
+    adapter = _shard_adapter(files)()
+
+    result = asyncio.run(adapter.filings("123", since="2000-01-01"))
+
+    fetched = [url for url in adapter.calls if "submissions-" in url]
+    assert "submissions-001" not in " ".join(fetched)
+    assert len(fetched) == 2
+    # Only the 2025 filing clears --since; the undated shards' 1999 rows do not.
+    assert [e.extra_data["filing_date"] for e in result.entities] == ["2025-01-02"]
