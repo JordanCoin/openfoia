@@ -3916,24 +3916,29 @@ def records_search(
     if filing_type:
         kwargs["filing_type"] = filing_type
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
-        progress.add_task(f"Searching {source} for '{query}'...", total=None)
-
-        try:
+    try:
+        if raw:
+            # Raw output is intended for pipes and scripts, so it must contain
+            # only JSON -- no spinner or Rich markup before the document.
             result = asyncio.run(adapter.search(query, **kwargs))
-        except Exception as e:
-            rprint(f"[red]Search failed: {e}[/red]")
-            raise typer.Exit(1) from None
+        else:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
+            ) as progress:
+                progress.add_task(f"Searching {source} for '{query}'...", total=None)
+                result = asyncio.run(adapter.search(query, **kwargs))
+    except Exception as e:
+        rprint(f"[red]Search failed: {e}[/red]")
+        raise typer.Exit(1) from None
 
     if raw:
-        rprint(
+        typer.echo(
             json.dumps(
                 [e.to_dict() for e in result.entities[:limit]],
                 indent=2,
+                ensure_ascii=False,
                 default=str,
             )
         )
