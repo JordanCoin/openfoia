@@ -3871,7 +3871,10 @@ def records_search(
         "opencorporates",
         "--source",
         "-s",
-        help="Data source (muckrock, opencorporates, sec)",
+        help=(
+            "Data source (opencorporates, sec, muckrock, documentcloud, usaspending, "
+            "nonprofits, govinfo, fec, regulations)"
+        ),
     ),
     jurisdiction: str | None = typer.Option(
         None, "--jurisdiction", "-j", help="Jurisdiction filter (e.g. us_ca, gb)"
