@@ -62,3 +62,27 @@ def test_records_search_help_lists_every_registered_source():
     assert result.exit_code == 0
     for source in list_sources():
         assert source in result.output
+
+
+def test_records_search_raw_reports_source_errors_instead_of_empty_json(monkeypatch):
+    """A failed search must not look like a successful empty result to a script."""
+
+    class Adapter:
+        async def search(self, query, **kwargs):
+            return SearchResult(
+                source="sec",
+                query=query,
+                total_results=0,
+                entities=[],
+                error="AdapterRequestError: HTTP 503",
+            )
+
+    monkeypatch.setattr("openfoia.records.get_adapter", lambda source: Adapter())
+
+    result = CliRunner().invoke(
+        app,
+        ["records", "search", "Acme Corp", "--source", "sec", "--raw"],
+    )
+
+    assert result.exit_code == 1
+    assert result.stdout.strip() == ""

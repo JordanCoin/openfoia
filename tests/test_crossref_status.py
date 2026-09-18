@@ -107,3 +107,65 @@ def test_icij_read_failure_propagates_as_a_redacted_source_error(monkeypatch, tm
         asyncio.run(_check_icij("Acme Corp", EntityType.ORGANIZATION, str(tmp_path)))
 
     assert error.value.error_type == "OSError"
+
+
+def test_icij_partial_failure_keeps_hits_from_readable_files(monkeypatch, tmp_path):
+    """One unreadable CSV must not erase matches found in the files that opened."""
+
+    good = tmp_path / "a_readable.csv"
+    good.write_text("name\nAcme Corp\n")
+    bad = tmp_path / "b_unreadable.csv"
+    bad.write_text("name\nAcme Corp\n")
+    original_open = open
+
+    def fail_open(path, *args, **kwargs):
+        if path == bad:
+            raise OSError("sensitive local path details")
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", fail_open)
+
+    with pytest.raises(crossref_mod._SourceCheckError) as error:
+        asyncio.run(_check_icij("Acme Corp", EntityType.ORGANIZATION, str(tmp_path)))
+
+    assert error.value.error_type == "OSError"
+    assert [hit.entity_name for hit in error.value.partial_hits] == ["Acme Corp"]
+
+
+def test_partially_failed_source_reports_error_and_keeps_its_hits(monkeypatch):
+    """A source that fails mid-check stays flagged ERRORED but keeps real matches."""
+
+    async def partially_failing_checker(name, entity_type):
+        raise crossref_mod._SourceCheckError(
+            OSError("unreadable shard"),
+            partial_hits=[
+                CrossRefHit(
+                    source="icij",
+                    entity_name=name,
+                    match_type="partial",
+                    details="found before the failure",
+                )
+            ],
+        )
+
+    async def no_sleep(duration):
+        return None
+
+    monkeypatch.setattr(
+        crossref_mod,
+        "_get_available_sources",
+        lambda icij_data_dir, egress: {"icij": partially_failing_checker},
+    )
+    monkeypatch.setattr(asyncio, "sleep", no_sleep)
+
+    entity = SimpleNamespace(
+        entity_type=EntityType.ORGANIZATION,
+        normalized_text="Acme Corp",
+        confidence=1.0,
+    )
+    report = asyncio.run(crossref_entities([entity], allow_network=True))
+
+    assert report.total_hits == 1
+    assert report.total_flagged == 1
+    assert report.source_errors == {"icij": "OSError"}
+    assert report.results[0].source_statuses == {"icij": "ERRORED(OSError)"}

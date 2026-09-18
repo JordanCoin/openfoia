@@ -3937,6 +3937,13 @@ def records_search(
         raise typer.Exit(1) from None
 
     if raw:
+        if result.error:
+            # stdout has to stay parseable JSON for pipes, so the failure is
+            # reported on stderr and in the exit code. Without this a script
+            # reading `--raw` cannot tell an API failure from "no results".
+            typer.echo(f"Search error ({source}): {result.error}", err=True)
+            raise typer.Exit(1)
+
         typer.echo(
             json.dumps(
                 [e.to_dict() for e in result.entities[:limit]],

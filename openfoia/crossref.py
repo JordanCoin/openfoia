@@ -95,10 +95,16 @@ class _RateLimited(BaseException):
 
 
 class _SourceCheckError(RuntimeError):
-    """A checker failure that must be visible in the cross-reference report."""
+    """A checker failure that must be visible in the cross-reference report.
 
-    def __init__(self, error: BaseException):
+    Carries any hits the checker had already collected before it failed, so a
+    partial failure reports the source as incomplete *without* discarding
+    matches the user would otherwise never see.
+    """
+
+    def __init__(self, error: BaseException, partial_hits: list[CrossRefHit] | None = None):
         self.error_type = type(error).__name__
+        self.partial_hits = partial_hits or []
         super().__init__(self.error_type)
 
 
@@ -244,6 +250,9 @@ async def crossref_entities(
                     source_name,
                     exc.error_type,
                 )
+                # A partially failed source still keeps whatever it did find:
+                # the status marks it incomplete, but real matches survive.
+                hits.extend(exc.partial_hits)
                 source_statuses[source_name] = f"ERRORED({exc.error_type})"
                 source_errors.setdefault(source_name, exc.error_type)
             except Exception as e:
@@ -499,9 +508,17 @@ async def _check_icij(name: str, entity_type: EntityType, data_dir: str) -> list
 
     # Search across all ICIJ CSV files.  A local data read failure makes this
     # source incomplete, so surface it to the report rather than treating it
-    # as an uneventful no-match.
+    # as an uneventful no-match -- but keep reading the files that do open, and
+    # hand the hits found so far to the caller instead of dropping real matches.
+    first_error: Exception | None = None
+
     try:
-        for csv_file in data_path.glob("*.csv"):
+        csv_files = sorted(data_path.glob("*.csv"))
+    except Exception as exc:
+        raise _SourceCheckError(exc) from exc
+
+    for csv_file in csv_files:
+        try:
             with open(csv_file, encoding="utf-8", errors="ignore") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
@@ -524,8 +541,14 @@ async def _check_icij(name: str, entity_type: EntityType, data_dir: str) -> list
                                 )
                             )
                             break  # one hit per row is enough
-    except Exception as exc:
-        raise _SourceCheckError(exc) from exc
+        except Exception as exc:
+            # Log the file only, never the searched name or the row contents.
+            logger.warning("Failed to search ICIJ file %s: %s", csv_file.name, type(exc).__name__)
+            if first_error is None:
+                first_error = exc
+
+    if first_error is not None:
+        raise _SourceCheckError(first_error, partial_hits=hits[:10]) from first_error
 
     return hits[:10]  # cap to avoid flooding
 
