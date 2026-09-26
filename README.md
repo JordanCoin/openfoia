@@ -79,14 +79,24 @@ To control concurrency per process, set:
 
 ## Data Sources
 
-| Source | What | Auth |
-|--------|------|------|
-| [MuckRock](https://www.muckrock.com/) | 46k+ completed FOIA requests with downloadable documents | Free |
-| [DocumentCloud](https://www.documentcloud.org/) | 10M+ public documents with pre-extracted text | Free |
-| [OpenCorporates](https://opencorporates.com/) | Global company ownership, directors, filings | Free |
-| [SEC EDGAR](https://www.sec.gov/edgar/) | US corporate filings | Free |
-| [OpenSanctions](https://opensanctions.org/) | Sanctions lists, politically exposed persons | Free (non-commercial) |
-| [ICIJ Offshore Leaks](https://offshoreleaks.icij.org/) | Panama/Pandora/Paradise Papers (local CSV) | Free download |
+`openfoia records search` supports these public-records sources. Each search
+sends its query to the selected third party without a confirmation prompt, so
+treat queries as sensitive investigation data and run one only when you accept
+that disclosure.
+
+| Source | What | Access |
+|--------|------|--------|
+| [MuckRock](https://www.muckrock.com/) | Completed FOIA requests with downloadable response documents | Public API |
+| [DocumentCloud](https://www.documentcloud.org/) | Public documents with pre-extracted text | Public API |
+| [OpenCorporates](https://opencorporates.com/) | Global company registrations, ownership, directors, and filings | Free basic search |
+| [SEC EDGAR](https://www.sec.gov/edgar/) | US public-company filings | No API key |
+| [USAspending](https://www.usaspending.gov/) | Federal contracts, grants, loans, and other awards | No API key |
+| [ProPublica Nonprofit Explorer](https://projects.propublica.org/nonprofits/) | IRS Form 990 filings and US nonprofit data | No API key |
+| [GovInfo](https://www.govinfo.gov/) | Congressional, court, regulatory, and other US government documents | Free API key; demo key available |
+| [OpenFEC](https://api.open.fec.gov/developers/) | Federal campaign-finance contributions and committees | Free API key; demo key available |
+| [Regulations.gov](https://www.regulations.gov/) | Federal rulemaking documents and public comments | Free API key; demo key available |
+| [OpenSanctions](https://opensanctions.org/) | Sanctions lists and politically exposed persons | Cross-reference source; free non-commercial access |
+| [ICIJ Offshore Leaks](https://offshoreleaks.icij.org/) | Panama, Pandora, and Paradise Papers | Cross-reference source; local CSV download |
 
 ## Documentation
 

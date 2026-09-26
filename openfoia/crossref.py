@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import random
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -44,6 +45,7 @@ class CrossRefResult:
     entity_type: str
     hits: list[CrossRefHit]
     sources_checked: list[str]
+    source_statuses: dict[str, str] = field(default_factory=dict)
 
     @property
     def flagged(self) -> bool:
@@ -59,6 +61,7 @@ class CrossRefReport:
     total_hits: int
     total_flagged: int
     sources_used: list[str]
+    source_errors: dict[str, str] = field(default_factory=dict)
 
 
 # Entity types worth cross-referencing (skip dates, money, etc.)
@@ -92,11 +95,45 @@ class _RateLimited(BaseException):
     """
 
 
+class _SourceCheckError(RuntimeError):
+    """A checker failure that must be visible in the cross-reference report.
+
+    Carries any hits the checker had already collected before it failed, so a
+    partial failure reports the source as incomplete *without* discarding
+    matches the user would otherwise never see.
+    """
+
+    def __init__(
+        self,
+        error: BaseException,
+        partial_hits: list[CrossRefHit] | None = None,
+        error_type: str | None = None,
+    ):
+        self.error_type = error_type or type(error).__name__
+        self.partial_hits = partial_hits or []
+        super().__init__(self.error_type)
+
+
+def _error_kind(message: str) -> str:
+    """Name the failure behind an adapter error string, without quoting it.
+
+    Adapters report failures as ``"<ExceptionName>: <detail>"``. The detail can
+    echo the URL — and therefore the entity name being looked up — so only the
+    leading exception name is carried into a report the user may share.
+    """
+    head = message.split(":", 1)[0].strip()
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", head):
+        return head
+    return "SourceError"
+
+
 def _check_rate_limit(result: Any) -> None:
-    """Raise _RateLimited if the search result indicates a rate limit error."""
+    """Raise if the search result reports a rate limit or any other failure."""
     err = getattr(result, "error", None)
-    if err and ("rate limit" in err.lower() or "429" in err.lower()):
-        raise _RateLimited(err)
+    if err:
+        if "rate limit" in err.lower() or "429" in err.lower():
+            raise _RateLimited(err)
+        raise _SourceCheckError(RuntimeError(err), error_type=_error_kind(err))
 
 
 def _deduplicate_entities(entities: list[Any]) -> list[Any]:
@@ -194,12 +231,14 @@ async def crossref_entities(
         )
 
     results: list[CrossRefResult] = []
+    source_errors: dict[str, str] = {}
     # Track sources that hit rate limits — skip them for remaining entities
     exhausted_sources: set[str] = set()
 
     for idx, entity in enumerate(targets):
         hits: list[CrossRefHit] = []
         sources_checked: list[str] = []
+        source_statuses: dict[str, str] = {}
 
         if on_progress:
             on_progress(
@@ -209,24 +248,41 @@ async def crossref_entities(
 
         for source_name, checker in available_sources.items():
             if source_name in exhausted_sources:
+                source_statuses[source_name] = "skipped(rate-limited)"
                 continue
             sources_checked.append(source_name)
             try:
                 source_hits = await checker(entity.normalized_text, entity.entity_type)
                 hits.extend(source_hits)
+                source_statuses[source_name] = "matched" if source_hits else "checked"
             except _RateLimited:
                 logger.warning(
                     "CrossRef %s rate limited — skipping for remaining entities",
                     source_name,
                 )
                 exhausted_sources.add(source_name)
+                source_statuses[source_name] = "ERRORED(RateLimited)"
+                source_errors.setdefault(source_name, "RateLimited")
+            except _SourceCheckError as exc:
+                logger.warning(
+                    "CrossRef %s failed: %s",
+                    source_name,
+                    exc.error_type,
+                )
+                # A partially failed source still keeps whatever it did find:
+                # the status marks it incomplete, but real matches survive.
+                hits.extend(exc.partial_hits)
+                source_statuses[source_name] = f"ERRORED({exc.error_type})"
+                source_errors.setdefault(source_name, exc.error_type)
             except Exception as e:
                 logger.warning(
-                    "CrossRef %s failed for '%s': %s",
+                    "CrossRef %s failed: %s",
                     source_name,
-                    entity.normalized_text,
-                    e,
+                    type(e).__name__,
                 )
+                error_type = type(e).__name__
+                source_statuses[source_name] = f"ERRORED({error_type})"
+                source_errors.setdefault(source_name, error_type)
 
             # Rate limit: respect each API's documented limits. Sleep the base
             # delay times a randomized ~[1.0, 1.5) jitter factor rather than
@@ -246,6 +302,7 @@ async def crossref_entities(
                 entity_type=entity.entity_type.value,
                 hits=hits,
                 sources_checked=sources_checked,
+                source_statuses=source_statuses,
             )
         )
 
@@ -258,6 +315,7 @@ async def crossref_entities(
         total_hits=total_hits,
         total_flagged=len(flagged),
         sources_used=list(available_sources.keys()),
+        source_errors=source_errors,
     )
 
 
@@ -327,8 +385,12 @@ async def _check_muckrock(
     try:
         result = await adapter.search(name, page_size=5)
         _check_rate_limit(result)
-    except Exception:
-        return []
+    except _RateLimited:
+        raise
+    except _SourceCheckError:
+        raise
+    except Exception as exc:
+        raise _SourceCheckError(exc) from exc
 
     hits = []
     for req in result.entities:
@@ -374,8 +436,12 @@ async def _check_opencorporates(
     try:
         result = await adapter.search(name, page_size=5)
         _check_rate_limit(result)
-    except Exception:
-        return []
+    except _RateLimited:
+        raise
+    except _SourceCheckError:
+        raise
+    except Exception as exc:
+        raise _SourceCheckError(exc) from exc
 
     hits = []
     for ent in result.entities:
@@ -417,8 +483,12 @@ async def _check_sec(
     try:
         result = await adapter.search(name, page_size=5)
         _check_rate_limit(result)
-    except Exception:
-        return []
+    except _RateLimited:
+        raise
+    except _SourceCheckError:
+        raise
+    except Exception as exc:
+        raise _SourceCheckError(exc) from exc
 
     hits = []
     seen_ciks: set[str] = set()
@@ -455,8 +525,27 @@ async def _check_icij(name: str, entity_type: EntityType, data_dir: str) -> list
     data_path = Path(data_dir)
     name_lower = name.lower()
 
-    # Search across all ICIJ CSV files
-    for csv_file in data_path.glob("*.csv"):
+    # Search across all ICIJ CSV files.  A local data read failure makes this
+    # source incomplete, so surface it to the report rather than treating it
+    # as an uneventful no-match -- but keep reading the files that do open, and
+    # hand the hits found so far to the caller instead of dropping real matches.
+    first_error: Exception | None = None
+
+    try:
+        csv_files = sorted(data_path.glob("*.csv"))
+    except Exception as exc:
+        raise _SourceCheckError(exc) from exc
+
+    if not csv_files:
+        # A directory with no CSVs means the download or extraction did not
+        # land where the user thinks it did. Reporting "checked, no hits"
+        # would claim we searched the leaks when we read nothing at all.
+        raise _SourceCheckError(
+            FileNotFoundError("no ICIJ CSV files in data directory"),
+            error_type="NoICIJData",
+        )
+
+    for csv_file in csv_files:
         try:
             with open(csv_file, encoding="utf-8", errors="ignore") as f:
                 reader = csv.DictReader(f)
@@ -480,8 +569,14 @@ async def _check_icij(name: str, entity_type: EntityType, data_dir: str) -> list
                                 )
                             )
                             break  # one hit per row is enough
-        except Exception as e:
-            logger.warning("Failed to search ICIJ file %s: %s", csv_file, e)
+        except Exception as exc:
+            # Log the file only, never the searched name or the row contents.
+            logger.warning("Failed to search ICIJ file %s: %s", csv_file.name, type(exc).__name__)
+            if first_error is None:
+                first_error = exc
+
+    if first_error is not None:
+        raise _SourceCheckError(first_error, partial_hits=hits[:10]) from first_error
 
     return hits[:10]  # cap to avoid flooding
 
@@ -496,8 +591,12 @@ async def _check_fec(
     try:
         result = await adapter.search(name, page_size=5)
         _check_rate_limit(result)
-    except Exception:
-        return []
+    except _RateLimited:
+        raise
+    except _SourceCheckError:
+        raise
+    except Exception as exc:
+        raise _SourceCheckError(exc) from exc
 
     hits = []
     for contrib in result.entities:
@@ -529,8 +628,12 @@ async def _check_regulations(
     try:
         result = await adapter.search(name, page_size=5)
         _check_rate_limit(result)
-    except Exception:
-        return []
+    except _RateLimited:
+        raise
+    except _SourceCheckError:
+        raise
+    except Exception as exc:
+        raise _SourceCheckError(exc) from exc
 
     hits = []
     for doc in result.entities:
@@ -564,8 +667,12 @@ async def _check_govinfo(
     try:
         result = await adapter.search(name, page_size=5)
         _check_rate_limit(result)
-    except Exception:
-        return []
+    except _RateLimited:
+        raise
+    except _SourceCheckError:
+        raise
+    except Exception as exc:
+        raise _SourceCheckError(exc) from exc
 
     hits = []
     for doc in result.entities:
@@ -604,8 +711,12 @@ async def _check_nonprofits(
     try:
         result = await adapter.search(name, page_size=5)
         _check_rate_limit(result)
-    except Exception:
-        return []
+    except _RateLimited:
+        raise
+    except _SourceCheckError:
+        raise
+    except Exception as exc:
+        raise _SourceCheckError(exc) from exc
 
     hits = []
     for org in result.entities:
@@ -646,8 +757,12 @@ async def _check_usaspending(
     try:
         result = await adapter.search(name, page_size=5)
         _check_rate_limit(result)
-    except Exception:
-        return []
+    except _RateLimited:
+        raise
+    except _SourceCheckError:
+        raise
+    except Exception as exc:
+        raise _SourceCheckError(exc) from exc
 
     hits = []
     for award in result.entities:
@@ -687,8 +802,12 @@ async def _check_documentcloud(
     try:
         result = await adapter.search(name, page_size=5)
         _check_rate_limit(result)
-    except Exception:
-        return []
+    except _RateLimited:
+        raise
+    except _SourceCheckError:
+        raise
+    except Exception as exc:
+        raise _SourceCheckError(exc) from exc
 
     hits = []
     for doc in result.entities:
@@ -736,11 +855,17 @@ async def _check_opensanctions(
                 params={"q": name, "limit": 5},
                 headers={"Accept": "application/json"},
             )
+            if resp.status_code == 429:
+                raise _RateLimited("OpenSanctions rate limit")
             if resp.status_code != 200:
-                return []
+                raise _SourceCheckError(RuntimeError(f"HTTP {resp.status_code}"))
             data = resp.json()
-    except Exception:
-        return []
+    except _RateLimited:
+        raise
+    except _SourceCheckError:
+        raise
+    except Exception as exc:
+        raise _SourceCheckError(exc) from exc
 
     for result in data.get("results", []):
         score = result.get("score", 0)
