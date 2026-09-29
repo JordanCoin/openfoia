@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries before 4.0.0 are backfilled from git history and are summaries, not
 exhaustive lists.
 
+## [Unreleased]
+
+### Internal
+
+- Releases are automated. Merging a `release/X.Y.Z` branch into `main` tags
+  the merge commit and publishes the GitHub release, with notes taken from
+  this file. A check on the release pull request fails first if the branch
+  name, `pyproject.toml`, `__version__` and this changelog disagree, and the
+  test suite re-runs on the exact commit before it is tagged. See
+  `docs/RELEASING.md`.
+- `scripts/` is now covered by CI lint and format checks and the pre-commit
+  hook.
+
 ## [4.2.0] - 2026-09-26
 
 Public-records and cross-reference release (merged via PRs #73–#78). The

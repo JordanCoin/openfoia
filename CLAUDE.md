@@ -69,6 +69,8 @@ python tests/benchmark_extraction.py          # full benchmark + graph
 - **New records adapter**: `openfoia/records/<name>.py`, implement `RecordAdapter`, register in `__init__.py`
 - **New gateway**: `openfoia/gateways/<name>.py`, implement `DeliveryGateway`
 - **Schema change**: update `models.py`, then `alembic revision --autogenerate`
+- **Release**: branch `release/X.Y.Z`, bump `pyproject.toml` + `__version__`, add `## [X.Y.Z]` to `CHANGELOG.md`, PR to `main`. Merging publishes the release — see `docs/RELEASING.md`
+- **Changelog**: add user-visible changes under `## [Unreleased]` in `CHANGELOG.md` as you go
 
 ## Don't
 

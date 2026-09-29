@@ -1,0 +1,145 @@
+name: Release
+
+# Merging a `release/X.Y.Z` branch into main publishes GitHub release vX.Y.Z,
+# tagged on the merge commit, with notes taken from CHANGELOG.md.
+# The full procedure is in docs/RELEASING.md.
+#
+# Branch names are attacker-influenced text, so they reach shell steps only
+# through environment variables -- never interpolated into `run:` -- and
+# scripts/release.py accepts nothing but release/X.Y.Z shapes.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: >-
+          Version already on main to publish (e.g. 4.3.0). Only for recovering
+          a release whose automatic run failed after merge.
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Runs on the open release PR, against the would-be merge result, so a
+  # version mismatch or a missing changelog entry is red CI before merge
+  # rather than a failed release after it.
+  check:
+    name: Release check
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.action != 'closed'
+      && startsWith(github.event.pull_request.head.ref, 'release/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Branch, versions and changelog agree
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          version=$(python scripts/release.py --branch "$BRANCH" --notes-out notes.md)
+
+          set +e
+          git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null
+          rc=$?
+          set -e
+          case $rc in
+            0) echo "::error::Tag v$version already exists. Bump the version."; exit 1 ;;
+            2) ;;
+            *) echo "::error::Could not check for an existing v$version tag (git exit $rc)."; exit 1 ;;
+          esac
+
+          {
+            echo "## Release notes preview: v$version"
+            echo
+            cat notes.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    name: Publish release
+    if: >-
+      (github.event_name == 'pull_request'
+        && github.event.action == 'closed'
+        && github.event.pull_request.merged == true
+        && startsWith(github.event.pull_request.head.ref, 'release/')
+        && github.event.pull_request.head.repo.full_name == github.repository)
+      || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The commit the release PR actually put on main (merge, squash or
+          # rebase alike). For a manual run, main's current head.
+          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Resolve version and notes
+        id: release
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ -n "$BRANCH" ]; then
+            version=$(python scripts/release.py --branch "$BRANCH" --notes-out notes.md)
+          else
+            version=$(python scripts/release.py --version "$INPUT_VERSION" --notes-out notes.md)
+          fi
+
+          # Never overwrite or re-point a published tag.
+          set +e
+          git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null
+          rc=$?
+          set -e
+          case $rc in
+            0) echo "::error::Tag v$version already exists; refusing to re-publish it."; exit 1 ;;
+            2) ;;
+            *) echo "::error::Could not check for an existing v$version tag (git exit $rc)."; exit 1 ;;
+          esac
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # The release is gated on the exact commit being tagged, with the same
+      # checks as ci.yml -- not on the release branch's pre-merge state.
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check openfoia/ tests/ scripts/
+
+      - name: Format check
+        run: ruff format --check openfoia/ tests/ scripts/
+
+      - name: Tests
+        run: python -m pytest tests/ -v -k "not gliner and not spacy and not LLM and not benchmark"
+
+      - name: Create tag and GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.version }}
+          SHA: ${{ steps.release.outputs.sha }}
+        run: |
+          gh release create "v$VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SHA" \
+            --title "OpenFOIA v$VERSION" \
+            --notes-file notes.md
+          echo "Published https://github.com/$GITHUB_REPOSITORY/releases/tag/v$VERSION" >> "$GITHUB_STEP_SUMMARY"

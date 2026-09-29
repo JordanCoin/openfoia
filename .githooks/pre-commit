@@ -18,19 +18,19 @@ if [ -z "$RUFF" ]; then
 fi
 
 # Lint check
-if ! $RUFF check openfoia/ tests/ 2>/dev/null; then
+if ! $RUFF check openfoia/ tests/ scripts/ 2>/dev/null; then
     echo ""
     echo "ruff lint failed. Auto-fixing..."
-    $RUFF check openfoia/ tests/ --fix
+    $RUFF check openfoia/ tests/ scripts/ --fix
     echo "Files fixed. Please stage the changes and commit again."
     exit 1
 fi
 
 # Format check
-if ! $RUFF format --check openfoia/ tests/ 2>/dev/null; then
+if ! $RUFF format --check openfoia/ tests/ scripts/ 2>/dev/null; then
     echo ""
     echo "ruff format failed. Auto-formatting..."
-    $RUFF format openfoia/ tests/
+    $RUFF format openfoia/ tests/ scripts/
     echo "Files formatted. Please stage the changes and commit again."
     exit 1
 fi
