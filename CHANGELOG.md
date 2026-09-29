@@ -8,6 +8,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries before 4.0.0 are backfilled from git history and are summaries, not
 exhaustive lists.
 
+## [4.2.0] - 2026-09-26
+
+Public-records and cross-reference release (merged via PRs #73–#78). The
+theme is honesty about what a search actually covered: a failed source, an
+empty data directory or a coverage gap no longer reads as a clean "no
+results".
+
+### Added
+
+- `openfoia records filings <ticker|CIK>` — a company's SEC filing history
+  in reverse chronological order, read from EDGAR's submissions API including
+  archived shards. Filters: `--since YYYY-MM-DD`, `--forms 10-K,10-Q`,
+  `--limit`. Before anything leaves the machine it warns that the ticker/CIK
+  goes to SEC, states whether egress is direct or Tor (`--tor/--no-tor`), and
+  asks for confirmation (`--yes` to skip). It retrieves metadata only and never
+  downloads filing documents. Remote metadata is validated; a suspicious
+  `primaryDocument` falls back to the filing's index URL rather than being
+  interpolated into a link. Requests are paced to stay under SEC's fair-access
+  limit, and archive shards dated entirely before `--since` are not fetched.
+- Cross-reference reports record a status per source per entity (`matched`,
+  `checked`, `ERRORED(<kind>)`, `skipped(rate-limited)`) and a report-level
+  `source_errors` map, in both the terminal summary and the `--output` JSON.
+
+### Changed
+
+- `records search --help` and the README list all nine searchable sources
+  (previously three). The README now states plainly that each search sends its
+  query to the selected third party without a confirmation prompt.
+- An empty SEC search now says EDGAR full-text search can be incomplete and
+  that zero results is not proof no filing exists, and shows any `--type`
+  filter that was applied.
+
+### Fixed
+
+- **Cross-reference presented failed sources as clean no-matches.** Every
+  checker swallowed errors and returned no hits, so an API outage, a rate limit
+  or an unreadable ICIJ file produced the same green "No cross-reference hits
+  found" as a genuine clean result. Failures are now reported per source, the
+  summary lists every source that errored, and a no-hit result with errored
+  sources is labelled incomplete instead of clean.
+  - A partially failed source keeps the hits it found before failing: one
+    unreadable ICIJ CSV no longer discards matches from the files that opened.
+  - The failure kind is reported (`HTTPStatusError`, `ConnectError`, …)
+    instead of a generic `RuntimeError` for every remote source.
+  - An ICIJ data directory containing no CSV files is reported as
+    `NoICIJData` rather than as searched-and-clean.
+- `records search --raw` output is now parseable JSON only: no spinner or Rich
+  markup, and control characters in upstream data are escaped. An adapter
+  error or crash goes to stderr with exit code 1, so a script can tell an API
+  failure from an empty result instead of receiving `[]`.
+
+### Security
+
+- Cross-reference warnings no longer log the entity name being looked up or
+  upstream error text, which could echo it via a URL. Exported source statuses
+  carry only the exception name.
+
+### Known issue
+
+- `records search` still sends the query to the chosen source with no warning,
+  no confirmation and no Tor option, unlike `records filings` and `crossref`.
+  This is documented in the README; closing it will change CLI behavior for
+  existing scripts and is tracked as a separate decision.
+
 ## [4.1.0] - 2026-08-11
 
 Additive release on top of the 4.0.0 security hardening. No security
@@ -180,6 +244,7 @@ security/OPSEC pass; the notes below describe what it changed, factually.
 Baseline for this changelog. Earlier tags (`v0.0.1` through `v2.0.0`,
 2026-02-19 to 2026-03-22) predate it; see the git history for details.
 
+[4.2.0]: https://github.com/JordanCoin/openfoia/compare/v4.1.0...v4.2.0
 [4.1.0]: https://github.com/JordanCoin/openfoia/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/JordanCoin/openfoia/compare/v3.2.2...v4.0.0
 [3.2.2]: https://github.com/JordanCoin/openfoia/compare/v3.2.1...v3.2.2
