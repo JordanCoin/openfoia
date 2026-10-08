@@ -12,12 +12,15 @@ The first available backend is used. All backends produce the same output format
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any
 
 from ..config import EntityConfig, OpenFOIAConfig, load_config
 from ..models import ConfidenceLevel, EntityType
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Data classes
@@ -402,12 +405,35 @@ _GLINER_MODEL = None
 
 
 def _get_gliner():
-    """Lazily load the GLiNER model (downloads ~300MB on first use)."""
+    """Lazily load the GLiNER model (downloads ~300MB on first use).
+
+    Loads from the local Hugging Face cache first so a cached model never
+    contacts huggingface.co (principle 1). Only if the cache is missing do we
+    warn and download.
+    """
     global _GLINER_MODEL
     if _GLINER_MODEL is None:
         from gliner import GLiNER
+        from huggingface_hub import constants as hf_constants
 
-        _GLINER_MODEL = GLiNER.from_pretrained("urchade/gliner_medium-v2.1")
+        model_id = "urchade/gliner_medium-v2.1"
+        # ponytail: gliner ignores local_files_only for its tokenizer backbone,
+        # so flip the hub-wide offline flag instead of threading kwargs through.
+        was_offline = hf_constants.HF_HUB_OFFLINE
+        hf_constants.HF_HUB_OFFLINE = True
+        try:
+            _GLINER_MODEL = GLiNER.from_pretrained(model_id, local_files_only=True)
+        except Exception:
+            if was_offline:
+                raise
+            logger.warning(
+                "GLiNER model not cached; downloading ~300MB from huggingface.co "
+                "(one-time; your IP is visible to Hugging Face)"
+            )
+            hf_constants.HF_HUB_OFFLINE = False
+            _GLINER_MODEL = GLiNER.from_pretrained(model_id)
+        finally:
+            hf_constants.HF_HUB_OFFLINE = was_offline
     return _GLINER_MODEL
 
 
