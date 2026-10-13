@@ -13,7 +13,7 @@
     "rule_text": "20 working days to respond; 'unusual circumstances' add 10 working days; the clock can be tolled once for clarification and for fee questions. Expedited processing is decided within 10 calendar days.",
     "extension_days": 10,
     "extension_unit": "business",
-    "silence_is_denial": true
+    "silence_is_denial": null
   },
   "fees": {
     "search_allowed": true,
@@ -21,7 +21,7 @@
     "copy_rule": "Nothing is charged when the total is $25 or less.",
     "waiver_rule": "Fee waiver when disclosure is likely to contribute significantly to public understanding of government and is not primarily commercial.",
     "estimate_required": true,
-    "late_penalty": "An agency that misses the deadline may not charge search fees (FOIA Improvement Act of 2016), with exceptions for unusual circumstances noticed in time."
+    "late_penalty": "An agency that misses the statutory deadline may not charge search fees (or duplication fees for media and educational requesters). The rule comes from the OPEN Government Act of 2007, 5 U.S.C. 552(a)(4)(A)(viii); the FOIA Improvement Act of 2016 narrowed its exceptions to unusual circumstances noticed in time (and over 5,000 pages, case by case)."
   },
   "residency": {
     "restricted": false,
@@ -48,5 +48,5 @@
   ],
   "verified": true,
   "verified_at": "2026-10-14",
-  "notes": "Executive-branch agencies only: not Congress, the courts, the President's immediate staff, or state and local bodies. Silence past the deadline counts as exhaustion, not as a denial on the merits."
+  "notes": "Executive-branch agencies only: not Congress, the courts, the President's immediate staff, or state and local bodies. The $25 no-charge floor, the 10-calendar-day expedited decision, the 100 free pages for media and educational requesters, OGIS mediation and the late-fee rule are stated on foia.gov/faq.html (in sources). A missed deadline lets the requester treat remedies as exhausted and sue; whether it counts as a denial is not stated here."
 }

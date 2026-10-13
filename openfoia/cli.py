@@ -1432,6 +1432,8 @@ def request_send(
                     req.sent_at = _utcnow()
                     req.delivery_reference = result.reference_id
                     req.due_date = _request_due_date(req)
+                    if req.due_date is None:
+                        rprint(f"  [yellow]{NO_CLOCK}; no due date set.[/yellow]")
 
         rprint("\n[dim]Save this reference to track your request.[/dim]")
     else:
@@ -1764,6 +1766,8 @@ def _resolve_doc(session, doc_id: str):
         raise typer.Exit(1)
     return matches[0]
 
+
+NO_CLOCK = "no statutory deadline known for this body"
 
 SINGLE_PAGE_CAVEAT = (
     "fewer pages are stored than the source has, so page numbers here are not "
@@ -2185,12 +2189,16 @@ def agency_add(
     if j["level"] == "federal" and body_type != "federal":
         rprint("[red]A non-federal body must use its state's jurisdiction, e.g. us-mi.[/red]")
         raise typer.Exit(2)
+    if body_type == "federal" and j["level"] != "federal":
+        rprint("[red]A federal body uses jurisdiction us, not a state law.[/red]")
+        raise typer.Exit(2)
     enum_level = {"federal": AgencyLevel.FEDERAL, "state": AgencyLevel.STATE}.get(
         body_type, AgencyLevel.LOCAL
     )
-    days = response_days if response_days is not None else (j["response"]["days"] or 20)
+    # None stays None: an unknown clock must never become a fake 20-day law.
+    days = response_days if response_days is not None else j["response"]["days"]
     with get_session() as session:
-        if session.query(Agency).filter(Agency.name.ilike(name)).first():
+        if session.query(Agency).filter(Agency.name.ilike(_like_escape(name), escape="\\")).first():
             rprint(f"[red]An agency named '{name}' already exists.[/red]")
             raise typer.Exit(1)
         a = Agency(
@@ -2209,9 +2217,10 @@ def agency_add(
         )
         session.add(a)
         session.flush()
+        clock = f"{days} response days" if days is not None else "unknown (no statutory day count)"
         rprint(
             f"[green]Added[/green] [cyan]{name}[/cyan] ({body_type}, {j['name']}: "
-            f"{j['statute']['name'] or 'statute unknown'}; {days} response days)"
+            f"{j['statute']['name'] or 'statute unknown'}; {clock})"
         )
         if not j["verified"]:
             rprint(
@@ -2244,7 +2253,12 @@ def jurisdiction_list(
     table.add_column("Verified", width=8)
     for j in rows:
         r = j["response"]
-        clock = f"{r['days']} {r['unit']}" if r["days"] else (r["unit"] or "unknown")
+        if r["days"] is not None:
+            clock = f"{r['days']} {r['unit']}"
+        elif r["unit"] == "none":
+            clock = "no fixed clock"
+        else:
+            clock = "unknown"
         table.add_row(
             j["id"],
             j["name"],
@@ -2285,10 +2299,18 @@ def jurisdiction_show(
     st = j["statute"]
     rprint(f"Statute: {_fmt(st['name'])}, {_fmt(st['citation'])} {st['url'] or ''}")
     r = j["response"]
-    rprint(
-        f"Response: {_fmt(r['days'])} {r['unit'] or ''} days; extension {_fmt(r['extension_days'])} "
-        f"{r['extension_unit'] or ''}; silence is denial: {_fmt(r['silence_is_denial'])}"
+    if r["days"] is not None:
+        clock = f"{r['days']} {r['unit'] or ''} days".replace("  ", " ")
+    elif r["unit"] == "none":
+        clock = "no fixed statutory clock"
+    else:
+        clock = _fmt(None)
+    ext = (
+        f"{r['extension_days']} {r['extension_unit'] or ''}".strip()
+        if r["extension_days"]
+        else _fmt(None)
     )
+    rprint(f"Response: {clock}; extension {ext}; silence is denial: {_fmt(r['silence_is_denial'])}")
     if r["rule_text"]:
         rprint(f"  {r['rule_text']}")
     f = j["fees"]
@@ -2451,7 +2473,12 @@ def agency_info(
             table.add_row("Address", agency.foia_address.replace("\n", "\n                      "))
 
         table.add_row("Preferred Method", agency.preferred_method.value.replace("_", " ").title())
-        table.add_row("Typical Response", f"{agency.typical_response_days} days")
+        table.add_row(
+            "Typical Response",
+            f"{agency.typical_response_days} days"
+            if agency.typical_response_days is not None
+            else "unknown (no statutory day count)",
+        )
 
         if agency.fee_waiver_criteria:
             table.add_row(
@@ -4323,7 +4350,8 @@ def deadline_list(
             rprint(f"\n[bold]NO STATUTORY DEADLINE ({len(no_clock)})[/bold]")
             for r, law in no_clock:
                 rprint(
-                    f"  {r.request_number}  {r.agency.abbreviation or r.agency.name}  [dim]{law}[/dim]"
+                    f"  {r.request_number}  {r.agency.abbreviation or r.agency.name}  "
+                    f"[yellow]{NO_CLOCK}[/yellow]  [dim]{law}[/dim]"
                 )
         if unsent:
             rprint(f"\n[dim]{len(unsent)} draft/unsent requests (no clock running)[/dim]")

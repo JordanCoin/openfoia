@@ -8,9 +8,9 @@
     "url": "https://app.leg.wa.gov/rcw/default.aspx?cite=42.56"
   },
   "response": {
-    "days": 5,
-    "unit": "business",
-    "rule_text": "Respond within 5 business days by producing, acknowledging with a reasonable estimate of time, or denying.",
+    "days": null,
+    "unit": null,
+    "rule_text": "Within 5 business days the body must produce the records, deny, or acknowledge with a reasonable estimate of the time needed. That is a response or estimate requirement, not a production deadline, so no day count is stored.",
     "extension_days": null,
     "extension_unit": null,
     "silence_is_denial": null
@@ -18,7 +18,7 @@
   "fees": {
     "search_allowed": false,
     "labor_rule": "No search fees.",
-    "copy_rule": "Default 15 cents per page, 10 cents per scanned page, or a flat fee up to $2.",
+    "copy_rule": "Default 15 cents per page; no search fees.",
     "waiver_rule": null,
     "estimate_required": null,
     "late_penalty": null
@@ -32,7 +32,7 @@
     "type": "court",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": "Daily penalties and attorney fees available to a prevailing requester."
+    "rule_text": null
   },
   "exemptions_citation": "RCW 42.56.230 et seq.",
   "format_rule": null,

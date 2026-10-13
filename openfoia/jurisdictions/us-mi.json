@@ -10,10 +10,10 @@
   "response": {
     "days": 5,
     "unit": "business",
-    "rule_text": "5 business days to respond, with one written extension of up to 10 business days.",
+    "rule_text": "5 business days to respond, with one written extension of up to 10 business days. A non-response counts as a final denial only when the request cited FOIA in its first 250 words or on the envelope or subject line (MCL 15.235).",
     "extension_days": 10,
     "extension_unit": "business",
-    "silence_is_denial": true
+    "silence_is_denial": null
   },
   "fees": {
     "search_allowed": true,
@@ -39,13 +39,13 @@
   "covers": {
     "governor": false,
     "legislature": false,
-    "universities_public": true,
-    "school_districts": true
+    "universities_public": null,
+    "school_districts": null
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/michigan/"
   ],
   "verified": true,
   "verified_at": "2026-10-14",
-  "notes": "Non-response is a final denial only when the request cited FOIA in its first 250 words or on the envelope or subject line. Governor and Legislature remain outside the act; reform bills passed the Senate in 2025 and stalled in the House."
+  "notes": "Governor and Legislature remain outside the act; reform bills passed the Senate in 2025 and stalled in the House. Whether public universities and school districts are 'public bodies' under MCL 15.232 was not confirmed from the fetched source; the statute's definition is the place to check."
 }

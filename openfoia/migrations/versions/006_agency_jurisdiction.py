@@ -22,6 +22,11 @@ def upgrade() -> None:
     op.add_column("agencies", sa.Column("body_type", sa.String(32), nullable=True))
     op.add_column("agencies", sa.Column("custodian_title", sa.String(255), nullable=True))
     op.create_index("ix_agencies_jurisdiction_id", "agencies", ["jurisdiction_id"])
+    # A body under a state law with no fixed clock must be able to store "unknown".
+    with op.batch_alter_table("agencies") as batch:
+        batch.alter_column(
+            "typical_response_days", existing_type=sa.Integer(), nullable=True, server_default=None
+        )
     # Every agency shipped before this revision is federal.
     op.execute(
         "UPDATE agencies SET jurisdiction_id = 'us', body_type = 'federal' "
@@ -31,7 +36,11 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index("ix_agencies_jurisdiction_id", table_name="agencies")
+    op.execute("UPDATE agencies SET typical_response_days = 20 WHERE typical_response_days IS NULL")
     with op.batch_alter_table("agencies") as batch:
+        batch.alter_column(
+            "typical_response_days", existing_type=sa.Integer(), nullable=False, server_default="20"
+        )
         batch.drop_column("custodian_title")
         batch.drop_column("body_type")
         batch.drop_column("jurisdiction_id")
