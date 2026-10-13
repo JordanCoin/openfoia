@@ -132,7 +132,7 @@ def test_agency_add_list_info_and_migration_head(data_dir):
 
     _ok(runner.invoke(app, ["init"]))
     version = "select version_num from alembic_version"
-    assert sqlite3.connect(dbmod.get_db_path()).execute(version).fetchall() == [("006",)]
+    assert sqlite3.connect(dbmod.get_db_path()).execute(version).fetchall() == [("007",)]
 
     out = _ok(
         runner.invoke(

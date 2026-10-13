@@ -112,7 +112,7 @@ def test_migration_005_adds_verdict_column(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENFOIA_DATA_DIR", str(tmp_path))
     dbmod.init_db(seed=False)
     con = sqlite3.connect(dbmod.get_db_path())
-    assert con.execute("select version_num from alembic_version").fetchall() == [("006",)]
+    assert con.execute("select version_num from alembic_version").fetchall() == [("007",)]
     cols = [r[1] for r in con.execute("pragma table_info(document_pages)")]
     assert "verdict" in cols
 
