@@ -102,6 +102,9 @@ exhaustive lists.
 
 ### Fixed
 
+- GLiNER entity extraction now loads the model from the local Hugging Face
+  cache without contacting huggingface.co. Only a missing cache triggers the
+  one-time download, and a warning says so first.
 - `records search --limit` above 25 now pages DocumentCloud (up to 100 per
   request) instead of silently stopping at 25. If a later page fails, the
   results already retrieved are still shown and the command exits non-zero.
