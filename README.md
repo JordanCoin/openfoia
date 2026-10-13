@@ -38,30 +38,36 @@ New to OpenFOIA? Run `openfoia guide` after installing.
 
 ## What It Does
 
-File FOIA requests. Analyze documents. Extract entities. Build relationship graphs. Cross-reference against public databases. All locally, all offline, all purgeable.
+Find the records. Read them page by page. Record findings with citations. Draft the request to the body that actually holds the record, under the law that body answers to, and track its clock. All locally, all offline, all purgeable.
 
 ```bash
 openfoia init                                          # 53 federal agencies pre-loaded
-openfoia case new "EPA water"                          # group the work below into one investigation
-openfoia records search "EPA water" --source muckrock       # search 46k+ completed FOIA requests
-openfoia records search "Palantir" --source documentcloud  # search 10M+ public documents
-openfoia records fetch 3411897 --source documentcloud      # pull full text into local database
+openfoia case new "Gifted program, Detroit 1990s"      # one question, one case
+openfoia jurisdiction show us-mi                       # the law a Michigan school district answers under
+openfoia agency add --name "Detroit Public Schools Community District" -j us-mi -l school_district --email foia.request@detroitk12.org
+openfoia records search "Palantir" --source documentcloud --json --rank police,contract   # search 10M+ public documents, ranked
+openfoia records fetch --from hits.json                # pull every hit's text, page by page, into the case
 openfoia records fetch CIA-RDP96-00789R002200230001-2 --source cia   # CIA reading room PDF, OCR/ingest locally
-openfoia records download 68490 --ingest                   # download + ingest response documents
-openfoia analyze extract <doc-id>                          # extract people, orgs, money, dates
-openfoia analyze graph --name investigation --view         # interactive graph + document reader
-openfoia crossref                                          # check entities against 6 public databases
+openfoia docs grep '"school board" OR WISC' -C 120     # every passage, with page numbers, offline
+openfoia case note "No document names minors" --doc 3f2a --page 51 --quote "..." --tier says
+openfoia analyze graph --name investigation --no-text --view   # graph scoped to the case
+openfoia case export -f md -o report.md                # findings with citations, sources, query log
+openfoia request mark REQ-2026-001 denied              # starts the appeal clock the statute sets
 ```
 
 ## Features
 
 | | |
 |---|---|
-| **PDF text extraction** | Compiled 1.1MB binary. 99.5% accuracy across 480K chars. Zero dependencies. |
+| **PDF text extraction** | Compiled 2.6MB binary, zero dependencies. 99.5% accuracy across 480K chars. Reports each page as text layer, garbled or image only, and only the last two get OCR |
 | **Entity extraction** | 4-tier: LLM → GLiNER → spaCy → Regex. 100% recall with a 2GB local model |
 | **Relationship graphs** | Interactive graph with built-in document reader. Click entities to read source text with highlights |
 | **Cross-reference** | MuckRock, DocumentCloud, OpenCorporates, SEC EDGAR, OpenSanctions, ICIJ Offshore Leaks |
-| **File requests** | Email, fax (Twilio), physical mail (Lob) to 53 federal agencies |
+| **Claude Code skill** | The plugin teaches Claude the same loop with the same commands, so an agent and a human produce the same cited result |
+| **Cases and citations** | One case per question: searches, documents, findings (says / infer / speculation) with document and page, exported as a cited report |
+| **Any US jurisdiction** | Federal FOIA plus all 50 states and DC: statute, clock, fees, residency and appeal path per law, sourced from the RCFP Open Government Guide, with a verified flag and sources on every file. Add a school district, city, county or university as a public body under its state law |
+| **Request clocks** | Response, extension, tolling, appeal and still-interested deadlines computed from the law that applies, never from a federal default. `deadlines check` tells you what is overdue |
+| **File requests** | Email, fax (Twilio), physical mail (Lob) to 53 federal agencies or any body you add |
 | **Data interchange** | Import/export FollowTheMoney format (Aleph, OpenAleph, OpenSanctions) |
 | **Encrypted storage** | SQLCipher AES-256. Decoy profile mode |
 | **Forensic purge** | 3-pass overwrite, shell history scrub, free space fill |
@@ -70,7 +76,7 @@ openfoia crossref                                          # check entities agai
 
 ### PDF Extraction Engine
 
-A compiled 1.1MB binary extracts text directly from PDF structures — no OCR needed for born-digital documents. Uses a multi-level resolution cascade to handle broken fonts, missing encodings, and government form PDFs that other tools can't read.
+A compiled 2.6MB binary extracts text directly from PDF structures — no OCR needed for born-digital documents. Uses a multi-level resolution cascade to handle broken fonts, missing encodings, and government form PDFs that other tools can't read.
 
 99.5% accuracy across 480K characters in 50 test PDFs. 100% on every FOIA document tested. Zero runtime dependencies. Falls back to OCR (Tesseract) for scanned documents.
 
@@ -103,6 +109,21 @@ backend with `openfoia analyze extract <id> --tier gliner` (or `spacy`,
 `regex`), or set `OPENFOIA_AI_PROVIDER=none`, which wins over any API key
 or Ollama URL in the config file or environment.
 
+## Which law applies
+
+Federal FOIA reaches only federal executive agencies. A school district, city, county, police department or public university answers under its state's public-records act, with that state's clock, fees and appeal path. OpenFOIA carries one record per law, built from the [RCFP Open Government Guide](https://www.rcfp.org/open-government-guide/), each with its sources and a `verified` flag. Unknown values stay unknown; nothing is invented.
+
+```bash
+openfoia jurisdiction list                        # 51 verified, 1 unverified
+openfoia jurisdiction show us-tx                  # statute, clock, fees, residency, appeal path, sources
+openfoia agency add --name "Austin ISD" -j us-tx -l school_district --custodian-title "Public Information Officer"
+openfoia request status REQ-2026-001              # every clock with days left and the rule behind it
+openfoia request mark REQ-2026-001 extended       # pushes the due date by the statute's extension
+openfoia deadlines check                          # overdue responses, appeals, still-interested replies
+```
+
+Which rung of the system holds your record, and how to ask at each, is in [The Records Ladder](docs/RECORDS_LADDER.md).
+
 ## Data Sources
 
 `openfoia records search` supports these public-records sources. Each search
@@ -115,6 +136,7 @@ that disclosure.
 | [MuckRock](https://www.muckrock.com/) | Completed FOIA requests with downloadable response documents | API token (`OPENFOIA_MUCKROCK_TOKEN`) |
 | [DocumentCloud](https://www.documentcloud.org/) | Public documents with pre-extracted text | Public API |
 | [CIA FOIA Reading Room](https://www.cia.gov/readingroom/) | Declassified CIA records (CREST, MORI); `records fetch <CREST or MORI> --source cia` downloads and ingests the PDF | Public site; a bot filter can block scripted access, reported as "blocked" |
+| [National Archives Catalog](https://catalog.archives.gov/) | Archival descriptions and OCR text for accessioned federal records; `records fetch <NAID> --source nara` | Free key by email (`OPENFOIA_NARA_API_KEY`), 10,000 queries a month, counted locally |
 | [OpenCorporates](https://opencorporates.com/) | Global company registrations, ownership, directors, and filings | Free basic search |
 | [SEC EDGAR](https://www.sec.gov/edgar/) | US public-company filings | No API key |
 | [USAspending](https://www.usaspending.gov/) | Federal contracts, grants, loans, and other awards | No API key |
