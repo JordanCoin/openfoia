@@ -12,6 +12,28 @@ exhaustive lists.
 
 ### Added
 
+- Case notes: `openfoia case note "<text>" [--doc <id> --page N --quote "<text>"
+  --tier says|infer|speculation]` records a finding on the active case,
+  `case notes [--json]` lists them with citations, `case note rm <id>` removes
+  one. `docs grep --save` attaches every printed hit (document, page, passage)
+  to the active case; `--note "<text>"` saves them with a note. Database
+  migration `004`.
+- Citation export: `case export` (Markdown and JSON) now has a Findings
+  section (tier, note, quoted passage, then title, DocumentCloud or other
+  source id, CREST number found in the text, page with the `*` caveat when
+  fewer pages are stored than the source has, retrieval date) and a Sources
+  list with URLs. `case show` prints the note count.
+- Batch fetch: `records fetch <id> <id> ...` and `records fetch --from
+  <results.json>` (the output of `records search --json` or `--raw`) fetch
+  several documents from one source, skip ids already stored unless
+  `--refresh`, continue past failures and end with a fetched / skipped /
+  failed summary (exit 2 when some failed, 1 when all did).
+- `analyze graph --mentions "<A>" "<B>"` lists the documents in scope where
+  both entity labels occur, with the pages, and the shortest path between
+  them in the saved `--name` graph. Nothing is exported.
+- `records search --rank child,school,gifted` scores each result by keyword
+  hits in its title and snippet, sorts by the score and adds it to the table
+  and to `--json` output (also with `--all-sources`).
 - Cases: `openfoia case new|list|use|show|export|close` groups one
   investigation. While a case is active, `records search` logs each query to
   it, `records fetch` and `records download --ingest` attach their documents

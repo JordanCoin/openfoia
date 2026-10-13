@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -1745,6 +1746,14 @@ def docs_grep(
         None, "--doc", help="Only this document id or prefix (repeatable)"
     ),
     as_json: bool = typer.Option(False, "--json", help="Print JSON"),
+    save: bool = typer.Option(
+        False,
+        "--save",
+        help="Attach each hit to the active case as a note (document, page, passage)",
+    ),
+    note: str | None = typer.Option(
+        None, "--note", help="Save the hits (as --save) with this note"
+    ),
 ):
     """Keyword-in-context search over every stored page, fully offline.
 
@@ -1761,6 +1770,14 @@ def docs_grep(
     from .doctext import search_pages
 
     _open_docs_db()
+    case_id = None
+    if save or note is not None:
+        from .cases import active_case_id_in_db
+
+        case_id = active_case_id_in_db()
+        if not case_id:
+            typer.echo("No active case to save to; run 'openfoia case use <name>'.", err=True)
+            raise typer.Exit(1)
     with get_session() as session:
         doc_ids = [_resolve_doc(session, d).id for d in doc] if doc else None
         hits, engine = search_pages(
@@ -1773,6 +1790,22 @@ def docs_grep(
     }.get(engine)
     if notice:
         typer.echo(f"Note: {notice}", err=True)
+
+    if case_id and hits:
+        from .models import CaseNote
+
+        with get_session() as session:
+            for h in hits:
+                session.add(
+                    CaseNote(
+                        case_id=case_id,
+                        document_id=h.document_id,
+                        page=h.page,
+                        quote=h.passage,
+                        note=note,
+                    )
+                )
+        typer.echo(f"Saved {len(hits)} note(s) to the active case.", err=True)
 
     if as_json:
         out = {"query": query, "engine": engine, "hits": [h.to_dict() for h in hits]}
@@ -2847,6 +2880,12 @@ def analyze_graph(
     all_cases: bool = typer.Option(
         False, "--all", help="Ignore the active case and graph every document"
     ),
+    mentions: tuple[str, str] | None = typer.Option(
+        None,
+        "--mentions",
+        help="Two entity labels: list documents mentioning both, plus the shortest path "
+        "between them in the saved --name graph. Nothing is exported.",
+    ),
 ):
     """Build entity relationship graph from extracted entities.
 
@@ -2929,6 +2968,10 @@ def analyze_graph(
                 rprint("[yellow]No entities found. Run entity extraction first.[/yellow]")
             return
 
+        if mentions:
+            _print_mentions(session, entities, mentions, name)
+            return
+
         entity_ids = {e.id for e in entities}
 
         # Build node data with document occurrences
@@ -2991,7 +3034,7 @@ def analyze_graph(
 
             graphs_dir = get_data_dir() / "graphs"
             graphs_dir.mkdir(parents=True, exist_ok=True)
-            safe_name = name.lower().replace(" ", "-").replace("/", "-")
+            safe_name = _graph_safe_name(name)
             json_path = graphs_dir / f"{safe_name}.json"
             html_path = graphs_dir / f"{safe_name}.html"
         else:
@@ -3021,6 +3064,87 @@ def analyze_graph(
 
             webbrowser.open(f"file://{html_path.resolve()}")
             rprint("[cyan]Opened in browser.[/cyan]")
+
+
+def _print_mentions(session, entities, labels: tuple[str, str], graph_name: str | None) -> None:
+    """Documents where both labels occur (substring, case-insensitive) and their pages."""
+    from .models import Document, DocumentPage
+    from .models import Request as RequestModel
+
+    needles = [lbl.lower() for lbl in labels]
+    found: dict[str, list[set[int] | None]] = {}
+    for e in entities:
+        text = (e.normalized_text or e.raw_text or "").lower()
+        for i, needle in enumerate(needles):
+            if needle in text:
+                slot = found.setdefault(e.document_id, [None, None])
+                slot[i] = slot[i] or set()
+                if e.page_number:
+                    slot[i].add(e.page_number)
+    both = {d: hit for d, hit in found.items() if None not in hit}
+    if not both:
+        rprint(
+            f"[yellow]No document in scope mentions both {labels[0]!r} and {labels[1]!r}.[/yellow]"
+        )
+    for doc_id, hit in both.items():
+        doc = session.get(Document, doc_id)
+        req = session.get(RequestModel, doc.request_id) if doc.request_id else None
+        cells = []
+        for pages, label in zip(hit, labels, strict=True):
+            if not pages:  # entities carry no page: look the label up in the stored pages
+                rows = session.query(DocumentPage.page_number).filter(
+                    DocumentPage.document_id == doc_id,
+                    DocumentPage.text.ilike(f"%{label}%"),
+                )
+                pages = {r[0] for r in rows}
+            cells.append(
+                f"{label} p.{','.join(map(str, sorted(pages)))}" if pages else f"{label} p.?"
+            )
+        rprint(
+            f"[cyan]{doc_id[:8]}[/cyan]  {req.subject if req else doc.filename}  [dim]{'; '.join(cells)}[/dim]"
+        )
+
+    if not graph_name:
+        rprint("[dim]Pass --name <graph> to search a saved graph for a path between them.[/dim]")
+        return
+    from .db import get_data_dir
+
+    path = get_data_dir() / "graphs" / f"{_graph_safe_name(graph_name)}.json"
+    if not path.exists():
+        rprint(f"[yellow]No saved graph named {graph_name!r}.[/yellow]")
+        return
+    g = json.loads(path.read_text())
+    label_of = {n["id"]: n["label"] for n in g["nodes"]}
+    adj: dict[str, set[str]] = {}
+    for edge in g["edges"]:
+        adj.setdefault(edge["source"], set()).add(edge["target"])
+        adj.setdefault(edge["target"], set()).add(edge["source"])
+    starts = [i for i, lbl in label_of.items() if needles[0] in lbl.lower()]
+    targets = {i for i, lbl in label_of.items() if needles[1] in lbl.lower()}
+    prev: dict[str, str | None] = dict.fromkeys(starts)
+    queue = list(starts)
+    end = next((i for i in starts if i in targets), None)
+    while queue and end is None:
+        cur = queue.pop(0)
+        for nxt in adj.get(cur, ()):
+            if nxt not in prev:
+                prev[nxt] = cur
+                if nxt in targets:
+                    end = nxt
+                    break
+                queue.append(nxt)
+    if end is None:
+        rprint(f"[yellow]No path between them in graph {graph_name!r}.[/yellow]")
+        return
+    chain = []
+    while end is not None:
+        chain.append(label_of[end])
+        end = prev[end]
+    rprint(f"Shortest path in {graph_name!r}: " + " -> ".join(reversed(chain)))
+
+
+def _graph_safe_name(name: str) -> str:
+    return name.lower().replace(" ", "-").replace("/", "-")
 
 
 def _generate_graph_html(graph_data: dict, output_path: Path) -> None:
@@ -4176,7 +4300,7 @@ def _compact_result(e) -> dict[str, Any]:
         ),
         None,
     )
-    return {
+    out = {
         "id": next(iter(e.identifiers.values()), None),
         "title": e.name,
         "source": e.source,
@@ -4185,6 +4309,29 @@ def _compact_result(e) -> dict[str, Any]:
         "url": e.source_url,
         "snippet": (snippet or "")[:200],
     }
+    if "score" in x:
+        out["score"] = x["score"]
+    return out
+
+
+def _rank(entities: list, keywords: list[str]) -> list:
+    """Sort by keyword hits in title + snippet/highlights; score kept in extra_data."""
+    for e in entities:
+        x = e.extra_data
+        hay = " ".join(
+            [
+                e.name,
+                *(x.get("highlights") or []),
+                x.get("description") or "",
+                x.get("snippet") or "",
+            ]
+        ).lower()
+        x["score"] = sum(hay.count(k) for k in keywords)
+    return sorted(entities, key=lambda e: -e.extra_data["score"])
+
+
+def _rank_keywords(rank: str | None) -> list[str]:
+    return [k.strip().lower() for k in (rank or "").split(",") if k.strip()]
 
 
 def _log_case_queries(rows: list[tuple[str, str, int | None]]) -> None:
@@ -4202,7 +4349,9 @@ def _log_case_queries(rows: list[tuple[str, str, int | None]]) -> None:
             session.add(CaseQuery(case_id=case_id, source=source, query=query, total_results=total))
 
 
-def _records_search_all(query: str, kwargs: dict[str, Any], limit: int, json_lines: bool) -> None:
+def _records_search_all(
+    query: str, kwargs: dict[str, Any], limit: int, json_lines: bool, rank: list[str]
+) -> None:
     import asyncio
 
     from .records import get_adapter, list_sources
@@ -4243,18 +4392,23 @@ def _records_search_all(query: str, kwargs: dict[str, Any], limit: int, json_lin
         ]
     )
 
+    rows = []
     for source, result, _ in outcomes:
         if not result:
             continue
-        for e in result.entities[:limit]:
-            c = _compact_result(e)
-            if json_lines:
-                typer.echo(json.dumps(c, ensure_ascii=False, default=str))
-            else:
-                pages = f" ({c['pages']}p)" if c["pages"] else ""
-                line = f"{source:<14} {c['id'] or '-':<12} {c['title']}{pages}"
-                # Titles are upstream data: drop control chars (terminal escapes).
-                typer.echo("".join(ch for ch in line if ch.isprintable()))
+        ents = result.entities[:limit]
+        rows += [(source, _compact_result(e)) for e in (_rank(ents, rank) if rank else ents)]
+    if rank:
+        rows.sort(key=lambda r: -r[1]["score"])
+    for source, c in rows:
+        if json_lines:
+            typer.echo(json.dumps(c, ensure_ascii=False, default=str))
+        else:
+            pages = f" ({c['pages']}p)" if c["pages"] else ""
+            score = f"{c['score']:>3} " if rank else ""
+            line = f"{score}{source:<14} {c['id'] or '-':<12} {c['title']}{pages}"
+            # Titles are upstream data: drop control chars (terminal escapes).
+            typer.echo("".join(ch for ch in line if ch.isprintable()))
 
     if not any(result for _, result, _ in outcomes):
         raise typer.Exit(1)
@@ -4293,6 +4447,11 @@ def records_search(
             "Exit 0: all ok or skipped; 2: some sources errored; 1: none succeeded."
         ),
     ),
+    rank: str | None = typer.Option(
+        None,
+        "--rank",
+        help="Comma-separated keywords; adds a score (hits in title and snippet) and sorts by it",
+    ),
 ):
     """Search public records databases.
 
@@ -4312,6 +4471,7 @@ def records_search(
         openfoia records search "EPA water" --source muckrock
         openfoia records search "PAS" -s documentcloud -n 300 --json
         openfoia records search "PAS" --all-sources
+        openfoia records search "PAS" -s documentcloud --rank child,school,gifted
     """
     import asyncio
 
@@ -4322,9 +4482,10 @@ def records_search(
         kwargs["jurisdiction"] = jurisdiction
     if filing_type:
         kwargs["filing_type"] = filing_type
+    keywords = _rank_keywords(rank)
 
     if all_sources:
-        _records_search_all(query, kwargs, limit, json_lines)
+        _records_search_all(query, kwargs, limit, json_lines, keywords)
         return
 
     # Validate source
@@ -4369,13 +4530,19 @@ def records_search(
         else:
             rprint(f"[red]{msg}[/red]")
         if result.entities:
-            _print_search_result(result, source, query, limit, raw, json_lines, filing_type)
+            _print_search_result(
+                result, source, query, limit, raw, json_lines, filing_type, keywords
+            )
         raise typer.Exit(1)
 
-    _print_search_result(result, source, query, limit, raw, json_lines, filing_type)
+    _print_search_result(result, source, query, limit, raw, json_lines, filing_type, keywords)
 
 
-def _print_search_result(result, source, query, limit, raw, json_lines, filing_type) -> None:
+def _print_search_result(
+    result, source, query, limit, raw, json_lines, filing_type, rank=None
+) -> None:
+    if rank:
+        result.entities = _rank(result.entities, rank)
     if json_lines:
         for e in result.entities[:limit]:
             typer.echo(json.dumps(_compact_result(e), ensure_ascii=False, default=str))
@@ -4412,6 +4579,19 @@ def _print_search_result(result, source, query, limit, raw, json_lines, filing_t
     rprint("=" * 60)
 
     entities = result.entities[:limit]
+
+    if rank:
+        table = Table(expand=True)
+        table.add_column("Score", width=5, justify="right")
+        table.add_column("ID", style="dim", width=10)
+        table.add_column("Title", style="cyan", ratio=2)
+        table.add_column("Snippet", ratio=3, style="yellow")
+        for e in entities:
+            c = _compact_result(e)
+            table.add_row(str(c["score"]), (c["id"] or "-")[:10], e.name, c["snippet"][:120])
+        console.print(table)
+        rprint(f"\n[dim]Showing {len(entities)} of {result.total_results} results.[/dim]")
+        return
 
     if source == "muckrock":
         table = Table(expand=True)
@@ -4701,56 +4881,112 @@ def records_filings(
     )
 
 
+def _ids_from_results(path: Path, source: str) -> list[str]:
+    """Ids in a 'records search --json' (JSON lines) or '--raw' (JSON list) file."""
+    text = path.read_text()
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        data = [json.loads(line) for line in text.splitlines() if line.strip()]
+    if isinstance(data, dict):
+        data = [data]
+    ids, other = [], 0
+    for item in data:
+        if item.get("source", source) != source:
+            other += 1
+            continue
+        ident = item.get("id") or next(iter((item.get("identifiers") or {}).values()), None)
+        if ident:
+            ids.append(str(ident))
+    if other:
+        rprint(f"[dim]Ignored {other} result(s) from sources other than {source}.[/dim]")
+    return list(dict.fromkeys(ids))
+
+
 @records_app.command("fetch")
 def records_fetch(
-    doc_id: str = typer.Argument(..., help="Document ID to fetch"),
+    doc_ids: list[str] | None = typer.Argument(None, help="Document IDs to fetch"),
     source: str = typer.Option("documentcloud", "--source", "-s", help="Data source"),
+    from_file: Path | None = typer.Option(
+        None,
+        "--from",
+        help="Also fetch every id in this 'records search --json' or '--raw' output file",
+    ),
+    refresh: bool = typer.Option(False, "--refresh", help="Re-fetch documents already stored"),
 ):
-    """Fetch a document's full text and save it to the local database.
+    """Fetch documents' full text and save them to the local database.
 
     Pulls pre-extracted text from the source (no local OCR needed for
-    DocumentCloud). The document is immediately ready for entity extraction.
+    DocumentCloud). Documents already stored are skipped unless --refresh.
+    Failures do not stop the batch; the summary lists fetched, skipped and
+    failed counts. Exit 2 when some failed, 1 when all did.
 
     Examples:
-        openfoia records fetch 2090186 --source documentcloud
         openfoia records fetch 2090186
+        openfoia records fetch 2090186 2090187 --source documentcloud
+        openfoia records search "PAS" -s documentcloud -n 300 --json > hits.json
+        openfoia records fetch --from hits.json
     """
     import asyncio
 
-    if source == "documentcloud":
-        from .cases import active_case_id_in_db
-        from .records.documentcloud import DocumentCloudAdapter
-
-        adapter = DocumentCloudAdapter()
-        case_id = active_case_id_in_db()
-
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            console=console,
-        ) as progress:
-            progress.add_task(f"Fetching document {doc_id} from DocumentCloud...", total=None)
-            try:
-                result_id, text = asyncio.run(adapter.pull_text(doc_id, case_id=case_id))
-            except Exception as e:
-                rprint(f"[red]Fetch failed: {e}[/red]")
-                raise typer.Exit(1) from None
-
-        if not result_id or not text:
-            rprint(f"[red]Could not fetch text for document {doc_id}.[/red]")
-            rprint("[dim]The document may not exist or may not have extracted text.[/dim]")
-            raise typer.Exit(1)
-
-        rprint(f"\n[green]Saved to database:[/green] {result_id[:8]}...")
-        rprint(f"  Text length: {len(text):,} characters")
-        if case_id:
-            rprint("  [dim]Attached to the active case.[/dim]")
-        rprint(f"\n[dim]Extract entities: openfoia analyze extract {result_id}[/dim]")
-    else:
+    ids = list(doc_ids or [])
+    if from_file:
+        ids += _ids_from_results(from_file, source)
+    ids = list(dict.fromkeys(ids))
+    if not ids:
+        rprint("[red]Give at least one document id or --from <results.json>.[/red]")
+        raise typer.Exit(2)
+    if source != "documentcloud":
         rprint(
             f"[yellow]Fetch not yet supported for '{source}'. Use 'records download' for MuckRock.[/yellow]"
         )
         raise typer.Exit(1)
+
+    from .cases import active_case_id_in_db
+    from .db import get_db_path, get_session
+    from .models import Request as RequestModel
+    from .records.documentcloud import DocumentCloudAdapter
+
+    adapter = DocumentCloudAdapter()
+    case_id = active_case_id_in_db()
+
+    stored: set[str] = set()
+    if get_db_path().exists():
+        with get_session() as session:
+            numbers = [f"DC-{i}" for i in ids]
+            for req in session.query(RequestModel).filter(RequestModel.request_number.in_(numbers)):
+                stored.add(req.request_number.removeprefix("DC-"))
+                if case_id and req.case_id is None:
+                    req.case_id = case_id
+
+    fetched, skipped, failed = [], [], []
+    for doc_id in ids:
+        if doc_id in stored and not refresh:
+            skipped.append(doc_id)
+            rprint(f"  {doc_id}  [dim]already stored (--refresh to re-fetch)[/dim]")
+            continue
+        try:
+            result_id, text = asyncio.run(adapter.pull_text(doc_id, case_id=case_id))
+        except Exception as e:
+            failed.append(doc_id)
+            rprint(f"  {doc_id}  [red]failed: {e}[/red]")
+            continue
+        if not result_id or not text:
+            failed.append(doc_id)
+            rprint(f"  {doc_id}  [red]no text (missing document or no extracted text)[/red]")
+            continue
+        fetched.append(result_id)
+        rprint(f"  {doc_id}  [green]saved {result_id[:8]}[/green] ({len(text):,} characters)")
+
+    rprint(
+        f"\nFetched {len(fetched)}, skipped {len(skipped)} already stored, failed {len(failed)}."
+    )
+    if case_id and (fetched or skipped):
+        rprint("  [dim]Attached to the active case.[/dim]")
+    if len(fetched) == 1:
+        rprint(f"[dim]Extract entities: openfoia analyze extract {fetched[0]}[/dim]")
+    if failed:
+        raise typer.Exit(1 if not fetched and not skipped else 2)
 
 
 @records_app.command("download")
@@ -4959,8 +5195,51 @@ def _doc_source_url(doc, req) -> str | None:
     return None
 
 
+_CREST_RE = re.compile(r"(?:CIA|NSA)-RDP\d{2}[A-Z]?-?\d{5}[A-Z]\d{12}-\d")
+_SOURCE_LABEL = {
+    "documentcloud": "DocumentCloud",
+    "muckrock": "MuckRock",
+    "cia": "CIA Reading Room",
+}
+NOTE_TIERS = ("says", "infer", "speculation")
+
+
+def _doc_cite(session, doc, req) -> dict[str, Any]:
+    """Everything a citation needs for one stored document."""
+    from .models import DocumentPage
+
+    number = req.request_number if req else ""
+    source = _doc_source(number)
+    crest = next(
+        (
+            m.group(0)
+            for text in (
+                req.subject if req else None,
+                req.body if req else None,
+                doc.extracted_text,
+            )
+            if text and (m := _CREST_RE.search(text))
+        ),
+        None,
+    )
+    stored = session.query(DocumentPage).filter(DocumentPage.document_id == doc.id).count()
+    return {
+        "id": doc.id,
+        "title": req.subject if req else (doc.filename or doc.id),
+        "source": source,
+        "identifier": number.partition("-")[2] if source != "local" else None,
+        "crest": crest,
+        "source_url": _doc_source_url(doc, req),
+        "documentcloud_id": number.removeprefix("DC-") if number.startswith("DC-") else None,
+        "filename": doc.filename,
+        "pages": doc.page_count,
+        "stored_pages": stored,
+        "retrieved": doc.received_at.isoformat() if doc.received_at else None,
+    }
+
+
 def _case_summary(session, case) -> dict[str, Any]:
-    from .models import CaseQuery, Document, Entity
+    from .models import CaseNote, CaseQuery, Document, Entity
     from .models import Request as RequestModel
 
     rows = (
@@ -4983,18 +5262,45 @@ def _case_summary(session, case) -> dict[str, Any]:
         .filter(RequestModel.case_id == case.id)
         .count()
     )
-    stamps = [case.updated_at, *(d.received_at for d, _ in rows), *(q.created_at for q in queries)]
-    documents = []
-    for doc, req in rows:
-        is_dc = req.request_number.startswith("DC-")
-        documents.append(
+    notes = (
+        session.query(CaseNote)
+        .filter(CaseNote.case_id == case.id)
+        .order_by(CaseNote.created_at, CaseNote.id)
+        .all()
+    )
+    stamps = [
+        case.updated_at,
+        *(d.received_at for d, _ in rows),
+        *(q.created_at for q in queries),
+        *(n.created_at for n in notes),
+    ]
+    documents = [_doc_cite(session, doc, req) for doc, req in rows]
+    sources = {d["id"]: d for d in documents}
+    findings = []
+    for n in notes:
+        cite = sources.get(n.document_id)
+        if cite is None and n.document_id:  # a note on a document outside this case
+            doc = session.get(Document, n.document_id)
+            if doc is not None:
+                req = session.get(RequestModel, doc.request_id) if doc.request_id else None
+                cite = sources[doc.id] = _doc_cite(session, doc, req)
+        cite = cite or {}
+        partial = bool(cite.get("pages")) and cite["stored_pages"] < cite["pages"]
+        findings.append(
             {
-                "title": req.subject,
-                "source_url": _doc_source_url(doc, req),
-                "documentcloud_id": req.request_number.removeprefix("DC-") if is_dc else None,
-                "filename": doc.filename,
-                "pages": doc.page_count,
-                "retrieved": doc.received_at.isoformat() if doc.received_at else None,
+                "id": n.id,
+                "document_id": n.document_id,
+                "title": cite.get("title"),
+                "source": cite.get("source"),
+                "identifier": cite.get("identifier"),
+                "crest": cite.get("crest"),
+                "page": n.page,
+                "page_is_real": not (n.page and partial),
+                "retrieved": cite.get("retrieved"),
+                "tier": n.tier,
+                "quote": n.quote,
+                "note": n.note,
+                "created": n.created_at.isoformat(),
             }
         )
     return {
@@ -5005,6 +5311,8 @@ def _case_summary(session, case) -> dict[str, Any]:
         "last_activity": max(s for s in stamps if s).isoformat(),
         "entity_count": entity_count,
         "documents": documents,
+        "findings": findings,
+        "sources": list(sources.values()),
         "queries": [
             {
                 "source": q.source,
@@ -5099,7 +5407,103 @@ def case_show(name: str | None = typer.Argument(None, help="Case name (default: 
     rprint(f"  Documents:      {len(s['documents'])}")
     rprint(f"  Entities:       {s['entity_count']}")
     rprint(f"  Queries logged: {len(s['queries'])}")
+    rprint(f"  Notes:          {len(s['findings'])}")
     rprint(f"  Last activity:  {s['last_activity'][:19]}")
+
+
+def _citation(f: dict[str, Any]) -> str:
+    """One pasteable line: title, source id, CREST number, page, retrieval date."""
+    parts = [f["title"] or "untitled document"]
+    if f["identifier"]:
+        parts.append(f"{_SOURCE_LABEL.get(f['source'], f['source'])} {f['identifier']}")
+    if f["crest"]:
+        parts.append(f["crest"])
+    if f["page"]:
+        parts.append(f"p.{f['page']}" + ("" if f["page_is_real"] else "*"))
+    if f["retrieved"]:
+        parts.append(f"retrieved {f['retrieved'][:10]}")
+    return ", ".join(parts)
+
+
+@case_app.command("note")
+def case_note(
+    words: list[str] = typer.Argument(..., help="Note text, or: rm <id> [<id>...]"),
+    doc: str | None = typer.Option(None, "--doc", help="Document id or prefix the note is about"),
+    page: int | None = typer.Option(None, "--page", help="Page in that document"),
+    quote: str | None = typer.Option(None, "--quote", help="The passage, verbatim"),
+    tier: str | None = typer.Option(None, "--tier", help="says, infer or speculation"),
+):
+    """Add a finding to the active case, or remove one: case note rm <id>.
+
+    Examples:
+        openfoia case note "Hocking Technical College tested PAS" --doc 3f2a --page 51 --tier says
+        openfoia case note "Likely the same program" --tier speculation
+        openfoia case note rm 3
+    """
+    from .db import get_session
+    from .models import CaseNote
+
+    _require_db()
+    with get_session() as session:
+        case = _resolve_case_or_exit(session, None)
+        if words[0] == "rm":
+            try:
+                ids = [int(w) for w in words[1:]]
+            except ValueError:
+                ids = []
+            if not ids:
+                rprint("[red]Usage: openfoia case note rm <id> [<id>...][/red]")
+                raise typer.Exit(2)
+            removed = (
+                session.query(CaseNote)
+                .filter(CaseNote.case_id == case.id, CaseNote.id.in_(ids))
+                .delete(synchronize_session=False)
+            )
+            rprint(f"[green]Removed {removed} note(s).[/green]")
+            return
+        if tier is not None and tier not in NOTE_TIERS:
+            rprint(f"[red]--tier must be one of: {', '.join(NOTE_TIERS)}[/red]")
+            raise typer.Exit(2)
+        n = CaseNote(
+            case_id=case.id,
+            document_id=_resolve_doc(session, doc).id if doc else None,
+            page=page,
+            quote=quote,
+            note=" ".join(words),
+            tier=tier,
+        )
+        session.add(n)
+        session.flush()
+        rprint(f"[green]Note {n.id} added to case[/green] [cyan]{case.name}[/cyan].")
+
+
+@case_app.command("notes")
+def case_notes(
+    name: str | None = typer.Argument(None, help="Case name (default: active)"),
+    as_json: bool = typer.Option(False, "--json", help="Print JSON"),
+):
+    """List a case's findings with their citations."""
+    from .db import get_session
+
+    _require_db()
+    with get_session() as session:
+        s = _case_summary(session, _resolve_case_or_exit(session, name))
+    if as_json:
+        typer.echo(json.dumps(s["findings"], indent=2, ensure_ascii=False))
+        return
+    if not s["findings"]:
+        rprint(
+            '[yellow]No notes. Add one: openfoia case note "<text>" or docs grep --save[/yellow]'
+        )
+        return
+    for f in s["findings"]:
+        rprint(f"[cyan]{f['id']:>3}[/cyan]  [{f['tier'] or '-'}] {f['note'] or ''}")
+        if f["quote"]:
+            rprint(f"      > {f['quote']}")
+        if f["document_id"]:
+            rprint(f"      [dim]{_citation(f)}[/dim]")
+    if not all(f["page_is_real"] for f in s["findings"]):
+        rprint(f"[dim]* {SINGLE_PAGE_CAVEAT}[/dim]")
 
 
 @case_app.command("export")
@@ -5108,7 +5512,7 @@ def case_export(
     fmt: str = typer.Option("md", "--format", "-f", help="md or json"),
     output: Path | None = typer.Option(None, "--output", "-o", help="Write to file"),
 ):
-    """Export a case's document list and query log (no document text)."""
+    """Export a case's findings with citations, document list and query log."""
     from .db import get_session
 
     if fmt not in ("md", "json"):
@@ -5135,6 +5539,30 @@ def case_export(
                 (d["retrieved"] or "-")[:10],
             ]
             lines.append("| " + " | ".join(str(c).replace("|", "\\|") for c in cells) + " |")
+        if s["findings"]:
+            lines += ["", "## Findings", ""]
+            for i, f in enumerate(s["findings"], 1):
+                head = f"{i}. " + (f"**{f['tier']}** " if f["tier"] else "") + (f["note"] or "")
+                lines.append(head.rstrip())
+                if f["quote"]:
+                    lines.append(f"   > {f['quote']}")
+                if f["document_id"]:
+                    lines.append(f"   Source: {_citation(f)}.")
+            if not all(f["page_is_real"] for f in s["findings"]):
+                lines += ["", f"\\* {SINGLE_PAGE_CAVEAT}"]
+        if s["sources"]:
+            lines += ["", "## Sources", ""]
+            for d in s["sources"]:
+                parts = [d["title"]]
+                if d["identifier"]:
+                    parts.append(f"{_SOURCE_LABEL.get(d['source'], d['source'])} {d['identifier']}")
+                if d["crest"]:
+                    parts.append(d["crest"])
+                if d["source_url"]:
+                    parts.append(d["source_url"])
+                if d["retrieved"]:
+                    parts.append(f"retrieved {d['retrieved'][:10]}")
+                lines.append("- " + ". ".join(parts) + ".")
         lines += ["", "## Queries", ""]
         for q in s["queries"]:
             total = "?" if q["total_results"] is None else q["total_results"]

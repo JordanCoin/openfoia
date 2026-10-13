@@ -169,7 +169,7 @@ def test_documentcloud_refetch_keeps_real_pages_when_pages_fail(db, monkeypatch)
     assert [n for n, _ in _pages(doc_id)] == [1, 2, 3]
 
 
-def test_migrations_reach_003_fresh_and_from_001(tmp_path, monkeypatch):
+def test_migrations_reach_head_fresh_and_from_001(tmp_path, monkeypatch):
     import sqlite3
 
     from alembic import command
@@ -179,7 +179,7 @@ def test_migrations_reach_003_fresh_and_from_001(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENFOIA_DATA_DIR", str(tmp_path / "fresh"))
     dbmod.init_db(seed=False)
     version = "select version_num from alembic_version"
-    assert sqlite3.connect(dbmod.get_db_path()).execute(version).fetchall() == [("003",)]
+    assert sqlite3.connect(dbmod.get_db_path()).execute(version).fetchall() == [("004",)]
 
     monkeypatch.setenv("OPENFOIA_DATA_DIR", str(tmp_path / "old"))
     cfg = dbmod._alembic_config()
@@ -188,7 +188,7 @@ def test_migrations_reach_003_fresh_and_from_001(tmp_path, monkeypatch):
     monkeypatch.setattr(dbmod, "_schema_checked", False)
     with dbmod.get_session() as s:
         s.connection().exec_driver_sql("select count(*) from document_pages").scalar()
-    assert sqlite3.connect(dbmod.get_db_path()).execute(version).fetchall() == [("003",)]
+    assert sqlite3.connect(dbmod.get_db_path()).execute(version).fetchall() == [("004",)]
 
 
 # --- grep: FTS5 and the LIKE fallback --------------------------------------

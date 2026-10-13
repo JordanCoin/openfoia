@@ -425,6 +425,24 @@ class CaseQuery(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class CaseNote(Base):
+    """A finding on a case: optionally pinned to a document page and a quoted passage."""
+
+    __tablename__ = "case_notes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    case_id: Mapped[str] = mapped_column(ForeignKey("cases.id", ondelete="CASCADE"), index=True)
+    document_id: Mapped[str | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="SET NULL"), nullable=True
+    )
+    page: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    quote: Mapped[str | None] = mapped_column(Text, nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # says: the document states it; infer: follows from it; speculation: a lead.
+    tier: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class TimelineEvent(Base):
     """A timestamped event in a request's lifecycle."""
 
