@@ -125,24 +125,25 @@ def _parse_invocation(root, tokens):
             return Parsed(error=f"no such subcommand 'openfoia {words[0]} {words[1]}'")
         cmd, path = sub, [words[0], words[1]]
 
-    # Which flags consume the following token?
+    # How many following tokens does each flag consume? (`--mentions A B` takes two.)
     takes_value = {}
     for param in cmd.params:
-        wants = not getattr(param, "is_flag", False) and getattr(param, "nargs", 1) != 0
+        nargs = getattr(param, "nargs", 1)
+        wants = 0 if getattr(param, "is_flag", False) else max(nargs, 0)
         for opt in list(param.opts) + list(param.secondary_opts):
             takes_value[opt] = wants
 
     rest = tokens[len(path) :]
-    positionals, flags, skip = 0, [], False
+    positionals, flags, skip = 0, [], 0
     for token in rest:
         if skip:
-            skip = False
+            skip -= 1
             continue
         if token.startswith("-") and token != "-":
             flag = token.split("=", 1)[0]
             flags.append(flag)
-            if "=" not in token and takes_value.get(flag, False):
-                skip = True
+            if "=" not in token:
+                skip = takes_value.get(flag, 0)
         else:
             positionals += 1
     return Parsed(cmd=cmd, path=path, positionals=positionals, flags=flags)

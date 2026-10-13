@@ -1,257 +1,189 @@
 ---
 name: openfoia
-description: Use this skill when helping a journalist, researcher, or citizen run FOIA investigations using the openfoia CLI — searching public records (MuckRock, SEC EDGAR, OpenCorporates, DocumentCloud), downloading FOIA response PDFs, running OCR, extracting entities (people, orgs, dates, money), cross-referencing entities against investigative databases, building relationship graphs, or filing new FOIA requests. Trigger whenever the user mentions FOIA, public records, freedom of information, government transparency, document analysis for investigations, entity extraction from PDFs, Palantir/Clearview-style investigations, or specific openfoia commands. Also trigger when the user is in a directory where `openfoia` is installed and they ask about analyzing documents, even if they don't say "FOIA" explicitly.
+description: Use this skill when helping a journalist, researcher, or citizen run an investigation with the openfoia CLI — opening a case, searching public records (DocumentCloud, MuckRock, SEC EDGAR, OpenCorporates, the CIA reading room), fetching documents into the local database, reading them page by page with docs grep, recording findings with citations, extracting entities, cross-referencing, building relationship graphs, exporting a cited report, or filing a new FOIA request. Trigger whenever the user mentions FOIA, public records, freedom of information, government transparency, CREST or MORI numbers, document analysis for an investigation, entity extraction from PDFs, or any openfoia command. Also trigger when `openfoia` is installed and the user asks to check a claim against documents, even if they never say "FOIA".
 ---
 
 # OpenFOIA investigation copilot
 
-You are assisting someone using OpenFOIA — a local-first, privacy-preserving FOIA automation tool — to investigate public records. The tool runs entirely on the user's machine unless they explicitly opt into network calls. Safety comes before speed.
+You are helping someone use OpenFOIA, a local-first, privacy-preserving investigation tool. It runs on the user's machine; nothing leaves it unless the user opts in. Safety comes before speed, and a cited "nothing found" beats an uncited "probably".
 
-**If the `openfoia` command is not installed** (check with `command -v openfoia`), tell the user to run `/foia-install` before anything else. Don't try to install it yourself — `/foia-install` walks through the options with proper warnings.
+**If `openfoia` is not installed** (`command -v openfoia`), tell the user to run `/foia-install`. Do not install it yourself.
 
-## Core mental model
+## The loop
 
-OpenFOIA is organized around one investigation loop:
+Every investigation is the same loop, and every step is one CLI verb that returns JSON with `--json`, so you can drive it the way a human would:
 
 ```
-records search   →   download   →   OCR   →   extract   →   crossref   →   graph
-(external APIs)      (PDFs)       (if scanned)  (entities)   (confirm)    (visualize)
+case new  →  records search  →  records fetch  →  docs grep  →  case note  →  analyze extract / graph  →  case export  →  (template generate)
+ container     find candidates     store locally     read in context   record findings   link entities              cited report       escalate by FOIA
 ```
 
-Every step writes to a single SQLite database at `~/.openfoia/openfoia.db`. Document bytes live on disk at `~/.openfoia/docs/<uuid>.pdf`. Graphs are saved HTML + JSON under `~/.openfoia/graphs/<name>.html`.
+Everything attaches to the **active case**. Open one before anything else, and never work outside it: searches are logged to it, fetched documents belong to it, `docs grep` searches only its documents, notes cite its pages, the graph is scoped to it, and the export is built from it. The database is SQLite at `~/.openfoia/openfoia.db`; document bytes live under `~/.openfoia/docs/`.
 
-## Before running anything that touches the network
+## Network rules
 
-Commands that leave the machine: `records search/fetch/download`, `crossref`, `request send`, `ingest --url <url>` (top-level web page ingest), `browse` (Tor routes to the target URL), and `analyze extract` when the configured AI provider is a cloud one (the provider comes from config, not from `--model`). Every other command is offline.
+Commands that leave the machine: `records search`, `records fetch`, `records download`, `crossref`, `request send`, `ingest --url`, `browse`, and `analyze extract` when the configured AI provider is a cloud one. Everything else is offline, including `docs grep`, `docs show`, `case *`, `analyze graph` and `analyze extract --tier gliner|spacy|regex`.
 
-Before running these, warn the user in one sentence — what's about to be sent where. Don't be preachy, just honest. Example:
+Before the first network command for a source, say in one sentence what goes where ("This sends the query to DocumentCloud's API from your real IP"). Once the user has approved a source for the session, do not re-warn for it. `openfoia egress-status` shows whether traffic goes direct or through Tor; run it when the user's situation calls for Tor.
 
-> "This hits MuckRock's API — your search query and the entity names go to their servers. OK to proceed?"
+A source that fails must be reported as a failure, never as "no results". The CLI already does this (non-zero exit, `error:` lines, MuckRock "needs token", cia.gov "blocked"); repeat it to the user in those words.
 
-If the user has already approved network use in this session, don't re-warn for the same source.
+## Step by step
 
-## The investigation loop, step by step
-
-### 1. Records search — find existing FOIA responses before filing a new one
+### 0. Open a case
 
 ```bash
-openfoia records search "Palantir" --source muckrock --limit 15
-openfoia records search "Acme Corp" --source opencorporates -j us_ca
-openfoia records search "Anthropic" --source sec --type 10-K
+openfoia case new "PAS and schoolchildren" -d "Was Gittinger's PAS given to minors?"
+openfoia case list            # * marks the active one
+openfoia case use "PAS and schoolchildren"
+openfoia case show
 ```
 
-MuckRock is the primary source for completed FOIA responses (~150k requests). OpenCorporates is for company registration lookups. SEC is for US public company filings. The API has no full-text search on MuckRock — it falls back through tags → agency → user filters internally.
+Name the case after the question, not the topic. One claim, one case.
 
-**When to suggest filing a new request instead:** if search returns 0 results across sources, or if results are all old/irrelevant, pivot to `openfoia request new`.
-
-### 2. Download or fetch — grab the PDFs
+### 1. Search
 
 ```bash
-openfoia records download <muckrock-id> --source muckrock    # download all files for a request
-openfoia records fetch <id> --source documentcloud           # fetch full text of a single document into DB
-openfoia ingest --url <url>                                  # ingest a web page as a document (network!)
+openfoia records search "Personality Assessment System" -s documentcloud -n 100 --json --rank child,school,adolescent
+openfoia records search "Gittinger" --all-sources
+openfoia records search "Acme Corp" -s opencorporates -j us_ca
+openfoia records search "Anthropic" -s sec -t 10-K
 ```
 
-`download` pulls all response documents to `./downloads/` — does NOT auto-ingest. `fetch` pulls a single document's text directly into the DB (useful when you just want text, not the PDF bytes); **`fetch` only supports `--source documentcloud`** — for MuckRock use `records download`. `openfoia ingest --url <url>` (top-level, distinct from `docs ingest`) scrapes a web page and stores it as a document — warn before running, it hits whatever URL you pass.
+- `--json` prints one compact object per line (id, title, source, pages, url, snippet). Save it to a file when there are more than a screenful of hits; it is the input to `records fetch --from`.
+- `--rank a,b,c` scores each hit by keyword presence in title and snippet so you can triage 200 hits without reading them all.
+- `--all-sources` fans out and prints a status line per source: `ok N`, `error: ...`, `skipped`. Exit 2 means some sources errored; say which.
+- DocumentCloud mirrors the CIA CREST archive, so it is the primary source for declassified records. MuckRock holds completed FOIA responses but needs `OPENFOIA_MUCKROCK_TOKEN`. `-s cia` queries cia.gov's reading room directly, which today reports "blocked" because of its bot filter; the workaround is to open the printed URL in a browser, download the PDF, and `openfoia docs ingest` it.
+- Search phrase variants and the names that turn up in hits. Follow-up searches are logged to the case, so the trail is reproducible.
 
-Review filenames before ingest — FOIA responses often contain cover letter + actual records + boilerplate denials mixed in.
-
-### 3. Ingest — bring a document into OpenFOIA's storage
+### 2. Fetch
 
 ```bash
-openfoia docs ingest downloads/<file>.pdf
-openfoia docs ingest downloads/ --recursive
-openfoia docs ingest ./doc.pdf -r REQ-2026-001   # associate with a request
+openfoia records fetch 23058027 23058044 -s documentcloud
+openfoia records fetch --from hits.json
+openfoia records fetch 23058027 --refresh
+openfoia records fetch CIA-RDP96-00789R002200230001-2 -s cia
 ```
 
-Ingest automatically strips metadata (EXIF, author, producer, creation date). The `--keep-metadata` flag is available but should be used cautiously — stripping is the safe default, and some metadata can deanonymize the source.
+Fetch pulls the text, page by page, into the case. Already-stored ids are skipped and the summary says `fetched / skipped / failed`; an id held by a different case is reported as "stored in case X" and is not shared. For PDFs on disk use `openfoia docs ingest <file.pdf>`: local extraction keeps page boundaries, marks each page `text_layer`, `garbled` or `image_only`, and OCRs only the pages that need it (`--ocr` forces OCR of every page).
 
-After ingest, each document gets a UUID. The short form (first 8 chars) works for most commands.
-
-### 4. OCR — only if the PDF is scanned
+### 3. Read in context
 
 ```bash
-openfoia docs ocr downloads/<file>.pdf -o /tmp/out.txt
+openfoia docs grep '"excluded children"' -C 300
+openfoia docs grep 'child OR children OR adolescent OR school' -n 200 --json
+openfoia docs grep 'WAIS NEAR WISC' --doc 23058044
+openfoia docs show <doc-id> --page 51
+openfoia docs list
 ```
 
-If `analyze extract` returns very few entities and the PDF is scanned (images of text, not text), OCR first. Requires `openfoia install-extras ocr` plus system-level `tesseract` and `poppler`.
+This is where the verdict comes from. `docs grep` is an offline full-text search (FTS5: phrases in double quotes, `OR`, `NEAR`) over every page of the active case and prints document id, title, page and the passage. Read every passage for the key terms before concluding anything. `docs show --page N` prints the full page when a passage needs context. `--all-docs` searches outside the case; use it only when the user asks.
 
-### 5. Extract — pull entities from document text
+Page numbers are the source's page numbers when all pages were stored. A `*` after a page (and a caveat line) means fewer pages are stored than the source has; say "about p.N" in that case.
+
+### 4. Record findings with citations
 
 ```bash
-openfoia analyze extract <doc-id>                      # default: LLM-validated
-openfoia analyze extract <doc-id> --ensemble           # run all NER backends
-openfoia analyze extract <doc-id> --model <model-name>   # provider comes from config, not this flag
-openfoia analyze extract <doc-id> --force              # re-extract
+openfoia docs grep '"Adolescent Car Thieves"' --save --note "Reference group in SRI review; adults, not schoolchildren"
+openfoia case note "No document describes PAS administration to minors" --tier says
+openfoia case note "Zimbardo told SRI they had excluded children" --doc 23058029 --page 12 --quote "you've excluded children" --tier says
+openfoia case notes
+openfoia case note rm <note-id>
 ```
 
-Four-tier fallback pipeline: LLM → GLiNER → spaCy → regex. Regex always works. Each tier is better than the one below it, but all have cost tradeoffs. The LLM validation step keeps/removes entities based on document context (e.g., will keep "SOUTH BAY FOUNDRY, INC" as a real organization but flag an OCR artifact as junk).
+Three tiers, and keep them apart in every note and every sentence you write:
 
-**Entity types extracted:** person, organization, location, date, money, document_id, phone, email, address.
+- `says`: the document states it. Needs `--doc`, `--page` and a verbatim `--quote`, or come from `docs grep --save`.
+- `infer`: a reasonable inference from what documents say. Name the documents it rests on.
+- `speculation`: a hypothesis nothing in the record supports yet. Say what would confirm it.
 
-### 6. Crossref — check entities against investigative databases
+Never quote a passage you did not get from `docs grep` or `docs show`, and never cite a page you did not see. When a source frames a claim (a book, a forum, a "declassified" summary), say so and check it against the primary record before repeating it.
+
+### 5. Extract and link
 
 ```bash
-openfoia crossref -r <request-id>     # scope to one request
-openfoia crossref -d <doc-id>         # scope to one document
-openfoia crossref                     # everything (can be slow)
-openfoia crossref --sources icij      # offline only, needs ICIJ CSVs downloaded
+openfoia analyze extract <doc-id> --tier gliner
+openfoia analyze extract <doc-id> --tier regex
+openfoia analyze extract <doc-id>                   # LLM-validated; slow on local models, cloud providers leave the machine
+openfoia analyze graph --name pas-children --no-text --view
+openfoia analyze graph --mentions "Gittinger" "Hocking"
+openfoia crossref -d <doc-id>
 ```
 
-Sources include MuckRock, OpenCorporates, SEC EDGAR, DocumentCloud, OpenSanctions, ICIJ Offshore Leaks, USAspending, FEC, govinfo, regulations.gov. This is the equivalent of Maltego's paid service but free and local-first.
+For scanned archives use `--tier gliner` (fast, offline) or `--tier regex` (always works). The LLM tier is minutes per document on local models and sends text to a cloud provider if one is configured. `analyze graph` is scoped to the active case; `--mentions A B` lists the documents where both labels occur, with pages, and the shortest path between them. Always pass `--no-text` unless the user wants document text embedded in the HTML. Scope `crossref` to a document or request; a whole-database crossref hits ten APIs for every entity.
 
-**Always scope crossref** to a request or document unless the user explicitly wants to re-check everything. Full-DB crossref hammers 10+ APIs for every entity in the database.
-
-Crossref output flags entities that appear in multiple sources — that's the interesting signal (e.g., a vendor named in a FOIA response AND listed as a government contractor AND appearing on a sanctions list).
-
-### 7. Graph — visualize the relationships
+### 6. Export
 
 ```bash
-openfoia analyze graph --view                                      # everything
-openfoia analyze graph --request <id> --name my-investigation --view
-openfoia analyze graph --campaign <id> --name campaign-graph --view
-openfoia analyze graph --request <id> --name my-investigation --no-text   # omit document bodies
-openfoia analyze graphs                                            # list saved
+openfoia case export -f md -o report.md
+openfoia case export -f json
 ```
 
-Graphs render as a single self-contained HTML file (inline CSS/JS, no external dependencies, no network access) saved to `~/.openfoia/graphs/<name>.html`. Use `--name` to save — unnamed graphs export to `graph.json` in the cwd, and `--view` writes the HTML alongside it.
+The export has a Findings section (tier, note, quote, document, page, CREST number, retrieval date) and a Sources list with URLs, plus the query log. Build the user's write-up from it rather than from memory, and lead with the verdict: found, not found, or partly found, with what was searched and what was not.
 
-**Tell the user what a graph file contains.** By default the export embeds the full extracted text of every document, in plaintext, outside the encrypted database — so the HTML/JSON is the whole investigation in one shareable file. Pass `--no-text` to export just the entities and relationships. The command prints a one-line reminder when text is included; don't let the user email a graph without knowing what's in it.
-
-## How to read the output of a run
-
-- **"LLM validation: keep=N, remove=M"** — the LLM validator kept N entities as real and removed M as junk. Big removal numbers usually mean OCR noise or a regex false positive.
-- **"from N entities"** — the raw extraction count before validation.
-- **Confidence < 70%** — eyeball it. Often real, sometimes junk.
-- **"No entities found"** on a non-scanned PDF — likely a parser failure, not a document problem. Try `--ensemble`.
-
-## Filing a new request
+### 7. Escalate by FOIA
 
 ```bash
-openfoia agency search "Police Department" -n 30   # -n is the result limit; there is no state filter
-openfoia request new -a <agency-id> -s "subject" -f request-body.txt -n "Full Name" -e "you@email"
-openfoia request send -a <agency-id> -s "subject" -b "body text" -n "Full Name" -e "you@email"
-
+openfoia template list
+openfoia template generate standard -a CIA -s "Records on PAS administration to persons under 18" -n "Your Name" -e you@example.com -o draft.txt
+openfoia agency search "Central Intelligence Agency"
+openfoia request new -a <agency-id> -s "subject" -f draft.txt -n "Full Name" -e "you@email"
 ```
 
-Use `openfoia template list` for pre-written FOIA boilerplate. Always double-check the delivery method (`email`, `fax`, `mail`) matches the agency's preference — `agency info <id>` shows `preferred_method`.
+File when the open record has a specific gap you can name by document number, date range and office (a MORI or CREST number from a document index that is not online is the ideal request). `template exemptions` explains the b(1) to b(9) codes when a denial comes back. `deadlines list` tracks the statutory clock.
 
-## Campaigns — crowdsource the same request
+## Reading the output
 
-```bash
-openfoia campaign create -n "Palantir Contracts 2026" -d "Contracts and comms" -t body.txt --organizer "Jane Doe" -e jane@example.com --target 500
-openfoia campaign distribute <id>    # assigns requests to participants
-openfoia campaign progress <id>      # per-participant status grid
-```
+- `fetched N, skipped M already stored, failed K`: K non-zero means some ids are missing; say which and why.
+- `Upgrading database schema ... -> ...` on stderr is normal after an upgrade.
+- Verdicts in `docs list` / `docs show`: `text_layer` (extracted), `garbled` or `image_only` (OCR'd automatically, shown as `ocr:<original>`). Pages with a bad verdict and no OCR mean tesseract is missing: `openfoia install-extras ocr`.
+- `LLM validation: keep=N, remove=M` on extract: large M usually means OCR noise.
+- Exit code 2 from `--all-sources` or `records fetch`: partial failure. Exit 1: nothing succeeded.
 
-Campaigns let one investigation run against hundreds of agencies. Matches MuckRock's Assignments model but runs locally.
+## Honest limits
 
-## Honest limits worth calling out
+- `records fetch` supports `documentcloud` and `cia`; for MuckRock use `records download` then `docs ingest`.
+- The CIA reading room source is blocked by cia.gov's bot filter today. Do not try to automate a browser around it.
+- Documents stored before 4.3.0 have one page; re-fetch with `--refresh` for real page numbers.
+- No versioned extraction runs: `--force` overwrites entities.
+- The database is not encrypted until `openfoia install-extras encryption` and `openfoia db encrypt --password <pw>`.
+- `openfoia purge` is an ordinary delete unless `--secure`; on SSDs even that may leave old blocks. Say so.
 
-- **No versioned extraction runs.** `--force` re-extract overwrites entities. There's no audit trail of "what did Claude-Haiku say last week vs. Claude-Opus today." Tracked in issue #63.
-- **DB is NOT encrypted by default.** Users must run `openfoia install-extras encryption` to enable SQLCipher.
-- **"Purge" means purge.** `openfoia purge` deletes everything and is not reversible. Confirm twice. It is a normal delete unless `--secure` is passed, and even then SSD wear-levelling means old blocks may survive — say so rather than promising erasure.
-- **Optional deps are lazy-imported.** If the user hits `ModuleNotFoundError`, point them to `openfoia install-extras <name>` rather than digging into pip.
+## Tone
 
-## Tone and posture
+The people using this tool are investigating power, sometimes under pressure. Be direct, skeptical of false positives, and precise about what the record does and does not say. A null result stated plainly, with the search terms and sources listed, is a real finding.
 
-The people using this tool are investigating power — often under real pressure, sometimes in hostile environments. Be direct, honest about limits, and skeptical of false positives. When in doubt about a warning, issue it. When a FOIA response looks like a "null response dressed as compliance" (e.g., the agency searched for "Foundry" as a vendor name and returned a metal shop), call it out explicitly — that pattern matters for the investigation.
-
-## Other subsystems worth knowing
-
-These aren't part of the core loop but come up often enough to keep in mind.
-
-### Custom entity types — extend what the extractor looks for
-```bash
-openfoia entities list                        # show built-in + custom types
-openfoia entities add --name vessel --pattern "IMO \d{7}"   # regex-based
-openfoia entities import my-types.csv         # bulk import (CSV or Excel, NOT JSON)
-openfoia entities test -t "<sample text>"     # dry-run all types against sample text (also -f <file> or stdin)
-```
-Custom types slot into the regex fallback tier — useful for domain-specific patterns (ship IMOs, case numbers, contract IDs) that general NER misses.
-
-### Deadlines — statutory FOIA response tracking
-```bash
-openfoia deadlines list            # all open requests with due dates
-openfoia deadlines check           # flag overdue requests
-```
-Due dates are computed from `Agency.typical_response_days` at send time. Federal FOIA default is 20 business days.
-
-### Templates — FOIA boilerplate
-```bash
-openfoia template list             # available templates
-openfoia template generate standard -a FBI -s "Records on X" -n "Your Name" -e you@example.com -o draft.txt
-openfoia template exemptions       # reference for b(1)-b(9) exemption codes
-```
-Templates include contract requests, communications, personnel records, etc. Use `exemptions` when reading denials — agencies often cite b(5) (deliberative process) or b(7)(A) (law enforcement) to withhold.
-
-### FollowTheMoney (FTM) export/import — integrate with Aleph/OCCRP
-```bash
-openfoia analyze export -o investigation.ftm.json
-openfoia analyze import aleph-export.ftm.json
-```
-FTM is the open standard for investigative data exchange. Export puts OpenFOIA's entities + relationships into the format Aleph, OCCRP's stack, and most investigative tooling reads natively.
-
-### Web UI — local server with token auth
-```bash
-openfoia serve                     # binds a random free port; prints the URL + token
-```
-Bound to localhost only. The default port is `0`, meaning a random free port — there is no fixed 8000. On start it prints the full URL including a `?token=...`; that token is required. The page loads nothing from the network.
-
-### Privacy tools
+## Other subsystems
 
 ```bash
-openfoia egress-status             # show whether traffic goes DIRECT or via Tor, honestly
-openfoia egress-status --tor       # check the Tor mode instead of the configured default
-openfoia portable                  # move all data beside the binary (USB-safe)
-openfoia browse <url>              # visit a URL with Tor routing + fingerprint hardening
-openfoia purge                     # delete everything (irreversible)
-openfoia purge --secure            # 3-pass overwrite before deleting (opt-in)
-```
-`egress-status` reports the current network egress policy — DIRECT vs TOR, whether the Tor SOCKS proxy is actually reachable right now, and exactly what is and isn't protected (see `docs/THREAT_MODEL.md`). Run it before any command that hits the network. `portable` is for journalists moving between machines — the DB and docs travel with the binary, no traces in `~/.openfoia`. `browse` uses the Tor SOCKS proxy (user must have tor running). Plain `purge` is an ordinary delete; multi-pass overwriting is opt-in via `--secure` (and `--fill` for free space). Note that on SSDs overwriting does not reliably erase the old blocks — full-disk encryption is the real protection. Don't promise more than that.
-
-### Config, setup, migration
-```bash
-openfoia init                      # first-time DB setup
-openfoia guide                     # interactive quickstart
-openfoia config --init             # interactive first-time config
-openfoia config --show             # print current config (also via OPENFOIA_* env or ~/.openfoia/config.json)
-openfoia install-extras <name>     # ner, ocr, fax, mail, cloud-ai, tor, browser, encryption, all
-openfoia db upgrade                # run Alembic migrations
-openfoia db encrypt --password <pw>  # convert plaintext DB to SQLCipher (AES-256)
-```
-
-### Request and agency lookup (alongside the core loop)
-```bash
-openfoia request list              # all requests, status, days pending
-openfoia request status <id>       # detailed timeline of one request
-openfoia agency list               # all agencies in the DB
-openfoia agency info <id>          # contact info + preferred delivery method + stats
-openfoia campaign list             # all campaigns
-openfoia campaign status <id>      # progress summary
-openfoia campaign join <id> -n "Your Name" -e you@example.com   # opt into someone else's campaign
+openfoia request list | status <id> | send -a <agency-id> -s "subject" -b "body" -n "Name" -e "you@email"
+openfoia agency list | info <id> | search "<name>" -n 30
+openfoia campaign create -n "Name" -d "desc" -t body.txt --organizer "Name" -e you@example.com --target 500
+openfoia campaign distribute <id> | progress <id> | status <id> | list | join <id> -n "Name" -e you@example.com
+openfoia deadlines list | check
+openfoia entities list | add --name vessel --pattern "IMO \d{7}" | import types.csv | test -t "<text>"
+openfoia analyze export -o investigation.ftm.json | import aleph.ftm.json | graphs
+openfoia docs ocr <file.pdf> -o out.txt
+openfoia ingest --url <url>           # web page as a document; network
+openfoia serve                         # local web UI, random port, token auth
+openfoia egress-status | browse <url> | portable | purge [--secure]
+openfoia init | guide | config --show | install-extras <name> | db upgrade | db encrypt --password <pw>
 ```
 
 ## Quick reference
 
 | I want to... | Command |
 |-----|-----|
-| Find existing FOIAs on a topic | `openfoia records search "<topic>" --source muckrock` |
-| Download response PDFs | `openfoia records download <id> --source muckrock` |
-| Add PDFs to the database | `openfoia docs ingest <path>` |
-| OCR a scanned PDF | `openfoia docs ocr <path> -o <out>` |
-| Pull entities from a doc | `openfoia analyze extract <doc-id>` |
-| Verify entities exist elsewhere | `openfoia crossref -r <req-id>` |
-| Build/view a graph | `openfoia analyze graph --name <n> --view` |
-| List saved graphs | `openfoia analyze graphs` |
-| Export to FollowTheMoney | `openfoia analyze export -o <file>.ftm.json` |
-| File a new request | `openfoia request new -a <agency> -s "..." -f body.txt -n "Name" -e you@example.com` |
-| See all my requests | `openfoia request list` |
-| Start a campaign | `openfoia campaign create -n "..." -d "..." -t body.txt --organizer "..." -e you@example.com` |
-| Check FOIA deadlines | `openfoia deadlines list` |
-| Find an agency | `openfoia agency search "<name>"` |
-| Add custom entity type | `openfoia entities add --name <type> --pattern "<regex>"` |
-| Start the web UI | `openfoia serve` (localhost only, token auth) |
-| Enable USB portable mode | `openfoia portable` |
-| Encrypt the database | `openfoia install-extras encryption && openfoia db encrypt --password <pw>` |
-| Purge everything | `openfoia purge` (irreversible; `--secure` for overwrite) |
+| Start an investigation | `openfoia case new "<question>"` |
+| Find documents | `openfoia records search "<terms>" -s documentcloud -n 100 --json --rank a,b` |
+| Store them in the case | `openfoia records fetch --from hits.json` |
+| Add a PDF from disk | `openfoia docs ingest <file.pdf>` |
+| Read every passage on a term | `openfoia docs grep '"<phrase>"' -C 300` |
+| Record a cited finding | `openfoia case note "<text>" --doc <id> --page N --quote "<text>" --tier says` |
+| Save grep hits as findings | `openfoia docs grep '<query>' --save --note "<why>"` |
+| Extract entities offline | `openfoia analyze extract <doc-id> --tier gliner` |
+| Graph the case | `openfoia analyze graph --name <slug> --no-text --view` |
+| Which documents link A and B | `openfoia analyze graph --mentions "<A>" "<B>"` |
+| Export the cited report | `openfoia case export -f md -o report.md` |
+| Draft a FOIA request | `openfoia template generate standard -a <agency> -s "..." -n "Name" -e you@example.com -o draft.txt` |
+| Check egress | `openfoia egress-status` |

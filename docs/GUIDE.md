@@ -140,8 +140,9 @@ Every source call prints which third party it contacts before the request
 leaves. Current limitation: cia.gov's bot filter blocks non-browser clients,
 so `--source cia` search and fetch report "blocked" today rather than
 pretending there were no results. Workaround: open the printed URL in a
-browser, download the PDF, and `openfoia docs ingest <file.pdf>`. A Playwright
-route through `tor_browse.py` is a possible follow-up.
+browser, download the PDF, and `openfoia docs ingest <file.pdf>`. Automating
+a real browser against that filter is not planned: it would bypass the egress
+policy and put a browser fingerprint on cia.gov from the researcher's machine.
 
 A source that fails (rate limit, timeout, missing token) is reported as an
 error and the command exits non-zero; "No results found" means the source
