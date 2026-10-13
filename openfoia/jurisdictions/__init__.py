@@ -21,8 +21,13 @@ def load_all() -> dict[str, dict]:
     """Every jurisdiction keyed by id, federal first then states by id."""
     data = {}
     for path in sorted(_DIR.glob("*.json")):
-        with path.open(encoding="utf-8") as fh:
-            j = json.load(fh)
+        try:
+            with path.open(encoding="utf-8") as fh:
+                j = json.load(fh)
+            if j.get("id") != path.stem:
+                raise ValueError(f"id {j.get('id')!r} does not match filename")
+        except (ValueError, AttributeError) as e:  # json errors are ValueErrors
+            raise ValueError(f"jurisdiction file {path.name}: {e}") from e
         data[j["id"]] = j
     return dict(sorted(data.items(), key=lambda kv: (kv[1]["level"] != "federal", kv[0])))
 

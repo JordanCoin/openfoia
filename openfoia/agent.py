@@ -432,9 +432,10 @@ Please contact me if you have questions about this request.
         request.status = RequestStatus.SENT
         request.sent_at = _utcnow()
 
-        # Auto-set due date (20 business days per FOIA statute)
-        if not request.due_date:
-            response_days = request.agency.typical_response_days if request.agency else 20
+        # Auto-set due date (20 business days under federal FOIA; a body under a
+        # state law with no known clock gets no due date rather than a fake one)
+        response_days = request.agency.typical_response_days if request.agency else 20
+        if not request.due_date and response_days is not None:
             from datetime import timedelta
 
             current = request.sent_at

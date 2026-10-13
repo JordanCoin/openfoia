@@ -104,7 +104,7 @@ def test_verified_entries_are_the_researched_ones():
         "rule_text": get("us")["response"]["rule_text"],
         "extension_days": 10,
         "extension_unit": "business",
-        "silence_is_denial": True,
+        "silence_is_denial": None,
     }
     assert get("us-mi")["covers"]["governor"] is False
 
@@ -220,3 +220,110 @@ def test_auto_upgrade_from_005_marks_seeded_agencies_federal(data_dir, monkeypat
             .fetchone()
         )
     assert tuple(row) == ("us", "federal")
+
+
+STUB_ALLOWED = {("id",), ("name",), ("level",), ("statute", "name"), ("sources",), ("verified",)}
+
+
+def _leaves(obj, prefix=()):
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            yield from _leaves(v, (*prefix, k))
+    else:
+        yield prefix, obj
+
+
+def test_stubs_are_null_everywhere_except_identity():
+    """A stub may not carry a value nobody sourced."""
+    for j in load_all().values():
+        if j["verified"]:
+            continue
+        for path, value in _leaves(j):
+            if path in STUB_ALLOWED:
+                continue
+            assert value is None, (j["id"], path, value)
+
+
+def test_verified_entries_never_store_a_clock_without_a_day_count():
+    for i in ("us-tx", "us-wa", "us-ny", "us-fl"):
+        assert get(i)["response"]["days"] is None, i
+    assert get("us-fl")["response"]["unit"] == "none"
+
+
+def test_malformed_file_names_itself(tmp_path, monkeypatch):
+    import openfoia.jurisdictions as mod
+
+    (tmp_path / "us-xx.json").write_text("{not json")
+    monkeypatch.setattr(mod, "_DIR", tmp_path)
+    mod.load_all.cache_clear()
+    try:
+        with pytest.raises(ValueError, match=r"us-xx\.json"):
+            mod.load_all()
+        (tmp_path / "us-xx.json").write_text(json.dumps({"id": "us-yy"}))
+        mod.load_all.cache_clear()
+        with pytest.raises(ValueError, match="does not match filename"):
+            mod.load_all()
+    finally:
+        mod.load_all.cache_clear()
+
+
+def test_unknown_clock_means_no_due_date(data_dir, monkeypatch):
+    from datetime import UTC, datetime
+
+    from openfoia.db import get_session
+    from openfoia.gateways.base import DeliveryResult, DeliveryStatus
+    from openfoia.models import Agency, Request
+
+    _ok(runner.invoke(app, ["init"]))
+    out = _ok(
+        runner.invoke(
+            app,
+            [
+                "agency",
+                "add",
+                "--name",
+                "Austin ISD",
+                "-j",
+                "us-tx",
+                "-l",
+                "school_district",
+                "--email",
+                "records@austinisd.example",
+            ],
+        )
+    )
+    assert "unknown (no statutory day count)" in " ".join(out.split())
+    with get_session() as s:
+        assert (
+            s.query(Agency).filter(Agency.name == "Austin ISD").one().typical_response_days is None
+        )
+        assert (
+            s.query(Agency).filter(Agency.abbreviation == "CIA").one().typical_response_days == 45
+        )
+    out = _ok(runner.invoke(app, ["agency", "info", "Austin ISD"], env={"COLUMNS": "200"}))
+    assert "unknown (no statutory day count)" in " ".join(out.split())
+
+    class FakeGateway:
+        def __init__(self, **kw):
+            pass
+
+        async def send(self, payload):
+            return DeliveryResult(
+                status=DeliveryStatus.SENT,
+                reference_id="ref-1",
+                sent_at=datetime(2026, 1, 5, tzinfo=UTC),
+            )
+
+    monkeypatch.setattr("openfoia.gateways.email.EmailGateway", FakeGateway)
+    monkeypatch.setenv("OPENFOIA_SMTP_USER", "u")
+    monkeypatch.setenv("OPENFOIA_SMTP_PASSWORD", "p")
+    args = ["-a", "Austin ISD", "-s", "Gifted program 1990s", "-n", "Jo", "-e", "jo@example.com"]
+    _ok(runner.invoke(app, ["request", "new", *args, "-b", "Please send the records."]))
+    out = _ok(runner.invoke(app, ["request", "send", *args, "-b", "Please send the records."]))
+    assert "no statutory deadline known for this body" in out
+    with get_session() as s:
+        req = s.query(Request).one()
+        assert req.sent_at is not None and req.due_date is None
+    out = _ok(runner.invoke(app, ["deadlines", "list"]))
+    assert "no statutory deadline known for this body" in out
+    assert runner.invoke(app, ["deadlines", "check"]).exit_code == 0

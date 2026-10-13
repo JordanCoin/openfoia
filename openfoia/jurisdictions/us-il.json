@@ -10,9 +10,9 @@
   "response": {
     "days": 5,
     "unit": "business",
-    "rule_text": "5 business days; one 5-business-day extension with written notice.",
-    "extension_days": 5,
-    "extension_unit": "business",
+    "rule_text": "5 business days to respond.",
+    "extension_days": null,
+    "extension_unit": null,
     "silence_is_denial": null
   },
   "fees": {
@@ -30,9 +30,9 @@
   "appeal": {
     "body": "Public Access Counselor (Attorney General), or circuit court",
     "type": "ombudsman_advisory",
-    "deadline_days": 60,
-    "deadline_unit": "calendar",
-    "rule_text": "Request for review to the Public Access Counselor within 60 days, or suit in circuit court."
+    "deadline_days": null,
+    "deadline_unit": null,
+    "rule_text": "Request for review to the Public Access Counselor, or suit in circuit court. The review deadline was not confirmed from the fetched source."
   },
   "exemptions_citation": "5 ILCS 140/7",
   "format_rule": null,
