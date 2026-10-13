@@ -44,6 +44,7 @@ def _auto_register() -> None:
     from .fec import FECAdapter
     from .govinfo import GovInfoAdapter
     from .muckrock import MuckRockAdapter
+    from .nara import NARAAdapter
     from .opencorporates import OpenCorporatesAdapter
     from .propublica_nonprofit import ProPublicaNonprofitAdapter
     from .regulations import RegulationsGovAdapter
@@ -60,6 +61,7 @@ def _auto_register() -> None:
     register("fec", FECAdapter)
     register("regulations", RegulationsGovAdapter)
     register("cia", CIAReadingRoomAdapter)
+    register("nara", NARAAdapter)
 
 
 _auto_register()

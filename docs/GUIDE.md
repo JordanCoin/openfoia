@@ -61,6 +61,9 @@ outside the database, like graph exports.
 
 ### Option A: File a new FOIA request
 
+Not sure whether your record is federal, state or local, or who holds it?
+Read [The Records Ladder](RECORDS_LADDER.md) first.
+
 ```bash
 # Search for the right agency
 openfoia records search "FBI" --source muckrock
@@ -148,6 +151,36 @@ A source that fails (rate limit, timeout, missing token) is reported as an
 error and the command exits non-zero; "No results found" means the source
 answered and had nothing. MuckRock's API now needs a token: set
 `OPENFOIA_MUCKROCK_TOKEN`.
+
+#### NARA Catalog (`--source nara`)
+
+The National Archives Catalog holds descriptions of records that agencies have
+transferred to NARA, and OCR text for many digitised ones (record groups such
+as RG 263, CIA). It needs a free API key: there is no signup form, you email
+`Catalog_API@nara.gov` and set `OPENFOIA_NARA_API_KEY`. The default key allows
+10,000 queries a month. openfoia counts your queries locally in
+`nara_quota.json` under the data directory, warns at 80 percent and refuses at
+100 percent (`OPENFOIA_NARA_IGNORE_QUOTA=1` overrides if NARA raised your
+tier). Requests go out one per second. `OPENFOIA_NARA_API_BASE` is a
+test-only knob: it accepts only `https://catalog.archives.gov/...` or a
+localhost server, so the key is never sent anywhere else.
+
+```bash
+openfoia records search "Gittinger" -s nara -n 50 --json
+openfoia records fetch 7283224 -s nara     # NAID from the search or the catalog URL
+```
+
+Fetch stores the record's OCR text page by page when the catalog has it, so
+`docs grep` cites real pages; when it has none, the catalog description is
+stored instead and `docs show` says so. NARA's API terms ask users not to
+cache or scrape the catalog, so openfoia stores only the records you fetch by
+NAID, nothing from search results, and prints the required notice: this
+product uses the National Archives Catalog API but is not endorsed or
+certified by the National Archives and Records Administration.
+
+GovInfo (`--source govinfo`) works without a key on the shared DEMO_KEY, which
+is rate limited; set `OPENFOIA_GOVINFO_API_KEY` from https://api.data.gov/signup/
+for your own limit.
 
 ### From hits to citations
 

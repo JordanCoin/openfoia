@@ -1830,7 +1830,7 @@ def _verdict_summary(counts: dict[str, int]) -> str:
 
 def _doc_source(request_number: str | None) -> str:
     prefix = (request_number or "").split("-", 1)[0]
-    return {"DC": "documentcloud", "MUCKROCK": "muckrock"}.get(prefix, "local")
+    return {"DC": "documentcloud", "MUCKROCK": "muckrock", "NARA": "nara"}.get(prefix, "local")
 
 
 @docs_app.command("list")
@@ -4909,6 +4909,13 @@ def _records_search_all(
         typer.echo(msg, err=json_lines)
 
     say(f"Sending '{query}' to {len(sources)} services: {', '.join(sources)}")
+    if "nara" in sources and getattr(get_adapter("nara"), "has_key", False):
+        from .records.nara import ATTRIBUTION
+
+        say(
+            f"Note: {query!r} also goes to catalog.archives.gov with your API key "
+            f"(counted against the 10,000/month quota). {ATTRIBUTION}"
+        )
 
     async def one(source: str):
         for key, owner in _FILTER_SOURCES.items():
@@ -4916,6 +4923,8 @@ def _records_search_all(
                 return source, None, f"skipped ({key} filter not supported)"
         try:
             adapter = get_adapter(source)
+            if source == "nara" and not adapter.has_key:
+                return source, None, "skipped (no OPENFOIA_NARA_API_KEY)"
             result = await _search_one(adapter, source, query, limit, kwargs)
         except Exception as e:
             return source, None, f"error: {e}"
@@ -4971,7 +4980,7 @@ def records_search(
         "-s",
         help=(
             "Data source (opencorporates, sec, muckrock, documentcloud, usaspending, "
-            "nonprofits, govinfo, fec, regulations, cia)"
+            "nonprofits, govinfo, fec, regulations, cia, nara)"
         ),
     ),
     jurisdiction: str | None = typer.Option(
@@ -5054,6 +5063,17 @@ def records_search(
             typer.echo(notice, err=True)
         else:
             rprint(f"\n[yellow]{notice}[/yellow]")
+    elif source == "nara":
+        from .records.nara import ATTRIBUTION, NO_KEY_MESSAGE
+
+        if not adapter.has_key:
+            rprint(f"[red]{NO_KEY_MESSAGE}[/red]")
+            raise typer.Exit(1)
+        typer.echo(
+            f"Note: sending {query!r} to catalog.archives.gov with your API key "
+            f"(counted against the 10,000/month quota). {ATTRIBUTION}",
+            err=True,
+        )
 
     try:
         if quiet:
@@ -5507,18 +5527,32 @@ def records_fetch(
         for doc_id in ids:
             _records_fetch_cia(doc_id)
         return
-    if source != "documentcloud":
+    # Sources whose adapter has pull_text(); the prefix is the stored request number's.
+    prefixes = {"documentcloud": "DC-", "nara": "NARA-"}
+    if source not in prefixes:
         rprint(
             f"[yellow]Fetch not yet supported for '{source}'. Use 'records download' for MuckRock.[/yellow]"
         )
         raise typer.Exit(1)
+    prefix = prefixes[source]
 
     from .cases import active_case_id_in_db
     from .db import get_db_path, get_session
     from .models import Request as RequestModel
-    from .records.documentcloud import DocumentCloudAdapter
+    from .records import get_adapter
 
-    adapter = DocumentCloudAdapter()
+    adapter = get_adapter(source)
+    if source == "nara":
+        from .records.nara import ATTRIBUTION, NO_KEY_MESSAGE
+
+        if not adapter.has_key:
+            rprint(f"[red]{NO_KEY_MESSAGE}[/red]")
+            raise typer.Exit(1)
+        typer.echo(
+            "Note: fetching from catalog.archives.gov with your API key (one query per id, "
+            f"counted against the 10,000/month quota). {ATTRIBUTION}",
+            err=True,
+        )
     case_id = active_case_id_in_db()
 
     stored: dict[str, str | None] = {}  # id -> name of another case holding it
@@ -5526,14 +5560,14 @@ def records_fetch(
         from .models import Case
 
         with get_session() as session:
-            numbers = [f"DC-{i}" for i in ids]
+            numbers = [f"{prefix}{i}" for i in ids]
             for req in session.query(RequestModel).filter(RequestModel.request_number.in_(numbers)):
                 if case_id and req.case_id is None:
                     req.case_id = case_id
                 other = None
                 if req.case_id and req.case_id != case_id:
                     other = session.get(Case, req.case_id)
-                stored[req.request_number.removeprefix("DC-")] = other.name if other else None
+                stored[req.request_number.removeprefix(prefix)] = other.name if other else None
 
     fetched, skipped, failed = [], [], []
     for doc_id in ids:
@@ -5877,11 +5911,15 @@ def _doc_source_url(doc, req) -> str | None:
     mr_match = re.match(r"muckrock-(\d+)", doc.filename or "")
     if mr_match:
         return f"https://www.muckrock.com/foi/{mr_match.group(1)}/"
+    nara_match = re.match(r"nara-(\d+)", doc.filename or "")
+    if nara_match:
+        return f"https://catalog.archives.gov/id/{nara_match.group(1)}"
     return None
 
 
 _CREST_RE = re.compile(r"(?:CIA|NSA)-RDP\d{2}[A-Z]?-?\d{5}[A-Z]\d{12}-\d")
 _SOURCE_LABEL = {
+    "nara": "National Archives Catalog",
     "documentcloud": "DocumentCloud",
     "muckrock": "MuckRock",
     "cia": "CIA Reading Room",

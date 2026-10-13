@@ -308,105 +308,16 @@ class DocumentCloudAdapter(RecordAdapter):
 
         Returns (document_id, full_text) or (None, None) on failure.
         """
+        from .store import store_text_document
+
         entity = await self.fetch(identifier)
         if not entity:
             return None, None
-
-        full_text = entity.extra_data.get("full_text")
-        if not full_text:
-            return None, None
-
-        from uuid import uuid4
-
-        from ..db import ensure_db, get_session
-        from ..doctext import replace_pages
-        from ..models import (
-            Agency,
-            DeliveryMethod,
-            Document,
-            DocumentPage,
-            DocumentType,
-            Request,
-            RequestStatus,
-            User,
-        )
-
-        ensure_db()
-        page_texts = entity.extra_data.get("page_texts")
-        pages = page_texts or [full_text]
-
         dc_id = entity.identifiers.get("documentcloud_id", identifier)
-
-        with get_session() as session:
-            # Check if already fetched — return existing record
-            existing_req = (
-                session.query(Request).filter(Request.request_number == f"DC-{dc_id}").first()
-            )
-            if existing_req:
-                if case_id and existing_req.case_id is None:
-                    existing_req.case_id = case_id
-                existing_doc = (
-                    session.query(Document).filter(Document.request_id == existing_req.id).first()
-                )
-                if existing_doc:
-                    # Update text in case it changed
-                    existing_doc.extracted_text = full_text
-                    existing_doc.file_size = len(full_text.encode())
-                    stored = (
-                        session.query(DocumentPage)
-                        .filter(DocumentPage.document_id == existing_doc.id)
-                        .count()
-                    )
-                    if page_texts is None and stored > 1:
-                        logger.warning(
-                            "Per-page text unavailable on re-fetch of %s; kept the %d stored pages",
-                            dc_id,
-                            stored,
-                        )
-                    else:
-                        replace_pages(session, existing_doc.id, pages)
-                    return existing_doc.id, full_text
-
-            user = session.query(User).first()
-            if not user:
-                user = User(
-                    id=str(uuid4()),
-                    email="local@openfoia.local",
-                    name="Local User",
-                )
-                session.add(user)
-                session.flush()
-
-            agency = session.query(Agency).first()
-
-            req = Request(
-                id=str(uuid4()),
-                request_number=f"DC-{dc_id}",
-                requester_id=user.id,
-                agency_id=agency.id if agency else user.id,
-                subject=entity.name,
-                body=f"Pulled from DocumentCloud: {entity.source_url or dc_id}",
-                delivery_method=DeliveryMethod.EMAIL,
-                status=RequestStatus.COMPLETE,
-                case_id=case_id,
-            )
-            session.add(req)
-            session.flush()
-
-            doc_id = str(uuid4())
-            doc = Document(
-                id=doc_id,
-                request_id=req.id,
-                doc_type=DocumentType.FULL_RESPONSE,
-                filename=f"documentcloud-{dc_id}.txt",
-                file_path="",
-                file_size=len(full_text.encode()),
-                mime_type="text/plain",
-                page_count=entity.extra_data.get("pages"),
-                extracted_text=full_text,
-                ocr_completed=True,
-            )
-            session.add(doc)
-            replace_pages(session, doc_id, pages)
-
-        return doc_id, full_text
+        return store_text_document(
+            entity,
+            request_number=f"DC-{dc_id}",
+            filename=f"documentcloud-{dc_id}.txt",
+            body=f"Pulled from DocumentCloud: {entity.source_url or dc_id}",
+            case_id=case_id,
+        )
