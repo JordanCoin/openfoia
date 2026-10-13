@@ -99,9 +99,8 @@ prints a notice.
 Entity extraction picks the best backend it finds. On a local model the LLM
 validation step can take minutes per document. To skip it, force a local
 backend with `openfoia analyze extract <id> --tier gliner` (or `spacy`,
-`regex`), or set `OPENFOIA_AI_PROVIDER=none`. Setting
-`OPENFOIA_ANTHROPIC_API_KEY`, `OPENFOIA_OPENAI_API_KEY` or
-`OPENFOIA_OLLAMA_BASE_URL` switches the provider back on, so unset those too.
+`regex`), or set `OPENFOIA_AI_PROVIDER=none`, which wins over any API key
+or Ollama URL in the config file or environment.
 
 ## Data Sources
 

@@ -17,6 +17,21 @@ from openfoia.pipeline.extract import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _isolated_config(tmp_path, monkeypatch):
+    """load_config() must never read the real ~/.openfoia."""
+    monkeypatch.setenv("OPENFOIA_DATA_DIR", str(tmp_path))
+
+
+def test_provider_none_beats_key_implied_providers(monkeypatch):
+    from openfoia.config import load_config
+
+    monkeypatch.setenv("OPENFOIA_AI_PROVIDER", "none")
+    monkeypatch.setenv("OPENFOIA_ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setenv("OPENFOIA_OLLAMA_BASE_URL", "http://localhost:11434")
+    assert load_config().ai.provider == "none"
+
+
 def _words(s: str) -> int:
     return len(ex._GLINER_WORD.findall(s))
 

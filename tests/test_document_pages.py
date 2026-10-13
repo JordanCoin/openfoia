@@ -152,6 +152,45 @@ def test_documentcloud_pull_stores_pages(db, monkeypatch, fail_page, expected):
     assert _pages(doc_id) == expected
 
 
+def test_documentcloud_refetch_keeps_real_pages_when_pages_fail(db, monkeypatch):
+    from openfoia.records import documentcloud
+
+    transport = {"t": _dc_transport(None)}
+    monkeypatch.setattr(
+        documentcloud,
+        "egress_client",
+        lambda policy=None, **kw: httpx.AsyncClient(transport=transport["t"]),
+    )
+    adapter = documentcloud.DocumentCloudAdapter()
+    doc_id, _ = asyncio.run(adapter.pull_text("42"))
+    transport["t"] = _dc_transport(fail_page=2)
+    again, _ = asyncio.run(adapter.pull_text("42"))
+    assert again == doc_id
+    assert [n for n, _ in _pages(doc_id)] == [1, 2, 3]
+
+
+def test_migrations_reach_003_fresh_and_from_001(tmp_path, monkeypatch):
+    import sqlite3
+
+    from alembic import command
+
+    from openfoia import db as dbmod
+
+    monkeypatch.setenv("OPENFOIA_DATA_DIR", str(tmp_path / "fresh"))
+    dbmod.init_db(seed=False)
+    version = "select version_num from alembic_version"
+    assert sqlite3.connect(dbmod.get_db_path()).execute(version).fetchall() == [("003",)]
+
+    monkeypatch.setenv("OPENFOIA_DATA_DIR", str(tmp_path / "old"))
+    cfg = dbmod._alembic_config()
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{dbmod.get_db_path()}")
+    command.upgrade(cfg, "001")
+    monkeypatch.setattr(dbmod, "_schema_checked", False)
+    with dbmod.get_session() as s:
+        s.connection().exec_driver_sql("select count(*) from document_pages").scalar()
+    assert sqlite3.connect(dbmod.get_db_path()).execute(version).fetchall() == [("003",)]
+
+
 # --- grep: FTS5 and the LIKE fallback --------------------------------------
 
 
@@ -215,6 +254,26 @@ def test_grep_finds_documents_written_without_pages(db):
         s.query(DocumentPage).delete()
     hits, _ = _search("hocking")
     assert [(h.document_id, h.page) for h in hits] == [(doc_id, 1)]
+
+
+def test_grep_flags_single_page_documents(db):
+    from openfoia.cli import app
+
+    doc_id = _add_doc(["all 40 pages of Hocking text in one blob"], page_count=40)
+    res = runner.invoke(app, ["docs", "grep", "hocking", "--json"])
+    (hit,) = json.loads(res.stdout)["hits"]
+    assert (hit["page_count"], hit["stored_pages"], hit["pages_are_real"]) == (40, 1, False)
+
+    res = runner.invoke(app, ["docs", "grep", "hocking"])
+    assert f"{doc_id[:8]}  Board minutes  p.1*" in res.stdout
+    assert "page numbers here are not the source's page numbers" in res.stdout
+
+
+def test_like_offsets_survive_length_changing_case_fold(db, monkeypatch):
+    monkeypatch.setattr(doctext, "ensure_fts", lambda conn: False)
+    _add_doc(["İİİ Straße Hocking"])  # "İ".lower() is two characters
+    (hit,), _ = _search("hocking")
+    assert hit.passage[hit.match_start : hit.match_end] == "Hocking"
 
 
 def test_cli_grep_json_and_show(corpus):

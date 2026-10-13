@@ -324,6 +324,7 @@ class DocumentCloudAdapter(RecordAdapter):
             Agency,
             DeliveryMethod,
             Document,
+            DocumentPage,
             DocumentType,
             Request,
             RequestStatus,
@@ -331,7 +332,8 @@ class DocumentCloudAdapter(RecordAdapter):
         )
 
         ensure_db()
-        pages = entity.extra_data.get("page_texts") or [full_text]
+        page_texts = entity.extra_data.get("page_texts")
+        pages = page_texts or [full_text]
 
         dc_id = entity.identifiers.get("documentcloud_id", identifier)
 
@@ -350,7 +352,19 @@ class DocumentCloudAdapter(RecordAdapter):
                     # Update text in case it changed
                     existing_doc.extracted_text = full_text
                     existing_doc.file_size = len(full_text.encode())
-                    replace_pages(session, existing_doc.id, pages)
+                    stored = (
+                        session.query(DocumentPage)
+                        .filter(DocumentPage.document_id == existing_doc.id)
+                        .count()
+                    )
+                    if page_texts is None and stored > 1:
+                        logger.warning(
+                            "Per-page text unavailable on re-fetch of %s; kept the %d stored pages",
+                            dc_id,
+                            stored,
+                        )
+                    else:
+                        replace_pages(session, existing_doc.id, pages)
                     return existing_doc.id, full_text
 
             user = session.query(User).first()

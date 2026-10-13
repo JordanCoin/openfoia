@@ -5,6 +5,7 @@ Everything here runs against the local database. Nothing touches the network.
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass
 
 from sqlalchemy import text as sql
@@ -28,6 +29,7 @@ _FTS_DDL = [
 ]
 
 _OPEN, _CLOSE = "\x02", "\x03"
+_FTS_QUERY_ERRORS = ("fts5: syntax error", "unterminated string", "no such column")
 
 
 def split_pages(text: str) -> list[str]:
@@ -98,6 +100,9 @@ class GrepHit:
     passage: str
     match_start: int  # offsets of the first match within passage
     match_end: int
+    page_count: int | None  # pages in the source, when known
+    stored_pages: int
+    pages_are_real: bool  # False when fewer pages are stored than the source has
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -120,12 +125,9 @@ def _spans_from_highlight(marked: str) -> tuple[str, list[tuple[int, int]]]:
 
 
 def _spans_from_substring(text: str, needle: str) -> list[tuple[int, int]]:
-    hay, needle = text.lower(), needle.lower()
-    spans, i = [], hay.find(needle)
-    while needle and i != -1:
-        spans.append((i, i + len(needle)))
-        i = hay.find(needle, i + len(needle))
-    return spans
+    if not needle:
+        return []
+    return [m.span() for m in re.finditer(re.escape(needle), text, re.IGNORECASE)]
 
 
 def _passages(text: str, spans: list[tuple[int, int]], context: int):
@@ -139,17 +141,32 @@ def _passages(text: str, spans: list[tuple[int, int]], context: int):
         yield " ".join(text[lo:s].split()), text[s:e], " ".join(text[e:hi].split())
 
 
-def _doc_titles(session: Session, ids: set[str]) -> dict[str, str]:
-    from .models import Document, Request
+def _doc_info(session: Session, ids: set[str]) -> dict[str, tuple[str, int | None, int]]:
+    """id -> (title, source page_count, stored page count)."""
+    from sqlalchemy import func
 
+    from .models import Document, DocumentPage, Request
+
+    stored = (
+        session.query(func.count(DocumentPage.id))
+        .filter(DocumentPage.document_id == Document.id)
+        .scalar_subquery()
+    )
     rows = (
-        session.query(Document.id, Document.filename, Request.request_number, Request.subject)
+        session.query(
+            Document.id,
+            Document.filename,
+            Request.request_number,
+            Request.subject,
+            Document.page_count,
+            stored,
+        )
         .outerjoin(Request, Request.id == Document.request_id)
         .filter(Document.id.in_(ids))
     )
     return {
-        i: (subj if (num or "").startswith("DC-") and subj else fname)
-        for i, fname, num, subj in rows
+        i: (subj if (num or "").startswith("DC-") and subj else fname, declared, n)
+        for i, fname, num, subj, declared, n in rows
     }
 
 
@@ -195,7 +212,12 @@ def search_pages(
         )
         try:
             rows = conn.execute(stmt, {"q": query, **params}).fetchall()
-        except OperationalError:
+        except OperationalError as e:
+            # Query-syntax errors only. "no such column" is FTS5 reading a
+            # hyphenated term (FOIA-2024) as a column filter.
+            msg = str(e.orig)
+            if not any(m in msg for m in _FTS_QUERY_ERRORS):
+                raise
             engine = "fts5-literal"
             phrase = '"' + query.replace('"', '""') + '"'
             rows = conn.execute(stmt, {"q": phrase, **params}).fetchall()
@@ -210,12 +232,23 @@ def search_pages(
         if len(found) >= limit:
             break
 
-    titles = _doc_titles(session, {f[0] for f in found}) if found else {}
+    info = _doc_info(session, {f[0] for f in found}) if found else {}
     hits = []
     for doc_id, page_no, before, match, after in found:
+        title, declared, stored = info.get(doc_id, ("", None, 0))
         start = len(before) + (1 if before else 0)
         passage = " ".join(x for x in (before, match, after) if x)
         hits.append(
-            GrepHit(doc_id, titles.get(doc_id, ""), page_no, passage, start, start + len(match))
+            GrepHit(
+                doc_id,
+                title,
+                page_no,
+                passage,
+                start,
+                start + len(match),
+                page_count=declared,
+                stored_pages=stored,
+                pages_are_real=not (declared and declared > stored),
+            )
         )
     return hits, engine

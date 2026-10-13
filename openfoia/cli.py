@@ -1583,13 +1583,12 @@ def docs_ocr(
 
 
 def _open_docs_db() -> None:
-    """Exit if there is no database; otherwise bring its schema up to date."""
-    from .db import get_db_path, run_migrations
+    """Exit if there is no database (get_session() handles schema upgrades)."""
+    from .db import get_db_path
 
     if not get_db_path().exists():
         rprint("[yellow]Database not initialized. Run 'openfoia init' first.[/yellow]")
         raise typer.Exit(1)
-    run_migrations()
 
 
 def _resolve_doc(session, doc_id: str):
@@ -1602,6 +1601,12 @@ def _resolve_doc(session, doc_id: str):
         typer.echo(f"Document id '{doc_id}' {problem}.", err=True)
         raise typer.Exit(1)
     return matches[0]
+
+
+SINGLE_PAGE_CAVEAT = (
+    "fewer pages are stored than the source has, so page numbers here are not "
+    "the source's page numbers."
+)
 
 
 def _doc_source(request_number: str | None) -> str:
@@ -1721,7 +1726,7 @@ def docs_show(
     if declared and declared > len(pages):
         typer.echo(
             f"Note: the source has {declared} pages but the text is stored as {len(pages)}; "
-            "page numbers here are not the source's page numbers."
+            + SINGLE_PAGE_CAVEAT
         )
     for n, _, text in selected:
         typer.echo(f"\n--- page {n} ---\n{text}")
@@ -1779,10 +1784,13 @@ def docs_grep(
     for h in hits:
         body = Text(h.passage)
         body.stylize("bold yellow", h.match_start, h.match_end)
-        console.print(Text(f"{h.document_id[:8]}  {h.title}  p.{h.page}", style="cyan"))
+        star = "" if h.pages_are_real else "*"
+        console.print(Text(f"{h.document_id[:8]}  {h.title}  p.{h.page}{star}", style="cyan"))
         console.print(body)
         console.print()
     typer.echo(f"{len(hits)} passage(s)" + (" (limit reached)" if len(hits) >= limit else ""))
+    if not all(h.pages_are_real for h in hits):
+        typer.echo(f"* {SINGLE_PAGE_CAVEAT}")
 
 
 # === Agency Commands ===
@@ -2574,9 +2582,8 @@ def analyze_extract(
 
     The LLM step can take minutes per document on a local model. To skip it,
     pass --tier gliner (or spacy/regex), or set OPENFOIA_AI_PROVIDER=none,
-    which disables the LLM even if an API key is configured. Note that
-    OPENFOIA_ANTHROPIC_API_KEY, OPENFOIA_OPENAI_API_KEY and
-    OPENFOIA_OLLAMA_BASE_URL each override the provider when set.
+    which disables the LLM even if an API key is configured in the config
+    file or in OPENFOIA_ANTHROPIC_API_KEY / OPENFOIA_OPENAI_API_KEY.
     """
     from .db import get_db_path, get_session
     from .models import Document, Entity

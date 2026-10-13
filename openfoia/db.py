@@ -376,10 +376,8 @@ def init_db(seed: bool = True, password: str | None = None) -> None:
 
 
 def ensure_db() -> None:
-    """Create the database if missing, otherwise apply pending migrations."""
-    if get_db_path().exists():
-        run_migrations()
-    else:
+    """Create the database if missing. get_session() applies pending migrations."""
+    if not get_db_path().exists():
         init_db()
 
 
