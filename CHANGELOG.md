@@ -10,6 +10,16 @@ exhaustive lists.
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-10-13
+
+The deep-research release: cases, per-page text with offline full-text
+search, citations, batch fetch, a CIA reading-room source, and per-page
+OCR routing driven by the `pdf-extract` 0.7.0 engine's `--json` verdicts.
+The engine binaries for this release are built separately and attached to
+this release page. Known limit: cia.gov's bot filter rejects non-browser
+requests to the reading room, so `--source cia` reports "blocked" today; the
+documented workaround is a browser download plus `openfoia docs ingest`.
+
 ### Added
 
 - Case notes: `openfoia case note "<text>" [--doc <id> --page N --quote "<text>"
@@ -371,6 +381,7 @@ security/OPSEC pass; the notes below describe what it changed, factually.
 Baseline for this changelog. Earlier tags (`v0.0.1` through `v2.0.0`,
 2026-02-19 to 2026-03-22) predate it; see the git history for details.
 
+[4.3.0]: https://github.com/JordanCoin/openfoia/compare/v4.2.0...v4.3.0
 [4.2.0]: https://github.com/JordanCoin/openfoia/compare/v4.1.0...v4.2.0
 [4.1.0]: https://github.com/JordanCoin/openfoia/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/JordanCoin/openfoia/compare/v3.2.2...v4.0.0
