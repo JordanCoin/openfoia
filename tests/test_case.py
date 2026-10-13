@@ -228,7 +228,7 @@ def test_database_from_older_release_upgrades_on_first_session(monkeypatch):
     result = runner.invoke(app, ["request", "list"])
 
     assert result.exit_code == 0, result.output
-    assert "Upgrading database schema 001 -> 006" in result.stderr
+    assert "Upgrading database schema 001 -> 007" in result.stderr
     _ok(runner.invoke(app, ["case", "new", "After upgrade"]))
 
 
