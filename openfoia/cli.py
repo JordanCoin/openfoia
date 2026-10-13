@@ -1610,6 +1610,18 @@ SINGLE_PAGE_CAVEAT = (
 )
 
 
+def _case_document_ids(session, case_id: str) -> list[str]:
+    from .models import Document
+    from .models import Request as RequestModel
+
+    rows = (
+        session.query(Document.id)
+        .join(RequestModel, Document.request_id == RequestModel.id)
+        .filter(RequestModel.case_id == case_id)
+    )
+    return [r[0] for r in rows]
+
+
 def _doc_source(request_number: str | None) -> str:
     prefix = (request_number or "").split("-", 1)[0]
     return {"DC": "documentcloud", "MUCKROCK": "muckrock"}.get(prefix, "local")
@@ -1754,8 +1766,14 @@ def docs_grep(
     note: str | None = typer.Option(
         None, "--note", help="Save the hits (as --save) with this note"
     ),
+    all_docs: bool = typer.Option(
+        False, "--all-docs", help="Search every document, not only the active case's"
+    ),
 ):
     """Keyword-in-context search over every stored page, fully offline.
+
+    While a case is active only that case's documents are searched
+    (--all-docs for everything); --save never stores hits from other cases.
 
     Prints document id, title, page and the passage around each match.
     Uses the local SQLite FTS5 index; if this SQLite build has no FTS5
@@ -1766,20 +1784,24 @@ def docs_grep(
         openfoia docs grep '"school board" OR WISC' --context 80
         openfoia docs grep 'NEAR(contract audit, 15)' --doc 3f2a --json
     """
+    from .cases import active_case_id_in_db
     from .db import get_session
     from .doctext import search_pages
 
     _open_docs_db()
-    case_id = None
-    if save or note is not None:
-        from .cases import active_case_id_in_db
-
-        case_id = active_case_id_in_db()
-        if not case_id:
-            typer.echo("No active case to save to; run 'openfoia case use <name>'.", err=True)
-            raise typer.Exit(1)
+    saving = save or note is not None
+    case_id = active_case_id_in_db()
+    if saving and not case_id:
+        typer.echo("No active case to save to; run 'openfoia case use <name>'.", err=True)
+        raise typer.Exit(1)
     with get_session() as session:
+        case_docs = set(_case_document_ids(session, case_id)) if case_id else set()
         doc_ids = [_resolve_doc(session, d).id for d in doc] if doc else None
+        if case_id and not all_docs:
+            doc_ids = [d for d in doc_ids if d in case_docs] if doc_ids else list(case_docs)
+            if not doc_ids:
+                typer.echo("No matches (no documents in the active case; --all-docs).")
+                return
         hits, engine = search_pages(
             session, query, context=context, limit=limit, document_ids=doc_ids
         )
@@ -1791,21 +1813,38 @@ def docs_grep(
     if notice:
         typer.echo(f"Note: {notice}", err=True)
 
-    if case_id and hits:
+    if saving and hits:
         from .models import CaseNote
 
+        saved = skipped = dupes = 0
         with get_session() as session:
+            seen = {
+                (n.document_id, n.page, n.quote)
+                for n in session.query(CaseNote).filter(CaseNote.case_id == case_id)
+            }
             for h in hits:
-                session.add(
-                    CaseNote(
-                        case_id=case_id,
-                        document_id=h.document_id,
-                        page=h.page,
-                        quote=h.passage,
-                        note=note,
+                if h.document_id not in case_docs:
+                    skipped += 1  # never attach another case's document to this one
+                elif (h.document_id, h.page, h.passage) in seen:
+                    dupes += 1
+                else:
+                    seen.add((h.document_id, h.page, h.passage))
+                    session.add(
+                        CaseNote(
+                            case_id=case_id,
+                            document_id=h.document_id,
+                            page=h.page,
+                            quote=h.passage,
+                            note=note,
+                        )
                     )
-                )
-        typer.echo(f"Saved {len(hits)} note(s) to the active case.", err=True)
+                    saved += 1
+        msg = f"Saved {saved} note(s) to the active case."
+        if dupes:
+            msg += f" {dupes} already saved."
+        if skipped:
+            msg += f" Skipped {skipped} hit(s) from documents outside the case."
+        typer.echo(msg, err=True)
 
     if as_json:
         out = {"query": query, "engine": engine, "hits": [h.to_dict() for h in hits]}
@@ -3072,11 +3111,12 @@ def _print_mentions(session, entities, labels: tuple[str, str], graph_name: str 
     from .models import Request as RequestModel
 
     needles = [lbl.lower() for lbl in labels]
+    patterns = [re.compile(rf"\b{re.escape(n)}\b") for n in needles]
     found: dict[str, list[set[int] | None]] = {}
     for e in entities:
         text = (e.normalized_text or e.raw_text or "").lower()
-        for i, needle in enumerate(needles):
-            if needle in text:
+        for i, pattern in enumerate(patterns):
+            if pattern.search(text):
                 slot = found.setdefault(e.document_id, [None, None])
                 slot[i] = slot[i] or set()
                 if e.page_number:
@@ -3094,7 +3134,7 @@ def _print_mentions(session, entities, labels: tuple[str, str], graph_name: str 
             if not pages:  # entities carry no page: look the label up in the stored pages
                 rows = session.query(DocumentPage.page_number).filter(
                     DocumentPage.document_id == doc_id,
-                    DocumentPage.text.ilike(f"%{label}%"),
+                    DocumentPage.text.ilike(f"%{_like_escape(label)}%", escape="\\"),
                 )
                 pages = {r[0] for r in rows}
             cells.append(
@@ -3141,6 +3181,10 @@ def _print_mentions(session, entities, labels: tuple[str, str], graph_name: str 
         chain.append(label_of[end])
         end = prev[end]
     rprint(f"Shortest path in {graph_name!r}: " + " -> ".join(reversed(chain)))
+
+
+def _like_escape(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _graph_safe_name(name: str) -> str:
@@ -4882,14 +4926,22 @@ def records_filings(
 
 
 def _ids_from_results(path: Path, source: str) -> list[str]:
-    """Ids in a 'records search --json' (JSON lines) or '--raw' (JSON list) file."""
-    text = path.read_text()
+    """Ids in a 'records search --json' (JSON lines), '--raw' (JSON list) or one-id-per-line file."""
+    lines = [ln.strip() for ln in path.read_text().splitlines() if ln.strip()]
     try:
-        data = json.loads(text)
+        data = json.loads("\n".join(lines))
     except json.JSONDecodeError:
-        data = [json.loads(line) for line in text.splitlines() if line.strip()]
+        try:
+            data = [json.loads(ln) for ln in lines]
+        except json.JSONDecodeError:
+            data = [{"id": ln} for ln in lines]  # plain id list
     if isinstance(data, dict):
         data = [data]
+    if isinstance(data, list):
+        data = [{"id": str(i)} if isinstance(i, str | int) else i for i in data]
+    if not isinstance(data, list) or not all(isinstance(i, dict) for i in data):
+        rprint(f"[red]{path}: expected 'records search --json' or '--raw' output.[/red]")
+        raise typer.Exit(2)
     ids, other = [], 0
     for item in data:
         if item.get("source", source) != source:
@@ -4910,6 +4962,8 @@ def records_fetch(
     from_file: Path | None = typer.Option(
         None,
         "--from",
+        exists=True,
+        dir_okay=False,
         help="Also fetch every id in this 'records search --json' or '--raw' output file",
     ),
     refresh: bool = typer.Option(False, "--refresh", help="Re-fetch documents already stored"),
@@ -4950,20 +5004,26 @@ def records_fetch(
     adapter = DocumentCloudAdapter()
     case_id = active_case_id_in_db()
 
-    stored: set[str] = set()
+    stored: dict[str, str | None] = {}  # id -> name of another case holding it
     if get_db_path().exists():
+        from .models import Case
+
         with get_session() as session:
             numbers = [f"DC-{i}" for i in ids]
             for req in session.query(RequestModel).filter(RequestModel.request_number.in_(numbers)):
-                stored.add(req.request_number.removeprefix("DC-"))
                 if case_id and req.case_id is None:
                     req.case_id = case_id
+                other = None
+                if req.case_id and req.case_id != case_id:
+                    other = session.get(Case, req.case_id)
+                stored[req.request_number.removeprefix("DC-")] = other.name if other else None
 
     fetched, skipped, failed = [], [], []
     for doc_id in ids:
         if doc_id in stored and not refresh:
             skipped.append(doc_id)
-            rprint(f"  {doc_id}  [dim]already stored (--refresh to re-fetch)[/dim]")
+            where = f"stored in case {stored[doc_id]}" if stored[doc_id] else "already stored"
+            rprint(f"  {doc_id}  [dim]{where} (--refresh to re-fetch)[/dim]")
             continue
         try:
             result_id, text = asyncio.run(adapter.pull_text(doc_id, case_id=case_id))
@@ -4981,7 +5041,7 @@ def records_fetch(
     rprint(
         f"\nFetched {len(fetched)}, skipped {len(skipped)} already stored, failed {len(failed)}."
     )
-    if case_id and (fetched or skipped):
+    if case_id and (fetched or any(stored.get(i) is None for i in skipped)):
         rprint("  [dim]Attached to the active case.[/dim]")
     if len(fetched) == 1:
         rprint(f"[dim]Extract entities: openfoia analyze extract {fetched[0]}[/dim]")
@@ -5278,13 +5338,9 @@ def _case_summary(session, case) -> dict[str, Any]:
     sources = {d["id"]: d for d in documents}
     findings = []
     for n in notes:
-        cite = sources.get(n.document_id)
-        if cite is None and n.document_id:  # a note on a document outside this case
-            doc = session.get(Document, n.document_id)
-            if doc is not None:
-                req = session.get(RequestModel, doc.request_id) if doc.request_id else None
-                cite = sources[doc.id] = _doc_cite(session, doc, req)
-        cite = cite or {}
+        # Only this case's documents are cited: a note's document_id that is not
+        # in the case (moved, deleted) gets no citation rather than leaking one.
+        cite = sources.get(n.document_id) or {}
         partial = bool(cite.get("pages")) and cite["stored_pages"] < cite["pages"]
         findings.append(
             {
@@ -5464,9 +5520,13 @@ def case_note(
         if tier is not None and tier not in NOTE_TIERS:
             rprint(f"[red]--tier must be one of: {', '.join(NOTE_TIERS)}[/red]")
             raise typer.Exit(2)
+        document_id = _resolve_doc(session, doc).id if doc else None
+        if document_id and document_id not in _case_document_ids(session, case.id):
+            rprint(f"[red]Document {doc} is not in case {case.name}.[/red]")
+            raise typer.Exit(1)
         n = CaseNote(
             case_id=case.id,
-            document_id=_resolve_doc(session, doc).id if doc else None,
+            document_id=document_id,
             page=page,
             quote=quote,
             note=" ".join(words),
@@ -5542,10 +5602,11 @@ def case_export(
         if s["findings"]:
             lines += ["", "## Findings", ""]
             for i, f in enumerate(s["findings"], 1):
-                head = f"{i}. " + (f"**{f['tier']}** " if f["tier"] else "") + (f["note"] or "")
+                one = lambda t: " ".join((t or "").split())  # noqa: E731
+                head = f"{i}. " + (f"**{f['tier']}** " if f["tier"] else "") + one(f["note"])
                 lines.append(head.rstrip())
                 if f["quote"]:
-                    lines.append(f"   > {f['quote']}")
+                    lines.append(f"   > {one(f['quote'])}")
                 if f["document_id"]:
                     lines.append(f"   Source: {_citation(f)}.")
             if not all(f["page_is_real"] for f in s["findings"]):

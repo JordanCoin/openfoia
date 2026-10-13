@@ -270,3 +270,27 @@ def test_records_fetch_batch_from_results_file(monkeypatch, tmp_path):
 
     assert runner.invoke(app, ["records", "fetch", "3"]).exit_code == 1
     assert runner.invoke(app, ["records", "fetch"]).exit_code == 2
+
+    # A plain one-id-per-line file works; garbage exits 2 with a message.
+    calls.clear()
+    plain = tmp_path / "ids.txt"
+    plain.write_text("7\n8\n")
+    assert runner.invoke(app, ["records", "fetch", "--from", str(plain)]).exit_code == 0
+    assert calls == ["7", "8"]
+    bad = tmp_path / "bad.json"
+    bad.write_text("[[1], 2]")
+    result = runner.invoke(app, ["records", "fetch", "--from", str(bad)])
+    assert result.exit_code == 2 and "expected" in result.output
+    assert runner.invoke(app, ["records", "fetch", "--from", str(tmp_path / "no")]).exit_code == 2
+
+
+def test_records_fetch_reports_document_held_by_another_case(monkeypatch):
+    _fake_pull_text(monkeypatch)
+    runner = CliRunner()
+    assert runner.invoke(app, ["case", "new", "B"]).exit_code == 0
+    assert runner.invoke(app, ["records", "fetch", "1"]).exit_code == 0
+    assert runner.invoke(app, ["case", "new", "A"]).exit_code == 0
+    result = runner.invoke(app, ["records", "fetch", "1"])
+    assert result.exit_code == 0, result.output
+    assert "stored in case B" in result.output
+    assert "Attached to the active case" not in result.output

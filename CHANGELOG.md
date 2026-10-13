@@ -16,8 +16,10 @@ exhaustive lists.
   --tier says|infer|speculation]` records a finding on the active case,
   `case notes [--json]` lists them with citations, `case note rm <id>` removes
   one. `docs grep --save` attaches every printed hit (document, page, passage)
-  to the active case; `--note "<text>"` saves them with a note. Database
-  migration `004`.
+  to the active case; `--note "<text>"` saves them with a note. While a case
+  is active `docs grep` searches only that case's documents (`--all-docs`
+  for everything), `--save` never stores hits from other cases and skips
+  duplicates. Database migration `004`.
 - Citation export: `case export` (Markdown and JSON) now has a Findings
   section (tier, note, quoted passage, then title, DocumentCloud or other
   source id, CREST number found in the text, page with the `*` caveat when

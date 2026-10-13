@@ -155,7 +155,10 @@ def test_grep_save_attaches_hits_and_flags_partial_pages():
     _ok(runner.invoke(app, ["case", "close"]))
     assert runner.invoke(app, ["docs", "grep", "WISC", "--save"]).exit_code == 1
     _ok(runner.invoke(app, ["case", "use", "pas"]))
-    _ok(runner.invoke(app, ["docs", "grep", "children", "--note", "kids mentioned"]))
+    # Same passage again is a duplicate; a narrower context is a new passage.
+    r = runner.invoke(app, ["docs", "grep", "children", "--save"])
+    assert "1 already saved" in r.output
+    _ok(runner.invoke(app, ["docs", "grep", "children", "-C", "4", "--note", "kids mentioned"]))
 
     notes = json.loads(_ok(runner.invoke(app, ["case", "notes", "--json"])))
     assert len(notes) == 2
@@ -209,3 +212,52 @@ def test_graph_mentions_lists_shared_documents_and_path(tmp_path):
 
     out = _ok(runner.invoke(app, ["analyze", "graph", "--mentions", "Gittinger", "Nobody"]))
     assert "No document in scope mentions both" in out
+
+
+def test_grep_and_export_never_leak_another_case(tmp_path):
+    from openfoia.cases import get_active_case_id
+
+    _ok(runner.invoke(app, ["case", "new", "B"]))
+    b_doc = _add_doc(
+        [f"SECRET-B passage {CREST}"], title="B-TITLE", case_id=get_active_case_id(), dc_id="900"
+    )
+    _ok(runner.invoke(app, ["case", "new", "A"]))
+    a_id = get_active_case_id()
+    _add_doc(["SECRET-A passage"], title="A-TITLE", case_id=a_id, dc_id="901")
+
+    out = _ok(runner.invoke(app, ["docs", "grep", "passage"]))
+    assert "A-TITLE" in out and "B-TITLE" not in out
+    out = _ok(runner.invoke(app, ["docs", "grep", "passage", "--all-docs"]))
+    assert "B-TITLE" in out
+
+    # --save with --all-docs sees B's hit but refuses to store it; --save twice dedupes.
+    r = runner.invoke(app, ["docs", "grep", "passage", "--all-docs", "--save"])
+    assert r.exit_code == 0, r.output
+    assert "Saved 1 note(s)" in r.output and "Skipped 1 hit(s)" in r.output
+    r = runner.invoke(app, ["docs", "grep", "passage", "--save"])
+    assert "Saved 0 note(s) to the active case. 1 already saved." in r.output
+    assert runner.invoke(app, ["case", "note", "x", "--doc", b_doc[:8]]).exit_code == 1
+
+    for args in (["case", "export"], ["case", "export", "--format", "json"], ["case", "notes"]):
+        out = _ok(runner.invoke(app, args))
+        for leak in ("B-TITLE", "SECRET-B", "900", CREST):
+            assert leak not in out, (args, leak)
+    assert "SECRET-A" in _ok(runner.invoke(app, ["case", "export"]))
+
+
+def test_export_keeps_multiline_quotes_on_one_line():
+    _ok(runner.invoke(app, ["case", "new", "A"]))
+    _ok(runner.invoke(app, ["case", "note", "line one\nline two", "--quote", "q1\n\nq2"]))
+    md = _ok(runner.invoke(app, ["case", "export"]))
+    assert "1. line one line two" in md
+    assert "   > q1 q2" in md
+
+
+def test_mentions_match_whole_words_only():
+    from openfoia.cases import get_active_case_id
+
+    _ok(runner.invoke(app, ["case", "new", "A"]))
+    _add_doc(["x"], title="Both", case_id=get_active_case_id(), labels=[("Art", 1), ("Bo", 1)])
+    _add_doc(["x"], title="Sub", case_id=get_active_case_id(), labels=[("Martin", 1), ("Bo", 1)])
+    out = _ok(runner.invoke(app, ["analyze", "graph", "--mentions", "Art", "Bo"]))
+    assert "Both" in out and "Sub" not in out
