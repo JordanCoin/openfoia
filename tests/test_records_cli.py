@@ -4,11 +4,18 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from typer.testing import CliRunner
 
 from openfoia.cli import app
 from openfoia.records import list_sources
 from openfoia.records.base import RecordEntity, SearchResult
+
+
+@pytest.fixture(autouse=True)
+def _isolated_data_dir(tmp_path, monkeypatch):
+    """Searches log to the active case, so never touch the real data dir."""
+    monkeypatch.setenv("OPENFOIA_DATA_DIR", str(tmp_path / "data"))
 
 
 def test_records_search_raw_is_parseable_json_without_terminal_output(monkeypatch):

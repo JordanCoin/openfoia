@@ -11,12 +11,14 @@ Rate limit: 1 req/sec average, 20 burst
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, ClassVar
 
 import httpx
 
 from ..net import EgressPolicy, egress_client
 from .base import (
+    AdapterRequestError,
     RecordAdapter,
     RecordEntity,
     SearchResult,
@@ -31,6 +33,21 @@ MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024
 logger = logging.getLogger(__name__)
 
 API_BASE = "https://www.muckrock.com/api_v1"
+
+
+def _raise_for_failure(resp: httpx.Response) -> None:
+    """Raise on responses that mean "MuckRock refused", not "no matches".
+
+    MuckRock answers anonymous calls with 401; treating that as an empty
+    page made a dead source read as "No results found".
+    """
+    code = resp.status_code
+    if code in (401, 403):
+        raise AdapterRequestError(
+            f"MuckRock API requires an API token (HTTP {code}). Set it in config."
+        )
+    if code == 429 or code >= 500:
+        raise AdapterRequestError(f"MuckRock API error (HTTP {code}).")
 
 
 class MuckRockAdapter(RecordAdapter):
@@ -54,8 +71,9 @@ class MuckRockAdapter(RecordAdapter):
     source_name = "muckrock"
 
     def __init__(self, api_key: str | None = None, *, egress: EgressPolicy | None = None):
-        """Initialize. API key is optional — public requests are freely accessible."""
+        """Initialize. Without *api_key*, OPENFOIA_MUCKROCK_TOKEN is used if set."""
         super().__init__(egress=egress)
+        api_key = api_key or os.environ.get("OPENFOIA_MUCKROCK_TOKEN")
         self.api_key = api_key
         self._headers: dict[str, str] = {"content-type": "application/json"}
         if api_key:
@@ -102,6 +120,7 @@ class MuckRockAdapter(RecordAdapter):
             # Layer 1: Tags
             tag_params = {**params, "tags": query.lower().strip().replace(" ", "-")}
             resp = await client.get(f"{API_BASE}/foia/", params=tag_params, headers=self._headers)
+            _raise_for_failure(resp)
             if resp.status_code == 200:
                 data = resp.json()
 
@@ -115,6 +134,7 @@ class MuckRockAdapter(RecordAdapter):
                         params=agency_params,
                         headers=self._headers,
                     )
+                    _raise_for_failure(resp2)
                     if resp2.status_code == 200:
                         agency_data = resp2.json()
                         if agency_data.get("count", 0) > 0:
@@ -128,6 +148,7 @@ class MuckRockAdapter(RecordAdapter):
                     params=user_params,
                     headers=self._headers,
                 )
+                _raise_for_failure(resp3)
                 if resp3.status_code == 200:
                     user_data = resp3.json()
                     if user_data.get("count", 0) > 0:
@@ -223,12 +244,13 @@ class MuckRockAdapter(RecordAdapter):
                 params={"format": "json", "name": full_name, "page_size": 1},
                 headers=self._headers,
             )
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("count", 0) > 0:
-                    return data["results"][0]["id"]
-        except Exception:
-            pass
+        except httpx.HTTPError:
+            return None
+        _raise_for_failure(resp)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("count", 0) > 0:
+                return data["results"][0]["id"]
 
         return None
 
@@ -252,6 +274,7 @@ class MuckRockAdapter(RecordAdapter):
                 params=params,
                 headers=self._headers,
             )
+            _raise_for_failure(resp)
             resp.raise_for_status()
             data = resp.json()
 
@@ -300,6 +323,7 @@ class MuckRockAdapter(RecordAdapter):
             )
             if resp.status_code == 404:
                 return None
+            _raise_for_failure(resp)
             resp.raise_for_status()
             req = resp.json()
 
