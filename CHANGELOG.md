@@ -10,6 +10,8 @@ exhaustive lists.
 
 ## [Unreleased]
 
+## [4.5.0] - 2026-10-14
+
 ### Added
 
 - All 50 states and DC now carry sourced statute, clock, fee, residency and
@@ -20,7 +22,6 @@ exhaustive lists.
   ends with a verified/unverified count. `scripts/rcfp_jurisdictions.py`
   drafts a jurisdiction file from a saved guide page, so the data can be
   rebuilt without retyping it; it fetches nothing itself.
-
 - Request clocks come from the agency's jurisdiction: `openfoia request mark
   <id> acknowledged|extended|tolled --until <date>|received|denied|appealed|
   still-interested --due <date>|replied|closed [--on <date>]` records the
@@ -498,6 +499,7 @@ security/OPSEC pass; the notes below describe what it changed, factually.
 Baseline for this changelog. Earlier tags (`v0.0.1` through `v2.0.0`,
 2026-02-19 to 2026-03-22) predate it; see the git history for details.
 
+[4.5.0]: https://github.com/JordanCoin/openfoia/compare/v4.4.0...v4.5.0
 [4.4.0]: https://github.com/JordanCoin/openfoia/compare/v4.3.1...v4.4.0
 [4.3.1]: https://github.com/JordanCoin/openfoia/compare/v4.3.0...v4.3.1
 [4.3.0]: https://github.com/JordanCoin/openfoia/compare/v4.2.0...v4.3.0
