@@ -4508,7 +4508,7 @@ def records_search(
         "-s",
         help=(
             "Data source (opencorporates, sec, muckrock, documentcloud, usaspending, "
-            "nonprofits, govinfo, fec, regulations)"
+            "nonprofits, govinfo, fec, regulations, cia)"
         ),
     ),
     jurisdiction: str | None = typer.Option(
@@ -4580,6 +4580,13 @@ def records_search(
     adapter = get_adapter(source)
     # Pipe-safe modes: stdout carries only JSON, so no spinner or Rich markup.
     quiet = raw or json_lines
+
+    if source == "cia":
+        notice = f"WARNING: This will send the query {query!r} to cia.gov (direct, real IP)."
+        if quiet:
+            typer.echo(notice, err=True)
+        else:
+            rprint(f"\n[yellow]{notice}[/yellow]")
 
     try:
         if quiet:
@@ -5029,6 +5036,10 @@ def records_fetch(
     if not ids:
         rprint("[red]Give at least one document id or --from <results.json>.[/red]")
         raise typer.Exit(2)
+    if source == "cia":
+        for doc_id in ids:
+            _records_fetch_cia(doc_id)
+        return
     if source != "documentcloud":
         rprint(
             f"[yellow]Fetch not yet supported for '{source}'. Use 'records download' for MuckRock.[/yellow]"
@@ -5086,6 +5097,64 @@ def records_fetch(
         rprint(f"[dim]Extract entities: openfoia analyze extract {fetched[0]}[/dim]")
     if failed:
         raise typer.Exit(1 if not fetched and not skipped else 2)
+
+
+def _records_fetch_cia(identifier: str) -> None:
+    """Download a CIA reading room PDF, ingest it (text/OCR/pages), attach to the active case."""
+    import asyncio
+
+    from .cases import active_case_id_in_db
+    from .db import ensure_db, get_data_dir
+    from .pipeline.ingest import DocumentIngester
+    from .records.cia import CIAReadingRoomAdapter, normalize_identifier
+
+    try:
+        kind, page_url, _ = normalize_identifier(identifier)
+    except ValueError as e:
+        rprint(f"[red]{e}[/red]")
+        raise typer.Exit(1) from None
+
+    rprint(f"\n[yellow]WARNING: This will send the identifier {identifier!r} to cia.gov.[/yellow]")
+    rprint("[yellow]Egress: direct — cia.gov will see your real IP.[/yellow]")
+    rprint(f"[dim]{kind}: {page_url}[/dim]")
+
+    ensure_db()
+    adapter = CIAReadingRoomAdapter()
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        progress.add_task(f"Fetching {identifier} from the CIA reading room...", total=None)
+        try:
+            entity, pdf_path = asyncio.run(
+                adapter.download(identifier, get_data_dir() / "downloads" / "cia")
+            )
+        except Exception as e:
+            rprint(f"[red]Fetch failed: {e}[/red]")
+            raise typer.Exit(1) from None
+
+    rprint(f"\n[bold cyan]{entity.name}[/bold cyan]")
+    rprint(f"  ESDN: {entity.identifiers.get('esdn')}  Pages: {entity.extra_data.get('pages')}")
+    rprint(f"  PDF: {pdf_path}")
+
+    ingester = DocumentIngester(storage_path=get_data_dir() / "docs")
+    try:
+        result = asyncio.run(ingester.ingest_file(pdf_path))
+    except Exception as e:
+        rprint(f"[red]Ingest failed: {e}[/red]")
+        raise typer.Exit(1) from None
+    _persist_ingested(
+        [result],
+        request_number=f"CIA-{entity.identifiers.get('esdn', identifier)}",
+        subject=entity.name,
+        body=f"Downloaded from the CIA FOIA reading room: {entity.source_url}",
+    )
+    rprint(f"\n[green]Saved to database:[/green] {result.document_id[:8]}...")
+    rprint(f"  Text length: {len(result.extracted_text or ''):,} characters")
+    if active_case_id_in_db():
+        rprint("  [dim]Attached to the active case.[/dim]")
+    rprint(f"\n[dim]Extract entities: openfoia analyze extract {result.document_id}[/dim]")
 
 
 @records_app.command("download")
@@ -5191,64 +5260,86 @@ def records_download(
             except Exception as e:
                 rprint(f"  [red]Failed:[/red] {Path(path).name}: {e}")
 
-        # Persist Document rows to database
         if ingest_results:
-            from uuid import uuid4
-
-            from .cases import active_case_id_in_db
-            from .db import get_session
-            from .doctext import replace_pages
-            from .models import DeliveryMethod, Document, DocumentType, Request, RequestStatus, User
-
-            case_id = active_case_id_in_db()
-            with get_session() as session:
-                # Create a placeholder request for downloaded docs
-                user = session.query(User).first()
-                if not user:
-                    user = User(
-                        id=str(uuid4()),
-                        email="local@openfoia.local",
-                        name="Local User",
-                    )
-                    session.add(user)
-                    session.flush()
-
-                from .models import Agency
-
-                agency = session.query(Agency).first()
-                dl_req = Request(
-                    id=str(uuid4()),
-                    request_number=f"MUCKROCK-{request_id}",
-                    requester_id=user.id,
-                    agency_id=agency.id if agency else user.id,
-                    subject=entity.name if entity else f"MuckRock request {request_id}",
-                    body="Downloaded from MuckRock",
-                    delivery_method=DeliveryMethod.EMAIL,
-                    status=RequestStatus.COMPLETE,
-                    case_id=case_id,
-                )
-                session.add(dl_req)
-                session.flush()
-
-                for r in ingest_results:
-                    doc = Document(
-                        id=r.document_id,
-                        request_id=dl_req.id,
-                        doc_type=DocumentType.FULL_RESPONSE,
-                        filename=r.filename,
-                        file_path=r.file_path,
-                        file_size=r.file_size,
-                        mime_type=r.mime_type,
-                        page_count=r.page_count,
-                        extracted_text=r.extracted_text,
-                        ocr_completed=bool(r.extracted_text),
-                    )
-                    session.add(doc)
-                    if r.extracted_text:
-                        replace_pages(session, doc.id, r.pages or [r.extracted_text], r.verdicts)
+            _persist_ingested(
+                ingest_results,
+                request_number=f"MUCKROCK-{request_id}",
+                subject=entity.name if entity else f"MuckRock request {request_id}",
+                body="Downloaded from MuckRock",
+            )
 
         rprint(f"\n[green]{ingested} file(s) ingested.[/green]")
         rprint("[dim]Run 'openfoia analyze extract --all' to extract entities.[/dim]")
+
+
+def _persist_ingested(ingest_results, *, request_number: str, subject: str, body: str) -> None:
+    """Store ingested files as Document rows under one placeholder Request.
+
+    The Request is attached to the active case. Re-running with the same
+    *request_number* reuses the existing Request.
+    """
+    from uuid import uuid4
+
+    from .cases import active_case_id_in_db
+    from .db import get_session
+    from .doctext import replace_pages
+    from .models import (
+        Agency,
+        DeliveryMethod,
+        Document,
+        DocumentType,
+        Request,
+        RequestStatus,
+        User,
+    )
+
+    case_id = active_case_id_in_db()
+    with get_session() as session:
+        user = session.query(User).first()
+        if not user:
+            user = User(
+                id=str(uuid4()),
+                email="local@openfoia.local",
+                name="Local User",
+            )
+            session.add(user)
+            session.flush()
+
+        agency = session.query(Agency).first()
+        dl_req = session.query(Request).filter(Request.request_number == request_number).first()
+        if dl_req is None:
+            dl_req = Request(
+                id=str(uuid4()),
+                request_number=request_number,
+                requester_id=user.id,
+                agency_id=agency.id if agency else user.id,
+                subject=subject,
+                body=body,
+                delivery_method=DeliveryMethod.EMAIL,
+                status=RequestStatus.COMPLETE,
+                case_id=case_id,
+            )
+            session.add(dl_req)
+            session.flush()
+        elif case_id and dl_req.case_id is None:
+            dl_req.case_id = case_id
+
+        for r in ingest_results:
+            doc = Document(
+                id=r.document_id,
+                request_id=dl_req.id,
+                doc_type=DocumentType.FULL_RESPONSE,
+                filename=r.filename,
+                file_path=r.file_path,
+                file_size=r.file_size,
+                mime_type=r.mime_type,
+                page_count=r.page_count,
+                extracted_text=r.extracted_text,
+                ocr_completed=bool(r.extracted_text),
+            )
+            session.add(doc)
+            if r.extracted_text:
+                replace_pages(session, doc.id, r.pages or [r.extracted_text], r.verdicts)
 
 
 # === Case Commands ===

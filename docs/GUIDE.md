@@ -124,9 +124,22 @@ openfoia records search "Shell Corp LLC" --source opencorporates
 # Search US corporate filings
 openfoia records search "Acme Corp" --source sec
 
+# Search the CIA FOIA Electronic Reading Room (declassified CREST/MORI records)
+openfoia records search "annual report" --source cia
+
+# Fetch one by CREST number, MORI number, ESDN or reading room URL:
+# downloads the PDF, extracts text or OCRs it, attaches it to the active case
+openfoia records fetch CIA-RDP96-00789R002200230001-2 --source cia
+openfoia records fetch 144765 --source cia
+
 # Ask every source at once; each reports ok N / error / skipped
 openfoia records search "Acme Corp" --all-sources
 ```
+
+Every source call prints which third party it contacts before the request
+leaves. cia.gov sits behind a bot filter; when it refuses a scripted request
+the command reports "blocked" (open the printed URL in a browser instead)
+rather than pretending there were no results.
 
 A source that fails (rate limit, timeout, missing token) is reported as an
 error and the command exits non-zero; "No results found" means the source
@@ -388,6 +401,8 @@ openfoia analyze import data.ftm.json # Import FtM data
 openfoia records search "query" --source muckrock
 openfoia records search "query" --source opencorporates
 openfoia records search "query" --source sec
+openfoia records search "query" --source cia
+openfoia records fetch <CREST|MORI> --source cia  # download + ingest a CIA PDF
 openfoia records download <ID>        # Download FOIA docs
 
 # Cross-reference

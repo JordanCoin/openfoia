@@ -39,6 +39,7 @@ def list_sources() -> list[str]:
 
 def _auto_register() -> None:
     """Auto-register built-in adapters."""
+    from .cia import CIAReadingRoomAdapter
     from .documentcloud import DocumentCloudAdapter
     from .fec import FECAdapter
     from .govinfo import GovInfoAdapter
@@ -58,6 +59,7 @@ def _auto_register() -> None:
     register("govinfo", GovInfoAdapter)
     register("fec", FECAdapter)
     register("regulations", RegulationsGovAdapter)
+    register("cia", CIAReadingRoomAdapter)
 
 
 _auto_register()

@@ -25,6 +25,7 @@ import httpx
 import pytest
 
 from openfoia.net import DEFAULT_USER_AGENT, EgressMode, EgressPolicy, egress_client
+from openfoia.records.cia import CIAReadingRoomAdapter
 from openfoia.records.documentcloud import DocumentCloudAdapter
 from openfoia.records.fec import FECAdapter
 from openfoia.records.govinfo import GovInfoAdapter
@@ -122,6 +123,7 @@ def test_no_bare_httpx_asyncclient_in_records_adapters():
         ProPublicaNonprofitAdapter,
         USASpendingAdapter,
         DocumentCloudAdapter,
+        CIAReadingRoomAdapter,
     ],
 )
 def test_adapter_accepts_egress_policy_kwarg(adapter_cls):
@@ -142,6 +144,7 @@ def test_adapter_accepts_egress_policy_kwarg(adapter_cls):
         ProPublicaNonprofitAdapter,
         USASpendingAdapter,
         DocumentCloudAdapter,
+        CIAReadingRoomAdapter,
     ],
 )
 def test_adapter_defaults_to_direct_policy_when_unspecified(adapter_cls):
