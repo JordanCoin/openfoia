@@ -50,12 +50,19 @@ def standard_request(
     fee_waiver: bool = True,
     expedited: bool = False,
     max_fee: float = 25.0,
+    jurisdiction: dict | None = None,
 ) -> str:
     """Generate a standard FOIA request letter.
 
     This is the core template that works for most federal agencies.
     Uses language proven to be effective based on RCFP guidance.
+
+    ``jurisdiction`` is a loaded entry from ``openfoia.jurisdictions``. Federal
+    (``us`` or None) renders the letter below unchanged; any other law renders
+    the state letter, citing only what the jurisdiction file knows.
     """
+    if jurisdiction and jurisdiction.get("id") != "us":
+        return state_request(requester, agency_name, details, jurisdiction, fee_waiver=fee_waiver)
     # Local date is intended: this is the date printed on a letter the
     # requester is sending, not a stored timestamp.
     date_str = datetime.now().strftime("%B %d, %Y")  # noqa: DTZ005
@@ -414,6 +421,159 @@ Sincerely,
     return letter
 
 
+# === State and local public-records letters ===
+
+STATUTE_PLACEHOLDER = "[CITE STATUTE]"
+FEE_CAP_PLACEHOLDER = "[FEE CAP]"
+
+
+def _letter_head(requester: RequesterInfo, agency_name: str, custodian: str, subject: str) -> str:
+    # Local date is intended: this is the date printed on a letter the
+    # requester is sending, not a stored timestamp.
+    date_str = datetime.now().strftime("%B %d, %Y")  # noqa: DTZ005
+    org_line = f"\n{requester.organization}" if requester.organization else ""
+    return f"""{date_str}
+
+{requester.name}{org_line}
+{requester.address}
+{requester.email}
+{requester.phone}
+
+{custodian}
+{agency_name}
+
+Re: {subject}
+
+Dear {custodian}:
+
+"""
+
+
+def _date_clause(details: RequestDetails) -> str:
+    if details.date_range_start and details.date_range_end:
+        start = details.date_range_start.strftime("%B %d, %Y")
+        end = details.date_range_end.strftime("%B %d, %Y")
+        return f" for the period from {start} through {end}"
+    if details.date_range_start:
+        return f" from {details.date_range_start.strftime('%B %d, %Y')} to the present"
+    return ""
+
+
+def _clock_sentence(j: dict) -> str:
+    r = j["response"]
+    if not r["days"] or r["unit"] in (None, "none"):
+        return ""
+    text = f"I look forward to your response within {r['days']} {r['unit']} days"
+    if r["extension_days"] and r["extension_unit"] not in (None, "none"):
+        text += (
+            f", with any extension of up to {r['extension_days']} {r['extension_unit']} days "
+            "stated in writing"
+        )
+    return text + ", as the statute provides.\n\n"
+
+
+def state_request(
+    requester: RequesterInfo,
+    agency_name: str,
+    details: RequestDetails,
+    jurisdiction: dict,
+    fee_waiver: bool = True,
+) -> str:
+    """A public-records letter under a state law, built only from what the
+    jurisdiction file knows. Unknown values become visible placeholders or are
+    left out; nothing is invented."""
+    j = jurisdiction
+    statute = j["statute"]
+    law = f"the {statute['name']}" if statute["name"] else "your state's public records law"
+    cite = f", {statute['citation']}" if statute["citation"] else f" {STATUTE_PLACEHOLDER}"
+    letter = _letter_head(
+        requester, agency_name, "Records Custodian", f"Public Records Request under {law}"
+    )
+    letter += f"""Pursuant to {law}{cite}, I am requesting access to and copies of the following records{_date_clause(details)}:
+
+{details.description}
+
+"""
+    if details.exclusions:
+        letter += f"""This request specifically excludes:
+
+{details.exclusions}
+
+"""
+    letter += """Please provide the records in electronic form (PDF or the native file format) by email. If a record is not kept electronically, I will arrange to inspect it before deciding which pages to copy.
+
+"""
+    fees = j["fees"]
+    if fees["estimate_required"] in (True, None):
+        letter += f"""Before any work that would incur a fee, please send me an itemized estimate and do not proceed if the estimate exceeds {FEE_CAP_PLACEHOLDER}.
+
+"""
+    if fee_waiver and fees["waiver_rule"]:
+        rule = fees["waiver_rule"].rstrip(".")
+        letter += f"""Please apply any fee waiver or reduction the law provides: {rule}.
+
+"""
+    where = f" under {j['exemptions_citation']}" if j["exemptions_citation"] else ""
+    letter += f"""If any record or portion of a record is withheld, please cite the specific exemption{where} relied on for each withholding and release every segregable portion of the rest.
+
+If any responsive record has been destroyed or cannot be located, please state the records retention schedule and series applied to it, the date of destruction and the destruction log or certificate, and describe the search that was performed.
+
+"""
+    appeal = j["appeal"]
+    review = f"I reserve all rights of review provided by {statute['citation'] or law}"
+    if (
+        appeal["type"] in ("agency_head", "commission")
+        and appeal["deadline_days"]
+        and appeal["deadline_unit"] not in (None, "none")
+    ):
+        review += (
+            f", including an appeal within {appeal['deadline_days']} {appeal['deadline_unit']} days"
+        )
+    letter += f"""{review}.
+
+"""
+    letter += _clock_sentence(j)
+    letter += f"""Sincerely,
+
+{requester.name}
+"""
+    return letter
+
+
+SCHOOL_PROGRAM_RECORDS = """1. Board of education minutes, agendas and board packets that mention the program named above or its adoption, budget or evaluation.
+2. Program plans, handbooks, curriculum guides and policy documents for the program.
+3. Identification and screening procedures, including the names of any test instruments, rating scales or assessment tools used, and the vendor or publisher of each.
+4. Contracts, purchase orders, invoices and agreements with test publishers, outside evaluators, consultants and university partners.
+5. Program evaluations, audit reports, annual reports and reports to the state education agency, including any state grant applications and grant files.
+6. Correspondence and memoranda between program staff and any outside evaluator, consultant or university partner.
+7. Aggregate counts only of students screened, identified and served by year.
+8. The records retention schedule series that applies to each record type above and, for any record that has been destroyed, the destruction log or certificate and a description of the search performed.
+
+The date range for this request is [START DATE] through [END DATE]."""
+
+SCHOOL_PROGRAM_EXCLUSIONS = """Education records of individual students as defined by the Family Educational Rights and Privacy Act, 20 U.S.C. 1232g, including any student's name, score, placement or file. I am not asking for those records. Because the program, policy, contract and evaluation records above are not education records of any individual student, the privacy of students gives no ground to deny this request as a whole; please release those records and redact or withhold only student-identifying information where it appears."""
+
+
+def school_program_request(
+    requester: RequesterInfo,
+    agency_name: str,
+    program: str,
+    jurisdiction: dict | None = None,
+    fee_waiver: bool = True,
+) -> str:
+    """Records about a school program (gifted, remedial, screening) from a
+    district or a state education agency, asking for program records and
+    aggregate counts and explicitly not FERPA-protected student records."""
+    details = RequestDetails(
+        subject=program,
+        description=f"Records of the program known as {program}:\n\n{SCHOOL_PROGRAM_RECORDS}",
+        exclusions=SCHOOL_PROGRAM_EXCLUSIONS,
+    )
+    return standard_request(
+        requester, agency_name, details, fee_waiver=fee_waiver, jurisdiction=jurisdiction
+    )
+
+
 # === CLI Integration ===
 
 
@@ -435,4 +595,13 @@ def list_templates() -> list[dict[str, str]]:
             "description": "Request records about yourself (FOIA + Privacy Act)",
             "function": "records_about_self",
         },
+        {
+            "name": "school-program",
+            "description": "Program records from a school district or state education agency, "
+            "aggregate counts only, no student records (FERPA-aware)",
+            "function": "school_program_request",
+        },
     ]
+
+
+JURISDICTION_AWARE = {"standard", "school-program"}

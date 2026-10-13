@@ -2540,20 +2540,79 @@ def template_list():
 
     templates = list_templates()
 
+    from .templates import JURISDICTION_AWARE
+
     table = Table(title="Available Templates")
     table.add_column("Name", style="cyan")
     table.add_column("Description")
+    table.add_column("State law")
 
     for t in templates:
-        table.add_row(t["name"], t["description"])
+        aware = "yes, --jurisdiction" if t["name"] in JURISDICTION_AWARE else "federal only"
+        table.add_row(t["name"], t["description"], aware)
 
     console.print(table)
     rprint("\n[dim]Use 'openfoia template generate <name>' to create a request.[/dim]")
 
 
+@template_app.command("show")
+def template_show(
+    template_name: str = typer.Argument(..., help="standard or school-program"),
+    jurisdiction: str = typer.Option(
+        "us",
+        "--jurisdiction",
+        help="Jurisdiction id, e.g. us-mi (see 'openfoia jurisdiction list')",
+    ),
+):
+    """Print a template's skeleton for a jurisdiction, placeholders left in.
+
+    Example:
+        openfoia template show school-program --jurisdiction us-mi
+    """
+    from .templates import (
+        JURISDICTION_AWARE,
+        RequestDetails,
+        RequesterInfo,
+        school_program_request,
+        standard_request,
+    )
+
+    if template_name not in JURISDICTION_AWARE:
+        rprint(
+            f"[red]Only these templates take a jurisdiction: {', '.join(sorted(JURISDICTION_AWARE))}[/red]"
+        )
+        raise typer.Exit(2)
+    j = _jurisdiction_or_exit(jurisdiction)
+    requester = RequesterInfo(name="[YOUR NAME]", email="[YOUR EMAIL]", address="[YOUR ADDRESS]")
+    if template_name == "school-program":
+        letter = school_program_request(requester, "[PUBLIC BODY]", "[PROGRAM NAME]", j)
+    else:
+        details = RequestDetails(subject="[SUBJECT]", description="[RECORDS REQUESTED]")
+        letter = standard_request(requester, "[PUBLIC BODY]", details, jurisdiction=j)
+    if not j["verified"]:
+        rprint(
+            f"[yellow]{j['name']} is an unverified stub; placeholders mark what is unknown.[/yellow]"
+        )
+    rprint(letter)
+
+
+def _jurisdiction_or_exit(jurisdiction_id: str) -> dict:
+    from .jurisdictions import get as get_jurisdiction
+
+    j = get_jurisdiction(jurisdiction_id)
+    if j is None:
+        rprint(
+            f"[red]Unknown jurisdiction '{jurisdiction_id}'. See 'openfoia jurisdiction list'.[/red]"
+        )
+        raise typer.Exit(2)
+    return j
+
+
 @template_app.command("generate")
 def template_generate(
-    template_name: str = typer.Argument(..., help="Template name (standard/appeal/self)"),
+    template_name: str = typer.Argument(
+        ..., help="Template name (standard/appeal/self/school-program)"
+    ),
     agency: str = typer.Option(..., "--agency", "-a", help="Target agency (name or abbreviation)"),
     subject: str = typer.Option(..., "--subject", "-s", help="Request subject/description"),
     name: str = typer.Option(..., "--name", "-n", help="Your full name"),
@@ -2568,14 +2627,26 @@ def template_generate(
         False, "--no-fee-waiver", help="Don't include fee waiver request"
     ),
     expedited: bool = typer.Option(False, "--expedited", help="Request expedited processing"),
+    jurisdiction: str | None = typer.Option(
+        None,
+        "--jurisdiction",
+        help="Jurisdiction id, e.g. us-mi; default: the agency's, else federal",
+    ),
 ):
-    """Generate a FOIA request from a template.
+    """Generate a FOIA or public-records request from a template.
 
     Examples:
         openfoia template generate standard -a FBI -s "Records on X" -n "Jane Doe" -e jane@example.com
         openfoia template generate standard -a EPA -s "Pollution data" -n "John Smith" -e john@example.com -j
+        openfoia template generate school-program -a "Detroit Public Schools Community District" -s "Gifted and Talented Program" -n "Jane Doe" -e jane@example.com --jurisdiction us-mi
     """
-    from .templates import RequestDetails, RequesterInfo, records_about_self, standard_request
+    from .templates import (
+        RequestDetails,
+        RequesterInfo,
+        records_about_self,
+        school_program_request,
+        standard_request,
+    )
 
     # Build requester info
     requester = RequesterInfo(
@@ -2598,11 +2669,42 @@ def template_generate(
         with get_session() as session:
             found = (
                 session.query(Agency)
-                .filter((Agency.abbreviation.ilike(agency)) | (Agency.name.ilike(f"%{agency}%")))
+                .filter((Agency.abbreviation.ilike(agency)) | (Agency.name.ilike(agency)))
                 .first()
             )
+            if found is None:
+                matches = (
+                    session.query(Agency).filter(Agency.name.ilike(f"%{agency}%")).limit(10).all()
+                )
+                if len(matches) > 1:
+                    rprint(f"[red]'{agency}' matches more than one agency; be exact:[/red]")
+                    for m in matches:
+                        rprint(f"  {m.name}" + (f" ({m.abbreviation})" if m.abbreviation else ""))
+                    raise typer.Exit(2)
+                found = matches[0] if matches else None
             if found:
                 agency_name = found.name
+                if jurisdiction is None and found.jurisdiction_id:
+                    jurisdiction = found.jurisdiction_id
+
+    j = _jurisdiction_or_exit(jurisdiction) if jurisdiction else None
+    non_federal = bool(j) and j["id"] != "us"
+    if non_federal and template_name == "self":
+        rprint(
+            "[red]The 'self' template is a federal FOIA and Privacy Act letter; "
+            "it cannot be written under a state law. Use 'standard' with --jurisdiction.[/red]"
+        )
+        raise typer.Exit(2)
+    if non_federal and expedited:
+        rprint(
+            "[yellow]Expedited processing is a federal FOIA provision; "
+            f"the {j['name']} letter omits it.[/yellow]"
+        )
+    if j and not j["verified"]:
+        rprint(
+            f"[yellow]{j['name']} is an unverified stub: the letter leaves placeholders "
+            "where the law is unknown. Check the sources in 'openfoia jurisdiction show'.[/yellow]"
+        )
 
     # Generate based on template type
     if template_name == "standard":
@@ -2613,6 +2715,11 @@ def template_generate(
             details=details,
             fee_waiver=not no_fee_waiver,
             expedited=expedited,
+            jurisdiction=j,
+        )
+    elif template_name == "school-program":
+        letter = school_program_request(
+            requester, agency_name, subject, j, fee_waiver=not no_fee_waiver
         )
     elif template_name == "self":
         letter = records_about_self(
