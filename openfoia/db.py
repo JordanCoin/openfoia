@@ -375,6 +375,12 @@ def init_db(seed: bool = True, password: str | None = None) -> None:
     _restrict_db_permissions(get_db_path(password=password))
 
 
+def ensure_db() -> None:
+    """Create the database if missing. get_session() applies pending migrations."""
+    if not get_db_path().exists():
+        init_db()
+
+
 def _restrict_db_permissions(db_path: Path) -> None:
     """Make the database (and its sidecars) owner-only.
 

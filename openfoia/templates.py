@@ -121,7 +121,7 @@ Pursuant to the Freedom of Information Act, 5 U.S.C. § 552, I am requesting acc
         letter += generate_expedited_justification(requester, details)
 
     # Standard closing
-    letter += """If you determine that any portion of the records I have requested is exempt from disclosure, please provide me with an index of those records and the specific exemption(s) that you believe apply to each withheld document or portion thereof, as required by Vaughn v. Rosen.
+    letter += f"""If you determine that any portion of the records I have requested is exempt from disclosure, please provide me with an index of those records and the specific exemption(s) that you believe apply to each withheld document or portion thereof, as required by Vaughn v. Rosen.
 
 If my request is denied in whole or in part, I ask that you justify all deletions by reference to specific exemptions of the Act. I expect the release of all segregable portions of otherwise exempt material. I reserve the right to appeal any decision to withhold information or deny a waiver of fees.
 
@@ -400,7 +400,7 @@ Under the Privacy Act, I am entitled to access records maintained about me in sy
 
 """
 
-    letter += """I prefer to receive responsive documents in electronic format (PDF preferred) via email if possible.
+    letter += f"""I prefer to receive responsive documents in electronic format (PDF preferred) via email if possible.
 
 I request a fee waiver for this request. As I am seeking records about myself for personal use, disclosure is in my interest and not for commercial purposes.
 

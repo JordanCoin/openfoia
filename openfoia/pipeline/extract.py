@@ -421,6 +421,51 @@ def _gliner_available() -> bool:
         return False
 
 
+#: GLiNER truncates input past 384 words (its own word splitter, below).
+#: Windows stay well under that so nothing is silently dropped.
+GLINER_MAX_WORDS = 300
+
+_GLINER_WORD = re.compile(r"\w+(?:[-_]\w+)*|\S")
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+|\n\s*\n")
+
+
+def _gliner_windows(
+    text: str, max_words: int = GLINER_MAX_WORDS, overlap: int = 1
+) -> list[tuple[int, str]]:
+    """Split *text* into sentence-aligned windows of at most *max_words* words.
+
+    Returns (offset, window) pairs where window == text[offset:offset+len(window)],
+    so a model's character offsets map back by adding offset. Consecutive
+    windows share *overlap* trailing sentences so an entity on a boundary is
+    seen whole at least once. A single sentence longer than the budget is
+    split on word boundaries.
+    """
+    # (start, end, words) per sentence, with over-long sentences pre-split
+    pieces: list[tuple[int, int, int]] = []
+    pos = 0
+    for m in [*_SENTENCE_END.finditer(text), None]:
+        end = m.start() if m else len(text)
+        words = [w.span() for w in _GLINER_WORD.finditer(text, pos, end)]
+        for i in range(0, len(words), max_words):
+            chunk = words[i : i + max_words]
+            pieces.append((chunk[0][0], chunk[-1][1], len(chunk)))
+        pos = m.end() if m else len(text)
+
+    windows: list[tuple[int, str]] = []
+    i = 0
+    while i < len(pieces):
+        j, count = i, 0
+        while j < len(pieces) and count + pieces[j][2] <= max_words:
+            count += pieces[j][2]
+            j += 1
+        start, end = pieces[i][0], pieces[j - 1][1]
+        windows.append((start, text[start:end]))
+        if j >= len(pieces):
+            break
+        i = max(i + 1, j - overlap)
+    return windows
+
+
 def _gliner_type_to_entity_type(label: str) -> EntityType | None:
     """Map GLiNER label strings to our EntityType enum."""
     mapping = {
@@ -837,6 +882,9 @@ def _call_openai(
 def _llm_available(provider: str, api_key: str | None, base_url: str | None) -> bool:
     import urllib.request
 
+    if not provider or provider == "none":
+        return False
+
     if provider == "ollama":
         url = (base_url or "http://localhost:11434").rstrip("/")
         try:
@@ -865,6 +913,12 @@ def _llm_available(provider: str, api_key: str | None, base_url: str | None) -> 
 # Main extractor
 # ---------------------------------------------------------------------------
 
+TIERS = ("gliner", "llm", "spacy", "regex")
+
+
+class BackendUnavailableError(RuntimeError):
+    """A forced extraction tier is not installed or not reachable."""
+
 
 class EntityExtractor:
     """Extract entities and relationships from document text.
@@ -880,7 +934,16 @@ class EntityExtractor:
         model: str | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
+        tier: str | None = None,
     ):
+        """*tier* forces one backend (see TIERS) instead of the best available.
+
+        regex/spacy/gliner never call an LLM; llm runs regex + the best local
+        NER, then the LLM validator, and fails if no LLM is reachable.
+        """
+        if tier is not None and tier not in TIERS:
+            raise ValueError(f"Unknown tier {tier!r}; choose from {', '.join(TIERS)}")
+        self.tier = tier
         cfg = config or load_config()
         self.provider = provider or cfg.ai.provider
         self.model = model or cfg.ai.model
@@ -951,7 +1014,19 @@ class EntityExtractor:
         """
         import asyncio
 
-        backend = self._resolve_backend()
+        tier = self.tier
+        if tier == "gliner" and not _gliner_available():
+            raise BackendUnavailableError("GLiNER is not installed: openfoia install-extras ner")
+        if tier == "spacy" and not _spacy_available():
+            raise BackendUnavailableError(
+                "spaCy or its English model is not installed: openfoia install-extras ner-spacy"
+            )
+        if tier == "llm" and not _llm_available(self.provider, self.api_key, self.base_url):
+            raise BackendUnavailableError(
+                f"No LLM reachable for provider '{self.provider}'. Start Ollama "
+                "(ollama serve) or configure a provider: openfoia config --init"
+            )
+        backend = self._resolve_backend() if tier in (None, "llm") else tier
 
         # --- Phase 1: Fast extraction (NER + regex) ---
         all_mentions: list[Mention] = []
@@ -989,8 +1064,10 @@ class EntityExtractor:
         # Only runs when NER backends produced entities worth validating.
         # Skip if only regex ran (no NER entities to validate) or backend was forced.
         has_ner_mentions = any(m.backend_name != "regex" for m in all_mentions)
-        llm_available = has_ner_mentions and _llm_available(
-            self.provider, self.api_key, self.base_url
+        llm_available = (
+            tier in (None, "llm")
+            and (has_ner_mentions or tier == "llm")
+            and _llm_available(self.provider, self.api_key, self.base_url)
         )
         if llm_available and entities:
             entities = await self._llm_validate_entities(entities, text)
@@ -1617,13 +1694,12 @@ Return JSON: {{"keep": [{{"raw_text": "...", "confidence": 0.95, "corrected": ".
             if ct_name:
                 labels.append(ct_name)
 
-        mentions: list[Mention] = []
-        chunks = self._chunk_text(text, max_chars=4000)
+        page = page_numbers[0] if page_numbers else None
+        best: dict[tuple[int, int, EntityType], Mention] = {}
 
-        for ci, chunk in enumerate(chunks):
-            page = page_numbers[ci] if page_numbers and ci < len(page_numbers) else None
+        for offset, window in _gliner_windows(text):
             try:
-                predictions = model.predict_entities(chunk, labels, threshold=0.4)
+                predictions = model.predict_entities(window, labels, threshold=0.4)
             except Exception:
                 continue
 
@@ -1635,28 +1711,24 @@ Return JSON: {{"keep": [{{"raw_text": "...", "confidence": 0.95, "corrected": ".
                 etype = _gliner_type_to_entity_type(label)
                 if etype is None:
                     continue
-                score = round(pred.get("score", 0.5), 3)
-                start = pred.get("start", -1)
-                end = pred.get("end", -1)
-                ctx_start = max(0, chunk.find(raw) - 80)
-                ctx_end = min(len(chunk), chunk.find(raw) + len(raw) + 80)
-                ctx = chunk[ctx_start:ctx_end].replace("\n", " ").strip()
-
-                mentions.append(
-                    Mention(
-                        entity_type=etype,
-                        raw_text=raw,
-                        normalized_text=raw.strip(),
-                        start_offset=start,
-                        end_offset=end,
-                        page=page,
-                        context=ctx,
-                        backend_name="gliner",
-                        backend_score=score,
-                    )
+                start = offset + pred.get("start", window.find(raw))
+                end = offset + pred.get("end", window.find(raw) + len(raw))
+                mention = Mention(
+                    entity_type=etype,
+                    raw_text=raw,
+                    normalized_text=raw.strip(),
+                    start_offset=start,
+                    end_offset=end,
+                    page=page,
+                    context=_get_context_window(text, start, end),
+                    backend_name="gliner",
+                    backend_score=round(pred.get("score", 0.5), 3),
                 )
+                key = (start, end, etype)
+                if key not in best or mention.backend_score > best[key].backend_score:
+                    best[key] = mention
 
-        return mentions
+        return list(best.values())
 
     def _mentions_from_spacy(self, text: str, page_numbers: list[int] | None) -> list[Mention]:
         """Extract mentions using spaCy NLP pipeline."""

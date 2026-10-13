@@ -350,6 +350,9 @@ def _apply_env_overrides(config: OpenFOIAConfig, prefix: str) -> OpenFOIAConfig:
     if v := os.environ.get(f"{prefix}OLLAMA_BASE_URL"):
         config.ai.provider = "ollama"
         config.ai.base_url = v
+    # An explicit "no LLM" beats any provider implied by a key or URL above.
+    if os.environ.get(f"{prefix}AI_PROVIDER") == "none":
+        config.ai.provider = "none"
 
     # PDF text extraction
     if v := os.environ.get(f"{prefix}PDF_EXTRACT_BINARY"):

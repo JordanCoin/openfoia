@@ -79,16 +79,14 @@ class OCREngine:
             min_chars=self.pdf_extract_min_chars,
         )
         if extract_result:
-            # Split into per-page results
-            raw_pages = extract_result.text.split("\f")
+            from ..doctext import join_pages
+
             pages = [
                 {"page_number": i + 1, "text": page_text, "confidence": 1.0}
-                for i, page_text in enumerate(raw_pages)
+                for i, page_text in enumerate(extract_result.pages)
             ]
-            # Rejoin without form feeds for the full text
-            full_text = "\n\n".join(p.strip() for p in raw_pages if p.strip())
             return OCRResult(
-                text=full_text,
+                text=join_pages(extract_result.pages),
                 confidence=1.0,  # direct extraction is lossless
                 page_count=extract_result.page_count,
                 pages=pages,

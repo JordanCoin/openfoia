@@ -31,6 +31,32 @@ exhaustive lists.
   `--jurisdiction`/`--type` filter does not apply to that source. Exit code
   0 when nothing errored, 2 when some sources errored, 1 when none succeeded.
 - `OPENFOIA_MUCKROCK_TOKEN` supplies a MuckRock API token.
+- **Page-aware document text.** Every stored document now keeps its text per
+  page. `records fetch` pulls DocumentCloud's per-page text (one request per
+  page, four at a time) and falls back to the full text as a single page if
+  any page cannot be fetched. Locally ingested PDFs keep the page breaks from
+  the PDF extractor or OCR. Documents stored before this release are kept as
+  one page; re-fetch or re-ingest them for real page numbers.
+- `openfoia docs grep "<query>"` — offline keyword-in-context search over
+  every stored page, printing document id, title, page number and the passage
+  around each match. Uses a local SQLite FTS5 index (phrases, `OR`, `NEAR`);
+  on a SQLite build without FTS5 (some SQLCipher builds) it falls back to a
+  plain substring scan and says so. `--context`, `--limit`, `--doc`, `--json`.
+- `openfoia docs show <id> [--page N]` prints a stored document's text and
+  page map; `openfoia docs list` lists stored documents with page counts,
+  source and text length. Both take `--json`.
+- `openfoia analyze extract --tier gliner|spacy|regex|llm` forces one
+  extraction backend and fails clearly if it is not installed. The local
+  tiers never call an LLM, so they also skip the slow LLM validation step.
+
+### Changed
+
+- GLiNER input is split into sentence-aligned windows under its 384-word
+  limit instead of 4,000-character chunks the model silently truncated, so
+  names late in a long passage are no longer missed.
+- Database schema migration `003` adds the `document_pages` table and its
+  full-text index, applied automatically the first time a command opens the
+  database.
 
 ### Fixed
 
@@ -43,6 +69,15 @@ exhaustive lists.
 - A single-source `records search` that fails (including DocumentCloud
   timeouts and rate limits) now exits non-zero in every output mode, not only
   with `--raw`.
+- `template generate` printed a literal `{requester.name}` under
+  "Sincerely," in standard and records-about-yourself letters.
+- `OPENFOIA_AI_PROVIDER=none` now disables the LLM even when an API key is
+  stored in the config file.
+- `OPENFOIA_AI_PROVIDER=none` now wins over `OPENFOIA_ANTHROPIC_API_KEY`,
+  `OPENFOIA_OPENAI_API_KEY` and `OPENFOIA_OLLAMA_BASE_URL`; before, setting any
+  of those silently switched the LLM provider back on.
+- Re-fetching a DocumentCloud document whose per-page text cannot be fetched
+  keeps the pages already stored instead of collapsing them into one page.
 
 ### Internal
 

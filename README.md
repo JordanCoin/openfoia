@@ -78,6 +78,30 @@ To control concurrency per process, set:
 - `OPENFOIA_PDF_EXTRACT_MAX_WORKERS` (for example `4` or `8`)
 - Optional profile override: `OPENFOIA_PDF_EXTRACT_PROFILE=standard|large`
 
+### Reading and searching stored documents
+
+Everything below runs against the local database, with no network access.
+
+```bash
+openfoia docs list                                  # stored documents, pages, source
+openfoia docs show 3f2a --page 12                   # one page of text (omit --page for all)
+openfoia docs grep Hocking                          # every passage that mentions Hocking
+openfoia docs grep '"school board" OR WISC' -C 80   # FTS5 phrases, OR, NEAR(a b, 10)
+openfoia docs grep audit --doc 3f2a --json          # one document, machine-readable
+```
+
+Results cite real page numbers for DocumentCloud documents and ingested PDFs.
+Documents stored before page support, or whose page text could not be fetched,
+are kept as a single page (`docs show` flags this when the source page count is known). If your SQLite build lacks FTS5
+(some SQLCipher builds), `docs grep` does a plain substring search instead and
+prints a notice.
+
+Entity extraction picks the best backend it finds. On a local model the LLM
+validation step can take minutes per document. To skip it, force a local
+backend with `openfoia analyze extract <id> --tier gliner` (or `spacy`,
+`regex`), or set `OPENFOIA_AI_PROVIDER=none`, which wins over any API key
+or Ollama URL in the config file or environment.
+
 ## Data Sources
 
 `openfoia records search` supports these public-records sources. Each search
