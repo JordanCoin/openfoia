@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -71,19 +72,24 @@ class OCREngine:
         pdf_path = Path(pdf_path)
 
         # Try direct text extraction (not OCR — reads PDF structures directly)
-        from .pdf_extract import extract_text
+        from .pdf_extract import PDFExtractTimeout, extract_text
 
-        extract_result = await extract_text(
-            pdf_path,
-            binary_path=self.pdf_extract_binary,
-            min_chars=self.pdf_extract_min_chars,
-        )
+        try:
+            extract_result = await extract_text(
+                pdf_path,
+                binary_path=self.pdf_extract_binary,
+                min_chars=self.pdf_extract_min_chars,
+            )
+        except PDFExtractTimeout as e:
+            print(f"Warning: {e}; falling back to OCR", file=sys.stderr)
+            extract_result = None
         if extract_result:
             from ..doctext import join_pages
 
+            verdicts = extract_result.verdicts or [None] * len(extract_result.pages)
             pages = [
-                {"page_number": i + 1, "text": page_text, "confidence": 1.0}
-                for i, page_text in enumerate(extract_result.pages)
+                {"page_number": i + 1, "text": page_text, "confidence": 1.0, "verdict": v}
+                for i, (page_text, v) in enumerate(zip(extract_result.pages, verdicts, strict=True))
             ]
             return OCRResult(
                 text=join_pages(extract_result.pages),
@@ -117,6 +123,46 @@ class OCREngine:
                 f"  macOS: brew install tesseract poppler"
             ) from e
 
+    async def ocr_pages(
+        self, pdf_path: Path | str, page_numbers: list[int]
+    ) -> dict[int, str] | None:
+        """Tesseract only the given 1-based pages; {page: text}.
+
+        Returns None when tesseract or its Python bindings are not installed,
+        so callers can keep the text they already have.
+        """
+        try:
+            import pytesseract
+            from pdf2image import convert_from_path
+        except ImportError:
+            return None
+        if self.tesseract_cmd:
+            pytesseract.pytesseract.tesseract_cmd = self.tesseract_cmd
+
+        out: dict[int, str] = {}
+        # ponytail: one pdftoppm call per page; batch contiguous runs if this is slow
+        for n in page_numbers[:MAX_OCR_PAGES]:
+
+            def _one(n=n):
+                with tempfile.TemporaryDirectory(dir=get_ocr_temp_dir()) as scratch:
+                    images = convert_from_path(
+                        str(pdf_path), dpi=300, output_folder=scratch, first_page=n, last_page=n
+                    )
+                    return self._ocr_image(images[0])[1] if images else ""
+
+            try:
+                out[n] = await asyncio.to_thread(_one)
+            except pytesseract.TesseractNotFoundError:
+                return None
+        return out
+
+    @staticmethod
+    def _ocr_image(image) -> tuple[dict, str]:
+        import pytesseract
+
+        data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
+        return data, pytesseract.image_to_string(image)
+
     async def _process_tesseract(self, pdf_path: Path) -> OCRResult:
         """Process using Tesseract OCR."""
         import pytesseract
@@ -149,12 +195,7 @@ class OCREngine:
             # iteration's page. It is awaited immediately today, so late
             # binding does not bite — but parallelizing this loop later would
             # otherwise silently OCR the last page N times.
-            def _ocr(image=image):
-                data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
-                text = pytesseract.image_to_string(image)
-                return data, text
-
-            data, text = await asyncio.to_thread(_ocr)
+            data, text = await asyncio.to_thread(self._ocr_image, image)
 
             # Calculate confidence for this page
             confidences = [int(c) for c in data["conf"] if c != "-1"]
@@ -166,6 +207,7 @@ class OCREngine:
                     "text": text,
                     "confidence": page_confidence / 100.0,
                     "word_count": len([w for w in data["text"] if w.strip()]),
+                    "verdict": "ocr",
                 }
             )
 

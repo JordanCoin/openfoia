@@ -98,6 +98,17 @@ openfoia docs ingest ./response.pdf
 
 Documents are copied to `~/.openfoia/docs/`, metadata is stripped automatically (EXIF, PDF author, DOCX revision history), and they're ready for analysis.
 
+**How a PDF's text is read.** The `pdf-extract` binary reads each page's
+text layer and gives every page a verdict: `text_layer` (readable),
+`garbled` (fonts that did not decode cleanly) or `image_only` (a scan with
+no text). Only `garbled` and `image_only` pages are sent to tesseract OCR,
+one page at a time; readable pages keep the extracted text. OCR'd pages are
+stored with verdict `ocr:<original>`. If tesseract is not installed those
+pages keep whatever text was extracted and you get one hint to run
+`openfoia install-extras ocr`. `docs list` and `docs show` print the per-page
+verdict counts. `docs ingest --ocr` still OCRs every page regardless of
+verdict. Everything here runs locally; nothing is sent anywhere.
+
 ### Option C: Search public databases
 
 ```bash

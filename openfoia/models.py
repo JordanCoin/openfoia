@@ -322,6 +322,9 @@ class DocumentPage(Base):
     page_number: Mapped[int] = mapped_column(Integer)
     text: Mapped[str] = mapped_column(Text)
     char_count: Mapped[int] = mapped_column(Integer)
+    #: text_layer / garbled / image_only from the extractor, ocr:<original>
+    #: once the page was OCR'd, None when unknown (older rows, non-PDF sources)
+    verdict: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     document: Mapped[Document] = relationship(back_populates="pages")
 

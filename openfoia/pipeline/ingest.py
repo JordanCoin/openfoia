@@ -29,6 +29,14 @@ class IngestResult:
     checksum: str
     metadata: dict[str, Any]
     pages: list[str] | None = None  # per-page text when the extractor knows page breaks
+    verdicts: list[str | None] | None = None  # per-page text_layer/garbled/image_only/ocr:*
+
+
+_OCR_HINT = (
+    "Some pages are scanned or garbled but tesseract is not installed; keeping the "
+    "extracted text. Run: openfoia install-extras ocr"
+)
+_ocr_hint_shown = False
 
 
 class DocumentIngester:
@@ -91,7 +99,7 @@ class DocumentIngester:
             page_count = await self._get_pdf_page_count(dest_path)
 
         # Auto-extract text based on file type
-        extracted_text, pages = await self._extract(dest_path, mime_type)
+        extracted_text, pages, verdicts = await self._extract(dest_path, mime_type)
 
         return IngestResult(
             document_id=doc_id,
@@ -102,6 +110,7 @@ class DocumentIngester:
             page_count=page_count,
             extracted_text=extracted_text,
             pages=pages,
+            verdicts=verdicts,
             checksum=checksum,
             metadata={
                 "original_path": str(file_path),
@@ -149,7 +158,7 @@ class DocumentIngester:
             page_count = await self._get_pdf_page_count(dest_path)
 
         # Auto-extract text
-        extracted_text, pages = await self._extract(dest_path, mime_type)
+        extracted_text, pages, verdicts = await self._extract(dest_path, mime_type)
 
         return IngestResult(
             document_id=doc_id,
@@ -160,6 +169,7 @@ class DocumentIngester:
             page_count=page_count,
             extracted_text=extracted_text,
             pages=pages,
+            verdicts=verdicts,
             checksum=checksum,
             metadata={
                 "ingested_at": _utcnow().isoformat(),
@@ -258,10 +268,10 @@ class DocumentIngester:
 
     async def _extract(
         self, file_path: Path, mime_type: str
-    ) -> tuple[str | None, list[str] | None]:
-        """Auto-extract (text, pages) from a file based on its type.
+    ) -> tuple[str | None, list[str] | None, list[str | None] | None]:
+        """Auto-extract (text, pages, verdicts) from a file based on its type.
 
-        pages is None unless the extractor knows page boundaries (PDFs).
+        pages and verdicts are None unless the extractor knows page boundaries (PDFs).
 
         - PDFs: try pdf-extract binary first (fast, lossless), fall back to OCR
         - DOCX: extract paragraphs + table text via python-docx
@@ -283,18 +293,37 @@ class DocumentIngester:
                 text = await asyncio.to_thread(file_path.read_text, errors="replace")
             elif mime_type == "application/vnd.ms-outlook" or file_path.suffix.lower() == ".msg":
                 text = await asyncio.to_thread(self._extract_text_msg, file_path)
-            return text, None
+            return text, None, None
         except Exception:
-            return None, None
+            return None, None, None
 
-    async def _extract_text_pdf(self, pdf_path: Path) -> tuple[str | None, list[str] | None]:
-        """Extract (text, pages) from PDF: try compiled binary first, fall back to OCR."""
+    async def _extract_text_pdf(
+        self, pdf_path: Path
+    ) -> tuple[str | None, list[str] | None, list[str | None] | None]:
+        """Extract (text, pages, verdicts) from a PDF.
+
+        The compiled binary goes first. Pages it marks image_only or garbled
+        are OCR'd one by one (verdict becomes ``ocr:<original>``); text_layer
+        pages keep the binary's text. If the binary finds nothing the whole
+        file falls back to OCR.
+        """
+        import sys
+
         from ..doctext import join_pages
-        from .pdf_extract import extract_text
+        from .pdf_extract import NEEDS_OCR, PDFExtractTimeout, extract_text
 
-        result = await extract_text(pdf_path)
+        try:
+            result = await extract_text(pdf_path)
+        except PDFExtractTimeout as e:
+            print(f"Warning: {e}; falling back to OCR", file=sys.stderr)
+            result = None
         if result and result.char_count > 50:
-            return join_pages(result.pages), result.pages
+            pages = list(result.pages)
+            verdicts = list(result.verdicts or [None] * len(pages))
+            need = [i + 1 for i, v in enumerate(verdicts) if v in NEEDS_OCR]
+            if need:
+                await self._ocr_pages_into(pdf_path, need, pages, verdicts)
+            return join_pages(pages), pages, verdicts
 
         # Fall back to OCR for scanned PDFs
         try:
@@ -303,11 +332,38 @@ class DocumentIngester:
             engine = OCREngine()
             ocr_result = await engine.process_pdf(pdf_path)
             if ocr_result.text and len(ocr_result.text.strip()) > 50:
-                return ocr_result.text, [p["text"] for p in ocr_result.pages]
+                return (
+                    ocr_result.text,
+                    [p["text"] for p in ocr_result.pages],
+                    [p.get("verdict") for p in ocr_result.pages],
+                )
         except (ImportError, Exception):
             pass
 
-        return None, None
+        return None, None, None
+
+    async def _ocr_pages_into(
+        self, pdf_path: Path, need: list[int], pages: list[str], verdicts: list[str | None]
+    ) -> None:
+        """OCR the listed pages in place; leave them untouched if tesseract is missing."""
+        global _ocr_hint_shown
+        import sys
+
+        from .ocr import OCREngine
+
+        try:
+            texts = await OCREngine().ocr_pages(pdf_path, need)
+        except Exception as e:
+            print(f"Warning: OCR of {pdf_path.name} failed: {e}", file=sys.stderr)
+            return
+        if texts is None:
+            if not _ocr_hint_shown:
+                _ocr_hint_shown = True
+                print(_OCR_HINT, file=sys.stderr)
+            return
+        for n, text in texts.items():
+            pages[n - 1] = text
+            verdicts[n - 1] = f"ocr:{verdicts[n - 1]}"
 
     def _extract_text_docx(self, docx_path: Path) -> str | None:
         """Extract text from DOCX including tables."""
