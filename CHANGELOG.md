@@ -10,6 +10,18 @@ exhaustive lists.
 
 ## [Unreleased]
 
+### Added
+
+- Cases are now fully editable: `openfoia case edit [--name <new>] [--desc
+  <text>]` renames a case (the slug follows) or changes its description,
+  `openfoia case rm <name> [--yes]` deletes a case with its notes and query
+  log after confirmation while keeping its documents in the database,
+  detached, and `openfoia case note edit <id> [new text] [--tier --page
+  --quote --doc]` changes a finding in place. `case note edit <id> --to
+  <case>` moves a finding to another case, and `openfoia case move <doc-id>
+  --to <case>` moves a document (with the documents fetched alongside it, and
+  the notes that cite them) to another case.
+
 ## [4.3.1] - 2026-10-14
 
 Plugin and fixes found by running the 4.3.0 investigation loop end to end.

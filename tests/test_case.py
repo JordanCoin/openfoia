@@ -230,3 +230,69 @@ def test_database_from_older_release_upgrades_on_first_session(monkeypatch):
     assert result.exit_code == 0, result.output
     assert "Upgrading database schema 001 -> 005" in result.stderr
     _ok(runner.invoke(app, ["case", "new", "After upgrade"]))
+
+
+def test_case_edit_and_rm_keep_documents(monkeypatch):
+    _fake_dc_fetch(monkeypatch)
+    from openfoia.cases import get_active_case_id
+    from openfoia.db import get_session
+    from openfoia.models import Case, CaseNote, Document
+
+    _ok(runner.invoke(app, ["case", "new", "Draft", "-d", "first"]))
+    _ok(runner.invoke(app, ["records", "fetch", "123", "-s", "documentcloud"]))
+    _ok(runner.invoke(app, ["case", "note", "a finding", "--tier", "says"]))
+
+    out = _ok(runner.invoke(app, ["case", "edit", "--name", "Final", "--desc", ""]))
+    assert "Updated case Final (final)" in out
+    _ok(runner.invoke(app, ["case", "new", "Other"]))
+    assert runner.invoke(app, ["case", "edit", "--name", "Final"]).exit_code == 1
+    assert runner.invoke(app, ["case", "edit", "Final"]).exit_code == 2
+
+    # No confirmation without --yes; cancelling leaves everything in place.
+    r = runner.invoke(app, ["case", "rm", "Final"], input="n\n")
+    assert r.exit_code == 1 and "1 note(s)" in r.output and "stay in the database" in r.output
+    with get_session() as s:
+        assert s.query(Case).count() == 2
+
+    _ok(runner.invoke(app, ["case", "use", "Final"]))
+    out = _ok(runner.invoke(app, ["case", "rm", "final", "--yes"]))
+    assert "Deleted case Final; 1 document(s) kept" in out
+    assert get_active_case_id() is None
+    with get_session() as s:
+        assert [c.name for c in s.query(Case)] == ["Other"]
+        assert s.query(CaseNote).count() == 0
+        assert s.query(Document).count() == 1
+        assert all(d.request.case_id is None for d in s.query(Document))
+    assert runner.invoke(app, ["case", "rm", "Final", "--yes"]).exit_code == 1
+
+
+def test_case_move_document_and_note_between_cases(monkeypatch):
+    _fake_dc_fetch(monkeypatch)
+    from openfoia.db import get_session
+    from openfoia.models import CaseNote
+
+    _ok(runner.invoke(app, ["case", "new", "A"]))
+    _ok(runner.invoke(app, ["records", "fetch", "123", "-s", "documentcloud"]))
+    _ok(runner.invoke(app, ["case", "note", "about 123", "--tier", "says"]))
+    _ok(runner.invoke(app, ["case", "new", "B"]))
+    _ok(runner.invoke(app, ["case", "use", "A"]))
+
+    with get_session() as s:
+        doc_id = s.query(CaseNote).one().case_id and _doc_ids(s)[0]
+    out = _ok(runner.invoke(app, ["case", "move", doc_id[:8], "--to", "B"]))
+    assert "moved to case B" in out
+    assert runner.invoke(app, ["case", "move", doc_id[:8], "--to", "B"]).exit_code == 1
+    assert runner.invoke(app, ["case", "move", doc_id[:8], "--to", "Nope"]).exit_code == 1
+
+    out = _ok(runner.invoke(app, ["case", "note", "edit", "1", "--to", "B"]))
+    assert "moved to case B" in out
+    assert json.loads(_ok(runner.invoke(app, ["case", "notes", "--json"]))) == []
+    notes = json.loads(_ok(runner.invoke(app, ["case", "notes", "B", "--json"])))
+    assert [n["note"] for n in notes] == ["about 123"]
+    assert runner.invoke(app, ["case", "note", "edit", "1", "--to", "B"]).exit_code == 1
+
+
+def _doc_ids(session):
+    from openfoia.models import Document
+
+    return [d.id for d in session.query(Document)]

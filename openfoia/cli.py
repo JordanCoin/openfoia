@@ -5636,6 +5636,112 @@ def case_close():
     rprint("[green]No active case.[/green]")
 
 
+@case_app.command("edit")
+def case_edit(
+    name: str | None = typer.Argument(None, help="Case name (default: active)"),
+    new_name: str | None = typer.Option(None, "--name", help="New name (the slug follows it)"),
+    desc: str | None = typer.Option(None, "--desc", "-d", help="New description ('' to clear)"),
+):
+    """Rename a case or change its description."""
+    from .cases import slugify
+    from .db import get_session
+    from .models import Case
+
+    _require_db()
+    if new_name is None and desc is None:
+        rprint("[red]Pass --name and/or --desc.[/red]")
+        raise typer.Exit(2)
+    with get_session() as session:
+        case = _resolve_case_or_exit(session, name)
+        if new_name is not None:
+            slug = slugify(new_name)
+            clash = session.query(Case).filter(Case.slug == slug, Case.id != case.id).first()
+            if clash:
+                rprint(f"[red]A case with slug '{slug}' already exists.[/red]")
+                raise typer.Exit(1)
+            case.name, case.slug = new_name, slug
+        if desc is not None:
+            case.description = desc or None
+        rprint(f"[green]Updated case[/green] [cyan]{case.name}[/cyan] ({case.slug}).")
+
+
+@case_app.command("rm")
+def case_rm(
+    name: str = typer.Argument(..., help="Case name or slug"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+):
+    """Delete a case with its notes and query log. Documents are kept and detached."""
+    from .cases import clear_active_case, get_active_case_id
+    from .db import get_session
+    from .models import CaseNote, CaseQuery
+    from .models import Request as RequestModel
+
+    _require_db()
+    with get_session() as session:
+        case = _resolve_case_or_exit(session, name)
+        notes = session.query(CaseNote).filter(CaseNote.case_id == case.id).count()
+        docs = len(_case_document_ids(session, case.id))
+        if not yes:
+            rprint(
+                f"Delete case [cyan]{case.name}[/cyan]: {notes} note(s) and its query log are "
+                f"removed for good; {docs} document(s) stay in the database, detached."
+            )
+            if not typer.confirm("Continue?", default=False):
+                rprint("[yellow]Cancelled.[/yellow]")
+                raise typer.Exit(1)
+        session.query(CaseNote).filter(CaseNote.case_id == case.id).delete(
+            synchronize_session=False
+        )
+        session.query(CaseQuery).filter(CaseQuery.case_id == case.id).delete(
+            synchronize_session=False
+        )
+        session.query(RequestModel).filter(RequestModel.case_id == case.id).update(
+            {"case_id": None}, synchronize_session=False
+        )
+        was_active = get_active_case_id() == case.id
+        label = case.name
+        session.delete(case)
+    if was_active:
+        clear_active_case()
+    rprint(f"[green]Deleted case[/green] [cyan]{label}[/cyan]; {docs} document(s) kept.")
+
+
+@case_app.command("move")
+def case_move(
+    doc: str = typer.Argument(..., help="Document id or prefix"),
+    to: str = typer.Option(..., "--to", help="Destination case name or slug"),
+):
+    """Move a document to another case. Documents fetched together move together."""
+    from .db import get_session
+    from .models import CaseNote, Document
+    from .models import Request as RequestModel
+
+    _require_db()
+    with get_session() as session:
+        target = _resolve_case_or_exit(session, to)
+        d = _resolve_doc(session, doc)
+        req = session.get(RequestModel, d.request_id) if d.request_id else None
+        if req is None:
+            rprint(f"[red]Document {doc} has no request record to move.[/red]")
+            raise typer.Exit(1)
+        if req.case_id == target.id:
+            rprint(f"[red]Document {d.id[:8]} is already in case {target.name}.[/red]")
+            raise typer.Exit(1)
+        siblings = [x.id for x in session.query(Document).filter(Document.request_id == req.id)]
+        req.case_id = target.id
+        # Notes citing these documents follow them; a citation must stay in reach.
+        moved_notes = (
+            session.query(CaseNote)
+            .filter(CaseNote.document_id.in_(siblings), CaseNote.case_id != target.id)
+            .update({"case_id": target.id}, synchronize_session=False)
+        )
+        extra = f" with {len(siblings) - 1} sibling document(s)" if len(siblings) > 1 else ""
+        notes = f", {moved_notes} note(s) followed" if moved_notes else ""
+        rprint(
+            f"[green]Document {d.id[:8]} moved to case[/green] [cyan]{target.name}[/cyan]{extra}{notes}."
+        )
+
+
 @case_app.command("show")
 def case_show(name: str | None = typer.Argument(None, help="Case name (default: active)")):
     """Documents, entities, logged queries and last activity for a case."""
@@ -5671,17 +5777,22 @@ def _citation(f: dict[str, Any]) -> str:
 
 @case_app.command("note")
 def case_note(
-    words: list[str] = typer.Argument(..., help="Note text, or: rm <id> [<id>...]"),
+    words: list[str] = typer.Argument(
+        ..., help="Note text, or: rm <id> [<id>...], or: edit <id> [new text]"
+    ),
     doc: str | None = typer.Option(None, "--doc", help="Document id or prefix the note is about"),
     page: int | None = typer.Option(None, "--page", help="Page in that document"),
     quote: str | None = typer.Option(None, "--quote", help="The passage, verbatim"),
     tier: str | None = typer.Option(None, "--tier", help="says, infer or speculation"),
+    to: str | None = typer.Option(None, "--to", help="With edit: move the note to this case"),
 ):
-    """Add a finding to the active case, or remove one: case note rm <id>.
+    """Add a finding to the active case, edit one (case note edit <id>) or remove one.
 
     Examples:
         openfoia case note "Hocking Technical College tested PAS" --doc 3f2a --page 51 --tier says
         openfoia case note "Likely the same program" --tier speculation
+        openfoia case note edit 3 "Same program, per the 1987 review" --tier infer
+        openfoia case note edit 3 --to "MKULTRA sites"
         openfoia case note rm 3
     """
     from .db import get_session
@@ -5712,6 +5823,43 @@ def case_note(
         if document_id and document_id not in _case_document_ids(session, case.id):
             rprint(f"[red]Document {doc} is not in case {case.name}.[/red]")
             raise typer.Exit(1)
+        if words[0] == "edit":
+            try:
+                note_id = int(words[1])
+            except (IndexError, ValueError):
+                rprint("[red]Usage: openfoia case note edit <id> [new text] [--tier ...][/red]")
+                raise typer.Exit(2) from None
+            n = session.get(CaseNote, note_id)
+            if n is None or n.case_id != case.id:
+                rprint(f"[red]No note {note_id} in case {case.name}.[/red]")
+                raise typer.Exit(1)
+            text = " ".join(words[2:])
+            if text:
+                n.note = text
+            if tier is not None:
+                n.tier = tier
+            if page is not None:
+                n.page = page
+            if quote is not None:
+                n.quote = quote
+            if document_id:
+                n.document_id = document_id
+            if to is not None:
+                target = _resolve_case_or_exit(session, to)
+                if target.id == case.id:
+                    rprint(f"[red]Note {n.id} is already in case {case.name}.[/red]")
+                    raise typer.Exit(1)
+                if n.document_id and n.document_id not in _case_document_ids(session, target.id):
+                    rprint(
+                        f"[red]Note {n.id} cites a document that is not in case {target.name}; "
+                        "move the document first: openfoia case move <doc-id> --to <case>.[/red]"
+                    )
+                    raise typer.Exit(1)
+                n.case_id = target.id
+                rprint(f"[green]Note {n.id} moved to case[/green] [cyan]{target.name}[/cyan].")
+                return
+            rprint(f"[green]Note {n.id} updated.[/green]")
+            return
         n = CaseNote(
             case_id=case.id,
             document_id=document_id,

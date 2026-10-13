@@ -37,9 +37,11 @@ openfoia case new "PAS and schoolchildren" -d "Was Gittinger's PAS given to mino
 openfoia case list            # * marks the active one
 openfoia case use "PAS and schoolchildren"
 openfoia case show
+openfoia case edit --name "PAS and minors" -d "Was the PAS given to anyone under 18?"
+openfoia case rm "PAS and schoolchildren" --yes      # notes and query log go; documents stay, detached
 ```
 
-Name the case after the question, not the topic. One claim, one case.
+Name the case after the question, not the topic. One claim, one case. `case rm` asks for confirmation unless `--yes`; notes are not recoverable.
 
 ### 1. Search
 
@@ -88,6 +90,9 @@ openfoia docs grep '"Adolescent Car Thieves"' --save --note "Reference group in 
 openfoia case note "No document describes PAS administration to minors" --tier says
 openfoia case note "Zimbardo told SRI they had excluded children" --doc 23058029 --page 12 --quote "you've excluded children" --tier says
 openfoia case notes
+openfoia case note edit <note-id> "corrected wording" --tier infer
+openfoia case note edit <note-id> --to "<other case>"      # move a finding
+openfoia case move <doc-id> --to "<other case>"             # move a document; its notes follow
 openfoia case note rm <note-id>
 ```
 
@@ -179,6 +184,8 @@ openfoia init | guide | config --show | install-extras <name> | db upgrade | db 
 | Store them in the case | `openfoia records fetch --from hits.json` |
 | Add a PDF from disk | `openfoia docs ingest <file.pdf>` |
 | Read every passage on a term | `openfoia docs grep '"<phrase>"' -C 300` |
+| Move a document or note to another case | `openfoia case move <doc-id> --to "<case>"`, `openfoia case note edit <id> --to "<case>"` |
+| Rename or delete a case | `openfoia case edit --name "<new>"`, `openfoia case rm "<name>"` |
 | Record a cited finding | `openfoia case note "<text>" --doc <id> --page N --quote "<text>" --tier says` |
 | Save grep hits as findings | `openfoia docs grep '<query>' --save --note "<why>"` |
 | Extract entities offline | `openfoia analyze extract <doc-id> --tier gliner` |

@@ -219,11 +219,14 @@ def test_grep_and_export_never_leak_another_case(tmp_path):
 
     _ok(runner.invoke(app, ["case", "new", "B"]))
     b_doc = _add_doc(
-        [f"SECRET-B passage {CREST}"], title="B-TITLE", case_id=get_active_case_id(), dc_id="900"
+        [f"SECRET-B passage {CREST}"],
+        title="B-TITLE",
+        case_id=get_active_case_id(),
+        dc_id="b900leak",
     )
     _ok(runner.invoke(app, ["case", "new", "A"]))
     a_id = get_active_case_id()
-    _add_doc(["SECRET-A passage"], title="A-TITLE", case_id=a_id, dc_id="901")
+    _add_doc(["SECRET-A passage"], title="A-TITLE", case_id=a_id, dc_id="a901")
 
     out = _ok(runner.invoke(app, ["docs", "grep", "passage"]))
     assert "A-TITLE" in out and "B-TITLE" not in out
@@ -240,7 +243,8 @@ def test_grep_and_export_never_leak_another_case(tmp_path):
 
     for args in (["case", "export"], ["case", "export", "--format", "json"], ["case", "notes"]):
         out = _ok(runner.invoke(app, args))
-        for leak in ("B-TITLE", "SECRET-B", "900", CREST):
+        # Markers carry letters: a bare "900" can appear in a timestamp or uuid.
+        for leak in ("B-TITLE", "SECRET-B", "b900leak", CREST):
             assert leak not in out, (args, leak)
     assert "SECRET-A" in _ok(runner.invoke(app, ["case", "export"]))
 
@@ -290,3 +294,14 @@ def test_grep_save_records_the_says_tier():
     _ok(runner.invoke(app, ["docs", "grep", "WAIS", "--save"]))
     out = _ok(runner.invoke(app, ["case", "export", "-f", "json"]))
     assert json.loads(out)["findings"][0]["tier"] == "says"
+
+
+def test_note_edit_changes_only_what_is_passed():
+    _ok(runner.invoke(app, ["case", "new", "PAS"]))
+    _ok(runner.invoke(app, ["case", "note", "first draft", "--tier", "speculation"]))
+    _ok(runner.invoke(app, ["case", "note", "edit", "1", "--tier", "infer", "--page", "4"]))
+    _ok(runner.invoke(app, ["case", "note", "edit", "1", "second", "draft"]))
+    notes = json.loads(_ok(runner.invoke(app, ["case", "notes", "--json"])))
+    assert (notes[0]["note"], notes[0]["tier"], notes[0]["page"]) == ("second draft", "infer", 4)
+    assert runner.invoke(app, ["case", "note", "edit", "9"]).exit_code == 1
+    assert runner.invoke(app, ["case", "note", "edit", "x"]).exit_code == 2
