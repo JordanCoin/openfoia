@@ -61,12 +61,23 @@ class GovInfoAdapter(RecordAdapter):
     source_name = "govinfo"
 
     def __init__(self, api_key: str | None = None, *, egress: EgressPolicy | None = None):
-        """Initialize. Uses DEMO_KEY if no key provided.
+        """Initialize. Without *api_key*, OPENFOIA_GOVINFO_API_KEY is used, else DEMO_KEY.
 
-        For higher rate limits, get a free key at https://api.data.gov/signup/
+        DEMO_KEY is shared and rate-limited; get a free key at https://api.data.gov/signup/
         """
+        import os
+
         super().__init__(egress=egress)
-        self._api_key = api_key or "DEMO_KEY"
+        self._api_key = api_key or os.environ.get("OPENFOIA_GOVINFO_API_KEY") or "DEMO_KEY"
+
+    def _redact(self, err: object) -> str:
+        """Error text with the key removed, wherever httpx or a URL may have put it."""
+        import re
+
+        text = re.sub(r"api_key=[^&\s'\"]+", "api_key=<redacted>", str(err))
+        if self._api_key and self._api_key != "DEMO_KEY":
+            text = text.replace(self._api_key, "<redacted>")
+        return text
 
     async def search(
         self,
@@ -93,13 +104,19 @@ class GovInfoAdapter(RecordAdapter):
 
         try:
             async with egress_client(self._egress, timeout=20) as client:
+                # Header, not query string: a URL with api_key=... ends up in
+                # error text and logs; a header does not.
                 resp = await client.post(
                     f"{API_BASE}/search",
-                    params={"api_key": self._api_key},
+                    headers={"X-Api-Key": self._api_key},
                     json=payload,
                 )
-                if resp.status_code == 429:
-                    msg = "GovInfo rate limit hit. Get a free key at https://api.data.gov/signup/"
+                if resp.status_code in (403, 429):
+                    msg = (
+                        f"GovInfo refused the request (HTTP {resp.status_code}): rate limit or "
+                        "bad key. Get a free key at https://api.data.gov/signup/ and set "
+                        "OPENFOIA_GOVINFO_API_KEY."
+                    )
                     logger.warning(msg)
                     return SearchResult(
                         source="govinfo",
@@ -125,7 +142,7 @@ class GovInfoAdapter(RecordAdapter):
                 error=msg,
             )
         except Exception as e:
-            msg = f"GovInfo search failed: {e}"
+            msg = f"GovInfo search failed: {self._redact(e)}"
             logger.warning(msg)
             return SearchResult(
                 source="govinfo",
@@ -187,14 +204,14 @@ class GovInfoAdapter(RecordAdapter):
             async with egress_client(self._egress, timeout=20) as client:
                 resp = await client.get(
                     f"{API_BASE}/packages/{identifier}/summary",
-                    params={"api_key": self._api_key},
+                    headers={"X-Api-Key": self._api_key},
                 )
                 if resp.status_code == 404:
                     return None
                 resp.raise_for_status()
                 data = resp.json()
         except Exception as e:
-            logger.warning("GovInfo fetch failed for %s: %s", identifier, e)
+            logger.warning("GovInfo fetch failed for %s: %s", identifier, self._redact(e))
             return None
 
         collection_code = data.get("collectionCode", "")

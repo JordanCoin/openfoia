@@ -27,6 +27,27 @@ exhaustive lists.
   school_district` filters; `agency info` shows the law and the custodian.
   Database migration `006` (nullable columns only; existing agencies are
   marked federal).
+- National Archives Catalog source (`--source nara`): `records search`
+  queries catalog.archives.gov's API v2 and `records fetch <NAID> -s nara`
+  stores the record's OCR text page by page (or its description when the
+  catalog has no text) in the active case. Needs a free key in
+  `OPENFOIA_NARA_API_KEY` (email Catalog_API@nara.gov); queries are counted
+  locally against the 10,000/month quota with a warning at 80 percent and a
+  refusal at 100 percent, and sent one per second. `--all-sources` reports
+  `skipped (no OPENFOIA_NARA_API_KEY)` instead of an error without a key.
+- `OPENFOIA_GOVINFO_API_KEY` supplies a GovInfo (api.data.gov) key; a 403 or
+  429 from GovInfo now names it.
+
+- `docs/RECORDS_LADDER.md`: which rung of the US public-records system holds
+  a record (the public body, the state law, state agencies and archives,
+  federal FOIA, non-FOIA paths such as NARA and CREST), how to ask at each,
+  what goes wrong, a worked Detroit example, and what openfoia covers today.
+
+### Internal
+
+- Text-pulling adapters share one storage path (`openfoia/records/store.py`),
+  so DocumentCloud and NARA documents are stored, re-fetched and attached to
+  cases the same way.
 
 ## [4.4.0] - 2026-10-14
 
