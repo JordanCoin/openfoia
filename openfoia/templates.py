@@ -529,7 +529,7 @@ If any responsive record has been destroyed or cannot be located, please state t
         review += (
             f", including an appeal within {appeal['deadline_days']} {appeal['deadline_unit']} days"
         )
-    letter += f"""{review}.
+    letter += f"""{review.rstrip(".")}.
 
 """
     letter += _clock_sentence(j)

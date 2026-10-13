@@ -258,3 +258,9 @@ def test_cli_ambiguous_agency_substring_exits_2(tmp_path, monkeypatch):
         app, ["template", "generate", "standard", "-a", "Detroit Public Library", *common]
     )
     assert r.exit_code == 0 and "15.231-15.246" in r.output
+
+
+def test_reservation_sentence_never_doubles_the_period():
+    letter = standard_request(REQUESTER, "Austin ISD", DETAILS, jurisdiction=get("us-tx"))
+    assert "et seq.." not in letter and "et seq.," not in letter
+    assert "I reserve all rights of review provided by Tex. Gov't Code § 552.001 et seq." in letter
