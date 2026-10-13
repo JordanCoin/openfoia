@@ -2560,11 +2560,23 @@ def analyze_extract(
     ensemble: bool = typer.Option(
         False, "--ensemble", help="Run all available NER backends together"
     ),
+    tier: str | None = typer.Option(
+        None,
+        "--tier",
+        help="Force one backend: gliner, spacy, regex (never call an LLM) or llm. "
+        "Errors if it is not installed or reachable.",
+    ),
 ):
     """Extract entities from a document.
 
     Pipeline: regex + NER → merge → LLM validation (if available).
     Use --ensemble to run ALL NER backends (GLiNER + spaCy) together.
+
+    The LLM step can take minutes per document on a local model. To skip it,
+    pass --tier gliner (or spacy/regex), or set OPENFOIA_AI_PROVIDER=none,
+    which disables the LLM even if an API key is configured. Note that
+    OPENFOIA_ANTHROPIC_API_KEY, OPENFOIA_OPENAI_API_KEY and
+    OPENFOIA_OLLAMA_BASE_URL each override the provider when set.
     """
     from .db import get_db_path, get_session
     from .models import Document, Entity
@@ -2617,12 +2629,19 @@ def analyze_extract(
         # Run extraction
         import asyncio
 
-        from .pipeline.extract import EntityExtractor
+        from .pipeline.extract import TIERS, BackendUnavailableError, EntityExtractor
 
-        extractor = EntityExtractor(model=model) if model else EntityExtractor()
-        backend = extractor._resolve_backend()
+        if tier is not None and tier not in TIERS:
+            rprint(f"[red]Unknown --tier '{tier}'. Choose from: {', '.join(TIERS)}[/red]")
+            raise typer.Exit(1)
+        if tier and ensemble:
+            rprint("[red]--tier and --ensemble cannot be combined.[/red]")
+            raise typer.Exit(1)
 
-        if backend == "regex":
+        extractor = EntityExtractor(model=model, tier=tier)
+        backend = tier if tier and tier != "llm" else extractor._resolve_backend()
+
+        if backend == "regex" and not tier:
             rprint("[yellow]Using regex-only extraction (dates, money, emails, phones).[/yellow]")
             rprint("[yellow]For people and organizations, install a NER model:[/yellow]")
             rprint(
@@ -2636,6 +2655,9 @@ def analyze_extract(
 
         try:
             result = asyncio.run(extractor.extract(doc.extracted_text, ensemble=ensemble))
+        except BackendUnavailableError as e:
+            rprint(f"[red]{e}[/red]")
+            raise typer.Exit(1) from None
         except Exception as e:
             rprint(f"[red]Extraction failed: {e}[/red]")
             rprint("[dim]Ensure AI provider is configured: openfoia config --init[/dim]")
