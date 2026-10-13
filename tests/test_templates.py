@@ -62,12 +62,15 @@ def test_federal_letter_is_unchanged_by_us_or_no_jurisdiction():
 
 def test_michigan_letter_cites_the_act_and_its_clock():
     letter = standard_request(REQUESTER, "DPSCD", DETAILS, jurisdiction=get("us-mi"))
-    assert "Pursuant to the Michigan Freedom of Information Act, MCL 15.231 to 15.246" in letter
+    assert (
+        "Pursuant to the Michigan Freedom of Information Act, Mich. Comp. Laws §§ 15.231-15.246"
+        in letter
+    )
     assert "within 5 business days, with any extension of up to 10 business days" in letter
     assert "exemption under MCL 15.243" in letter
     assert "itemized estimate" in letter and FEE_CAP_PLACEHOLDER in letter
     assert "retention schedule" in letter and "destruction log" in letter
-    assert "I reserve all rights of review provided by MCL 15.231 to 15.246." in letter
+    assert "I reserve all rights of review provided by Mich. Comp. Laws §§ 15.231-15.246" in letter
     assert "appealed to" not in letter
     assert "Please apply any fee waiver or reduction the law provides: First $20 waived" in letter
     assert "because" not in letter.split("Please apply")[1].split("\n")[0]
@@ -137,7 +140,7 @@ def test_cli_uses_the_agency_jurisdiction_unless_told_otherwise(tmp_path, monkey
         app, ["template", "generate", "standard", "-a", "Detroit Public Schools", *common]
     )
     assert r.exit_code == 0, r.output
-    assert "MCL 15.231" in r.output and "5 U.S.C." not in r.output
+    assert "15.231-15.246" in r.output and "5 U.S.C." not in r.output
     r = runner.invoke(
         app,
         [
@@ -254,4 +257,4 @@ def test_cli_ambiguous_agency_substring_exits_2(tmp_path, monkeypatch):
     r = runner.invoke(
         app, ["template", "generate", "standard", "-a", "Detroit Public Library", *common]
     )
-    assert r.exit_code == 0 and "MCL 15.231" in r.output
+    assert r.exit_code == 0 and "15.231-15.246" in r.output
