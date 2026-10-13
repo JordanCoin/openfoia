@@ -516,6 +516,7 @@ request_app = typer.Typer(help="Manage FOIA requests")
 docs_app = typer.Typer(help="Process documents")
 campaign_app = typer.Typer(help="Manage campaigns")
 agency_app = typer.Typer(help="Manage agencies")
+jurisdiction_app = typer.Typer(help="Which public-records law applies: federal FOIA or a state act")
 analyze_app = typer.Typer(help="Analyze documents")
 template_app = typer.Typer(help="Request templates")
 records_app = typer.Typer(help="Search public records")
@@ -529,6 +530,7 @@ app.add_typer(request_app, name="request")
 app.add_typer(docs_app, name="docs")
 app.add_typer(campaign_app, name="campaign")
 app.add_typer(agency_app, name="agency")
+app.add_typer(jurisdiction_app, name="jurisdiction")
 app.add_typer(analyze_app, name="analyze")
 app.add_typer(template_app, name="template")
 app.add_typer(records_app, name="records")
@@ -1911,13 +1913,20 @@ def docs_grep(
 @agency_app.command("list")
 def agency_list(
     level: str | None = typer.Option(
-        None, "--level", "-l", help="Filter by level (federal/state/local)"
+        None,
+        "--level",
+        "-l",
+        help="Filter by level: federal, state, local, tribal, or a body type such as school_district",
     ),
     state: str | None = typer.Option(None, "--state", "-s", help="Filter by state (2-letter code)"),
+    jurisdiction: str | None = typer.Option(
+        None, "--jurisdiction", "-j", help="Filter by jurisdiction id, e.g. us or us-mi"
+    ),
     limit: int = typer.Option(50, "--limit", "-n", help="Maximum results"),
 ):
     """List agencies in the database."""
     from .db import get_db_path, get_session
+    from .jurisdictions import BODY_TYPES
     from .models import Agency, AgencyLevel
 
     db_path = get_db_path()
@@ -1929,15 +1938,23 @@ def agency_list(
         query = session.query(Agency)
 
         if level:
-            try:
-                level_enum = AgencyLevel(level.lower())
-                query = query.filter(Agency.level == level_enum)
-            except ValueError:
-                rprint(f"[red]Invalid level '{level}'. Use: federal, state, local, tribal[/red]")
-                raise typer.Exit(1) from None
+            if level.lower() in BODY_TYPES and level.lower() not in ("federal", "state"):
+                query = query.filter(Agency.body_type == level.lower())
+            else:
+                try:
+                    level_enum = AgencyLevel(level.lower())
+                    query = query.filter(Agency.level == level_enum)
+                except ValueError:
+                    rprint(
+                        f"[red]Invalid level '{level}'. Use: federal, state, local, tribal, "
+                        f"or {', '.join(b for b in BODY_TYPES if b not in ('federal', 'state'))}[/red]"
+                    )
+                    raise typer.Exit(1) from None
 
         if state:
             query = query.filter(Agency.state == state.upper())
+        if jurisdiction:
+            query = query.filter(Agency.jurisdiction_id == jurisdiction.lower())
 
         agencies = query.order_by(Agency.name).limit(limit).all()
 
@@ -1948,7 +1965,8 @@ def agency_list(
         table = Table(title=f"Agencies ({len(agencies)} results)")
         table.add_column("Abbr", style="cyan", width=8)
         table.add_column("Name")
-        table.add_column("Level", width=8)
+        table.add_column("Level", width=15)
+        table.add_column("Law", width=6)
         table.add_column("Contact", width=30)
 
         for a in agencies:
@@ -1958,11 +1976,221 @@ def agency_list(
             table.add_row(
                 a.abbreviation or "—",
                 a.name,
-                a.level.value,
+                a.body_type or a.level.value,
+                a.jurisdiction_id or "—",
                 contact,
             )
 
         console.print(table)
+
+
+@agency_app.command("add")
+def agency_add(
+    name: str = typer.Option(..., "--name", help="Public body name"),
+    jurisdiction: str = typer.Option(
+        ...,
+        "--jurisdiction",
+        "-j",
+        help="Jurisdiction id, e.g. us-mi (see 'openfoia jurisdiction list')",
+    ),
+    level: str = typer.Option(
+        ...,
+        "--level",
+        "-l",
+        help="federal, state, county, city, school_district, university, other",
+    ),
+    abbreviation: str | None = typer.Option(None, "--abbr", help="Short name"),
+    email: str | None = typer.Option(None, "--email", help="Records request email"),
+    address: str | None = typer.Option(None, "--address", help="Mailing address"),
+    portal: str | None = typer.Option(None, "--portal", help="Request form or portal URL"),
+    custodian_title: str | None = typer.Option(
+        None, "--custodian-title", help="Who to address, e.g. FOIA Coordinator"
+    ),
+    response_days: int | None = typer.Option(
+        None, "--response-days", help="Statutory response days (default: the jurisdiction's)"
+    ),
+):
+    """Add a public body: a school district, city, county, university or state agency.
+
+    Example:
+        openfoia agency add --name "Detroit Public Schools Community District" -j us-mi \
+            -l school_district --email foia.request@detroitk12.org --custodian-title "FOIA Coordinator"
+    """
+    from .db import get_session
+    from .jurisdictions import BODY_TYPES
+    from .jurisdictions import get as get_jurisdiction
+    from .models import Agency, AgencyLevel, DeliveryMethod
+
+    _require_db()
+    body_type = level.lower()
+    if body_type not in BODY_TYPES:
+        rprint(f"[red]--level must be one of: {', '.join(BODY_TYPES)}[/red]")
+        raise typer.Exit(2)
+    j = get_jurisdiction(jurisdiction)
+    if j is None:
+        rprint(
+            f"[red]Unknown jurisdiction '{jurisdiction}'. See 'openfoia jurisdiction list'.[/red]"
+        )
+        raise typer.Exit(2)
+    if j["level"] == "federal" and body_type != "federal":
+        rprint("[red]A non-federal body must use its state's jurisdiction, e.g. us-mi.[/red]")
+        raise typer.Exit(2)
+    enum_level = {"federal": AgencyLevel.FEDERAL, "state": AgencyLevel.STATE}.get(
+        body_type, AgencyLevel.LOCAL
+    )
+    days = response_days if response_days is not None else (j["response"]["days"] or 20)
+    with get_session() as session:
+        if session.query(Agency).filter(Agency.name.ilike(name)).first():
+            rprint(f"[red]An agency named '{name}' already exists.[/red]")
+            raise typer.Exit(1)
+        a = Agency(
+            name=name,
+            abbreviation=abbreviation,
+            level=enum_level,
+            state=j["id"][3:].upper() if j["id"].startswith("us-") else None,
+            jurisdiction_id=j["id"],
+            body_type=body_type,
+            custodian_title=custodian_title,
+            foia_email=email,
+            foia_address=address,
+            foia_portal_url=portal,
+            preferred_method=DeliveryMethod.EMAIL if email else DeliveryMethod.MAIL,
+            typical_response_days=days,
+        )
+        session.add(a)
+        session.flush()
+        rprint(
+            f"[green]Added[/green] [cyan]{name}[/cyan] ({body_type}, {j['name']}: "
+            f"{j['statute']['name'] or 'statute unknown'}; {days} response days)"
+        )
+        if not j["verified"]:
+            rprint(
+                f"[yellow]{j['id']} is an unverified stub: check the law before relying on the "
+                f"deadline. Sources: {', '.join(j['sources']) or 'none'}[/yellow]"
+            )
+
+
+def _fmt(v) -> str:
+    if v is None:
+        return "[dim]unknown[/dim]"
+    if isinstance(v, bool):
+        return "yes" if v else "no"
+    return str(v)
+
+
+@jurisdiction_app.command("list")
+def jurisdiction_list(
+    unverified: bool = typer.Option(False, "--unverified", help="Only stubs still to be filled"),
+):
+    """List every jurisdiction openfoia knows, with its statute and response clock."""
+    from .jurisdictions import load_all
+
+    rows = [j for j in load_all().values() if not unverified or not j["verified"]]
+    table = Table(title=f"Jurisdictions ({len(rows)})")
+    table.add_column("Id", style="cyan", width=6)
+    table.add_column("Name")
+    table.add_column("Statute")
+    table.add_column("Response", width=14)
+    table.add_column("Verified", width=8)
+    for j in rows:
+        r = j["response"]
+        clock = f"{r['days']} {r['unit']}" if r["days"] else (r["unit"] or "unknown")
+        table.add_row(
+            j["id"],
+            j["name"],
+            j["statute"]["name"] or "unknown",
+            clock,
+            "yes" if j["verified"] else "no",
+        )
+    console.print(table)
+    stubs = sum(1 for j in rows if not j["verified"])
+    if stubs:
+        rprint(f"[dim]{stubs} unverified: fields are null until someone reads the statute.[/dim]")
+
+
+@jurisdiction_app.command("show")
+def jurisdiction_show(
+    jurisdiction_id: str = typer.Argument(..., help="e.g. us, us-mi"),
+    as_json: bool = typer.Option(False, "--json", help="Print the raw record"),
+):
+    """Everything known about one jurisdiction: clocks, fees, residency, appeals, sources."""
+    from .jurisdictions import get as get_jurisdiction
+
+    j = get_jurisdiction(jurisdiction_id)
+    if j is None:
+        rprint(
+            f"[red]Unknown jurisdiction '{jurisdiction_id}'. See 'openfoia jurisdiction list'.[/red]"
+        )
+        raise typer.Exit(1)
+    if as_json:
+        print(json.dumps(j, indent=2))
+        return
+    rprint(f"\n[bold cyan]{j['name']}[/bold cyan] [dim]({j['id']}, {j['level']})[/dim]")
+    if not j["verified"]:
+        rprint(
+            "[bold yellow]UNVERIFIED: every value below is a placeholder until checked.[/bold yellow]"
+        )
+    else:
+        rprint(f"[green]Verified {j['verified_at']}[/green]")
+    st = j["statute"]
+    rprint(f"Statute: {_fmt(st['name'])}, {_fmt(st['citation'])} {st['url'] or ''}")
+    r = j["response"]
+    rprint(
+        f"Response: {_fmt(r['days'])} {r['unit'] or ''} days; extension {_fmt(r['extension_days'])} "
+        f"{r['extension_unit'] or ''}; silence is denial: {_fmt(r['silence_is_denial'])}"
+    )
+    if r["rule_text"]:
+        rprint(f"  {r['rule_text']}")
+    f = j["fees"]
+    rprint(
+        f"Fees: search allowed {_fmt(f['search_allowed'])}; estimate required {_fmt(f['estimate_required'])}"
+    )
+    for k in ("labor_rule", "copy_rule", "waiver_rule", "late_penalty"):
+        if f[k]:
+            rprint(f"  {k.replace('_', ' ')}: {f[k]}")
+    res = j["residency"]
+    rprint(f"Residency restricted: {_fmt(res['restricted'])} {res['rule_text'] or ''}")
+    a = j["appeal"]
+    rprint(
+        f"Appeal: {_fmt(a['body'])} ({_fmt(a['type'])}); deadline {_fmt(a['deadline_days'])} "
+        f"{a['deadline_unit'] or ''}"
+    )
+    if a["rule_text"]:
+        rprint(f"  {a['rule_text']}")
+    rprint(f"Exemptions: {_fmt(j['exemptions_citation'])}")
+    rprint(f"Format rule: {_fmt(j['format_rule'])}")
+    c = j["covers"]
+    rprint(
+        "Covers: governor "
+        + _fmt(c["governor"])
+        + ", legislature "
+        + _fmt(c["legislature"])
+        + ", public universities "
+        + _fmt(c["universities_public"])
+        + ", school districts "
+        + _fmt(c["school_districts"])
+    )
+    if j["notes"]:
+        rprint(f"Notes: {j['notes']}")
+    rprint("Sources:")
+    for u in j["sources"] or ["(none)"]:
+        rprint(f"  {u}")
+
+
+@jurisdiction_app.command("search")
+def jurisdiction_search(text: str = typer.Argument(..., help="Part of a name, id or statute")):
+    """Find a jurisdiction by name, id or statute name."""
+    from .jurisdictions import search as search_jurisdictions
+
+    hits = search_jurisdictions(text)
+    if not hits:
+        rprint(f"[yellow]No jurisdiction matches '{text}'.[/yellow]")
+        raise typer.Exit(1)
+    for j in hits:
+        flag = "" if j["verified"] else " [yellow](unverified)[/yellow]"
+        rprint(
+            f"[cyan]{j['id']}[/cyan]  {j['name']}  [dim]{j['statute']['name'] or ''}[/dim]{flag}"
+        )
 
 
 @agency_app.command("search")
@@ -2045,8 +2273,22 @@ def agency_info(
         table.add_column("Value")
 
         table.add_row("Level", agency.level.value.title())
+        if agency.body_type:
+            table.add_row("Body type", agency.body_type)
         if agency.state:
             table.add_row("State", agency.state)
+        if agency.jurisdiction_id:
+            from .jurisdictions import get as get_jurisdiction
+
+            j = get_jurisdiction(agency.jurisdiction_id)
+            law = (j["statute"]["name"] or "statute unknown") if j else "unknown jurisdiction"
+            table.add_row("Law", f"{agency.jurisdiction_id}: {law}")
+            if j and not j["verified"]:
+                table.add_row(
+                    "", "[yellow]jurisdiction data unverified; check the sources[/yellow]"
+                )
+        if agency.custodian_title:
+            table.add_row("Custodian", agency.custodian_title)
 
         rprint("\n[bold]Contact Information[/bold]")
         if agency.foia_email:

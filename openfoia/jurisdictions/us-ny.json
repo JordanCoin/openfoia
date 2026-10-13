@@ -1,0 +1,51 @@
+{
+  "id": "us-ny",
+  "name": "New York",
+  "level": "state",
+  "statute": {
+    "name": "New York Freedom of Information Law",
+    "citation": "N.Y. Pub. Off. Law art. 6 (sections 84-90)",
+    "url": null
+  },
+  "response": {
+    "days": null,
+    "unit": null,
+    "rule_text": "Acknowledgment within 5 business days; a date for the full response must be given. Exact clocks not verified.",
+    "extension_days": null,
+    "extension_unit": null,
+    "silence_is_denial": null
+  },
+  "fees": {
+    "search_allowed": null,
+    "labor_rule": null,
+    "copy_rule": "25 cents per photocopy up to 9 by 14 inches.",
+    "waiver_rule": null,
+    "estimate_required": null,
+    "late_penalty": null
+  },
+  "residency": {
+    "restricted": false,
+    "rule_text": null
+  },
+  "appeal": {
+    "body": "Committee on Open Government (advisory only); Article 78 in state Supreme Court",
+    "type": "ombudsman_advisory",
+    "deadline_days": 30,
+    "deadline_unit": "calendar",
+    "rule_text": "Administrative appeal within 30 days to the body's appeals officer, decided in 10 business days; then Article 78 proceeding. COOG opinions are not binding."
+  },
+  "exemptions_citation": "N.Y. Pub. Off. Law 87(2)",
+  "format_rule": null,
+  "covers": {
+    "governor": true,
+    "legislature": true,
+    "universities_public": true,
+    "school_districts": true
+  },
+  "sources": [
+    "https://www.rcfp.org/open-government-guide/new-york/"
+  ],
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": null
+}

@@ -174,6 +174,11 @@ class Agency(Base):
     abbreviation: Mapped[str | None] = mapped_column(String(20), nullable=True)
     level: Mapped[AgencyLevel] = mapped_column(Enum(AgencyLevel))
     state: Mapped[str | None] = mapped_column(String(2), nullable=True)  # For state/local
+    # Which public-records law applies (openfoia/jurisdictions/<id>.json), what kind of
+    # body this is, and who to address. All nullable: pre-006 rows are federal.
+    jurisdiction_id: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    body_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    custodian_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Contact info
     foia_email: Mapped[str | None] = mapped_column(String(255), nullable=True)

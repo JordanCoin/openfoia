@@ -1,0 +1,51 @@
+{
+  "id": "us-wa",
+  "name": "Washington",
+  "level": "state",
+  "statute": {
+    "name": "Washington Public Records Act",
+    "citation": "RCW 42.56",
+    "url": "https://app.leg.wa.gov/rcw/default.aspx?cite=42.56"
+  },
+  "response": {
+    "days": 5,
+    "unit": "business",
+    "rule_text": "Respond within 5 business days by producing, acknowledging with a reasonable estimate of time, or denying.",
+    "extension_days": null,
+    "extension_unit": null,
+    "silence_is_denial": null
+  },
+  "fees": {
+    "search_allowed": false,
+    "labor_rule": "No search fees.",
+    "copy_rule": "Default 15 cents per page, 10 cents per scanned page, or a flat fee up to $2.",
+    "waiver_rule": null,
+    "estimate_required": null,
+    "late_penalty": null
+  },
+  "residency": {
+    "restricted": false,
+    "rule_text": null
+  },
+  "appeal": {
+    "body": "Optional Attorney General review (RCW 42.56.530, non-binding), then civil suit (RCW 42.56.550)",
+    "type": "court",
+    "deadline_days": null,
+    "deadline_unit": null,
+    "rule_text": "Daily penalties and attorney fees available to a prevailing requester."
+  },
+  "exemptions_citation": "RCW 42.56.230 et seq.",
+  "format_rule": null,
+  "covers": {
+    "governor": null,
+    "legislature": null,
+    "universities_public": true,
+    "school_districts": true
+  },
+  "sources": [
+    "https://www.rcfp.org/open-government-guide/washington/"
+  ],
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": null
+}

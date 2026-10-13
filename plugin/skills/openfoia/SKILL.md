@@ -126,6 +126,20 @@ openfoia case export -f json
 
 The export has a Findings section (tier, note, quote, document, page, CREST number, retrieval date) and a Sources list with URLs, plus the query log. Build the user's write-up from it rather than from memory, and lead with the verdict: found, not found, or partly found, with what was searched and what was not.
 
+### 6b. Which law applies
+
+Federal FOIA reaches only federal executive agencies. A school district, city, county, police department or public university answers under its state's public-records act, with that state's clock, fees and appeal path. Check before drafting:
+
+```bash
+openfoia jurisdiction list
+openfoia jurisdiction show us-mi
+openfoia jurisdiction search "public records"
+openfoia agency add --name "Detroit Public Schools Community District" -j us-mi -l school_district --email foia.request@detroitk12.org --custodian-title "FOIA Coordinator"
+openfoia agency list -j us-mi -l school_district
+```
+
+`jurisdiction show` prints UNVERIFIED in yellow when the state file is still a stub; then read the sources it lists before quoting a deadline to the user. Never invent a deadline or fee rule.
+
 ### 7. Escalate by FOIA
 
 ```bash
@@ -192,5 +206,7 @@ openfoia init | guide | config --show | install-extras <name> | db upgrade | db 
 | Graph the case | `openfoia analyze graph --name <slug> --no-text --view` |
 | Which documents link A and B | `openfoia analyze graph --mentions "<A>" "<B>"` |
 | Export the cited report | `openfoia case export -f md -o report.md` |
+| Which law applies to a body | `openfoia jurisdiction show us-mi` |
+| Add a school district or city | `openfoia agency add --name "<body>" -j us-mi -l school_district` |
 | Draft a FOIA request | `openfoia template generate standard -a <agency> -s "..." -n "Name" -e you@example.com -o draft.txt` |
 | Check egress | `openfoia egress-status` |

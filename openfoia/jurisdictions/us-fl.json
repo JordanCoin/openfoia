@@ -1,0 +1,51 @@
+{
+  "id": "us-fl",
+  "name": "Florida",
+  "level": "state",
+  "statute": {
+    "name": "Florida Public Records Act",
+    "citation": "Fla. Stat. ch. 119",
+    "url": null
+  },
+  "response": {
+    "days": null,
+    "unit": "none",
+    "rule_text": "No fixed deadline; records must be produced within a reasonable time and the only delay allowed is that needed to retrieve and redact.",
+    "extension_days": null,
+    "extension_unit": null,
+    "silence_is_denial": null
+  },
+  "fees": {
+    "search_allowed": true,
+    "labor_rule": "A 'special service fee' for extensive clerical or information-technology work.",
+    "copy_rule": "Actual cost of duplication, or 15 cents per page (plus 5 cents two-sided) where no fee is prescribed.",
+    "waiver_rule": null,
+    "estimate_required": null,
+    "late_penalty": null
+  },
+  "residency": {
+    "restricted": false,
+    "rule_text": "Anyone; the citizenship requirement was removed in 1975."
+  },
+  "appeal": {
+    "body": "Voluntary Attorney General mediation (Fla. Stat. 16.60), then mandamus in circuit court",
+    "type": "court",
+    "deadline_days": null,
+    "deadline_unit": null,
+    "rule_text": "Attorney fees to a prevailing requester."
+  },
+  "exemptions_citation": "Fla. Stat. 119.071 and statute-specific exemptions",
+  "format_rule": null,
+  "covers": {
+    "governor": true,
+    "legislature": null,
+    "universities_public": true,
+    "school_districts": true
+  },
+  "sources": [
+    "https://www.rcfp.org/open-government-guide/florida/"
+  ],
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": null
+}
