@@ -46,6 +46,7 @@ openfoia case new "EPA water"                          # group the work below in
 openfoia records search "EPA water" --source muckrock       # search 46k+ completed FOIA requests
 openfoia records search "Palantir" --source documentcloud  # search 10M+ public documents
 openfoia records fetch 3411897 --source documentcloud      # pull full text into local database
+openfoia records fetch CIA-RDP96-00789R002200230001-2 --source cia   # CIA reading room PDF, OCR/ingest locally
 openfoia records download 68490 --ingest                   # download + ingest response documents
 openfoia analyze extract <doc-id>                          # extract people, orgs, money, dates
 openfoia analyze graph --name investigation --view         # interactive graph + document reader
@@ -113,6 +114,7 @@ that disclosure.
 |--------|------|--------|
 | [MuckRock](https://www.muckrock.com/) | Completed FOIA requests with downloadable response documents | API token (`OPENFOIA_MUCKROCK_TOKEN`) |
 | [DocumentCloud](https://www.documentcloud.org/) | Public documents with pre-extracted text | Public API |
+| [CIA FOIA Reading Room](https://www.cia.gov/readingroom/) | Declassified CIA records (CREST, MORI); `records fetch <CREST or MORI> --source cia` downloads and ingests the PDF | Public site; a bot filter can block scripted access, reported as "blocked" |
 | [OpenCorporates](https://opencorporates.com/) | Global company registrations, ownership, directors, and filings | Free basic search |
 | [SEC EDGAR](https://www.sec.gov/edgar/) | US public-company filings | No API key |
 | [USAspending](https://www.usaspending.gov/) | Federal contracts, grants, loans, and other awards | No API key |

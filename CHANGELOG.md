@@ -36,6 +36,14 @@ exhaustive lists.
 - `records search --rank child,school,gifted` scores each result by keyword
   hits in its title and snippet, sorts by the score and adds it to the table
   and to `--json` output (also with `--all-sources`).
+- CIA FOIA Electronic Reading Room source (`--source cia`): `records search`
+  scrapes the public site's search (title, document URL, ESDN/CREST number,
+  snippet) and `records fetch <CREST | MORI | ESDN | readingroom URL> --source
+  cia` downloads the PDF under the data directory, runs the normal ingest
+  (text, OCR, pages) and attaches it to the active case. All requests go
+  through the egress client at one request per second, print the usual
+  pre-contact notice, and a bot-filter or CAPTCHA page is reported as
+  "blocked", never as zero results. No new dependencies.
 - Cases: `openfoia case new|list|use|show|export|close` groups one
   investigation. While a case is active, `records search` logs each query to
   it, `records fetch` and `records download --ingest` attach their documents
