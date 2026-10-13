@@ -58,7 +58,7 @@ retention schedule, not by goodwill. Board minutes are permanent almost
 everywhere. Program files, vendor contracts and staff memos often carry 5 to
 10 year periods and may have been lawfully destroyed. Michigan's schedule for
 public schools is General Retention Schedule #2, revised 2023 (fetched:
-https://www.michigan.gov/-/media/Project/Websites/dtmb/Services/Records-Management/RMS_GS2.pdf;
+https://www.michigan.gov/-/media/Project/Websites/dtmb/Services/Records-Management/RMS_GS2.pdf ;
 index of local schedules:
 https://www.michigan.gov/dtmb/services/recordsmanagement/schedules/GSLocal).
 Texas uses Local Schedule SD for school districts (snippet:
@@ -76,8 +76,8 @@ reasonable person in the school community could identify a student (34 CFR
 99.3 and 99.31(b)(1), snippet:
 https://studentprivacy.ed.gov/resources/data-de-identification-overview-basic-terms).
 Small cells get suppressed; thresholds of 3 to 10 per cell are common
-(snippet). Ask for program and aggregate records and the clerk cannot deny
-the whole request on student privacy.
+(snippet). Ask for program and aggregate records and that gives the clerk no
+FERPA ground to deny the whole request.
 
 **What goes wrong.** No FOIA staff, so the request lands on a clerk. Fee
 estimates used as a deterrent: an Iowa Public Information Board case decided
@@ -130,7 +130,7 @@ but its source was not evaluated (unverified).
 different files. For a school program that means the state education
 department: grant files, program approvals, annual reports from districts.
 In Michigan the education FOIA office now sits under MiLEAP as of
-December 2023 (snippet: https://www.michigan.gov/mileap/inside-mileap/foia-and-transparency;
+December 2023 (snippet: https://www.michigan.gov/mileap/inside-mileap/foia-and-transparency ;
 older page https://www.michigan.gov/mde/resources/foia).
 
 **State archives** take in permanent state-agency records and some local
@@ -154,7 +154,7 @@ probably sits with the district.
 **Who is covered.** Executive-branch agencies and their components. Not
 Congress, not the federal courts, not the President's immediate staff, not
 state or local bodies, not contractors except for records in an agency's
-possession (fetched: https://www.foia.gov/about.html; the DOJ guide at
+possession (fetched: https://www.foia.gov/about.html ; the DOJ guide at
 https://www.justice.gov/oip/doj-guide-freedom-information-act-0). Anyone may
 file, including non-citizens.
 
@@ -171,9 +171,13 @@ fee answer. Expedited processing is decided within 10 calendar days.
 Administrative appeal within at least 90 days of a denial, decided in 20
 working days. Then non-binding mediation at OGIS (https://www.archives.gov/ogis)
 or suit in federal district court, where a blown deadline counts as
-exhaustion. The 2016 FOIA Improvement Act added the 90-day floor, the
-"foreseeable harm" standard, and the rule that an agency that misses its
-deadline loses search fees (https://www.congress.gov/bill/114th-congress/senate-bill/337).
+exhaustion. The rule that an agency that misses its deadline loses search
+fees dates from the OPEN Government Act of 2007 (5 U.S.C. 552(a)(4)(A)(viii)).
+The 2016 FOIA Improvement Act added the 90-day appeal floor and the
+"foreseeable harm" standard, and narrowed that fee rule's exceptions to
+unusual circumstances with timely notice, requests over 5,000 pages, and
+court-found exceptional circumstances
+(https://www.congress.gov/bill/114th-congress/senate-bill/337).
 
 **The exemptions.** b1 classified, b2 internal rules, b3 other statutes, b4
 trade secrets, b5 privileged deliberations, b6 personal privacy, b7 law
@@ -238,9 +242,10 @@ https://www.archives.gov/isoo/policy-documents/eo-13526).
   requested through FOIA under the Presidential Records Act; earlier ones are
   governed by donor deeds (unverified).
 - **Congress.** Never subject to FOIA, but its publications are open:
-  hearings and reports on https://www.govinfo.gov (API key via
+  hearings and reports on https://www.govinfo.gov (developer page
+  https://www.govinfo.gov/developers, API key via
   https://www.govinfo.gov/api-signup, docs https://api.govinfo.gov/docs,
-  fetched) and https://www.congress.gov. The Church Committee reports
+  all fetched) and https://www.congress.gov. The Church Committee reports
   (1975-76), the Rockefeller Commission (1975) and the 1977 Senate hearing
   on Project MKULTRA are published sources (unverified citations).
 - **Mirrors and finders.** DocumentCloud (search and per-page text; the
@@ -258,7 +263,7 @@ rungs 1 to 3. Nothing about it is federal.
 | Rung | Custodian | Ask for |
 |------|-----------|---------|
 | 1 | Detroit Public Schools Community District FOIA coordinator. Online form at https://www.detroitk12.org/Page/7204 (snippet), email foia.request@detroitk12.org, or mail to Office of the General Counsel, ATTN: FOIA Coordinator, 3011 W. Grand Blvd, Suite 1002, Detroit MI 48202 (snippet). | Board minutes, agendas and board packets, 1990 to 1999, mentioning "gifted", "talented", "enrichment" or the program's name, plus the policy adopting it. Program plans, handbooks, identification and screening procedures, and the names of the test instruments adopted. Contracts, purchase orders and invoices with test publishers, consultants and outside evaluators. Program evaluations, annual reports, and correspondence with the program coordinator or any university partner. The retention schedule in force and the destruction log for those series, with a description of the search. Aggregate counts only, no student data. |
-| 2 | Michigan FOIA, MCL 15.231 to 15.246. Five business days plus one 10-day extension. Labor billed at the lowest-paid capable employee's wage. No residency limit. Appeal to the head of the body or circuit court (fetched: https://www.rcfp.org/open-government-guide/michigan/). | Cite it in the first 250 words and in the subject line so a non-response counts as a denial. |
+| 2 | Michigan FOIA, MCL 15.231 to 15.246. Five business days plus one 10-day extension. Labor billed at the lowest-paid capable employee's wage. No residency limit (incarcerated people excluded from the definition of person). Appeal to the head of the body or circuit court (fetched: https://www.rcfp.org/open-government-guide/michigan/). | A non-response counts as a final denial only when the failure was willful, or the request said FOIA or freedom of information in the first 250 words of the body, or on the envelope or in the email subject line (MCL 15.235, fetched from the RCFP Michigan page). So say FOIA in the subject line and the opening sentence. |
 | 3 | MiLEAP FOIA (education), MiLEAP-FOIA@michigan.gov (snippet). Archives of Michigan for transferred records. | Section 57 gifted and talented grant files and any district reports under Act 299 of 1974, 1990 to 1999. |
 | 1, universities | Wayne State University FOIA, foia@wayne.edu (snippet: https://generalcounsel.wayne.edu/legal/foia). University of Michigan FOIA (snippet: https://foia.vpcomm.umich.edu/wp-content/uploads/sites/18/2022/06/FOIA-Procedures-and-Guidelines-6-1-22.pdf). | Agreements, evaluations or research involving the district's gifted program; a named professor's departmental files. |
 | Archives | The Reuther Library's Detroit Board of Education / Detroit Public Schools collection, accession 681, covers 1860 to 1980 with bound minutes, reports and budgets (snippet: https://reuther.wayne.edu/files/WSR000681.pdf). It stops at 1980. | Ask the Reuther whether post-1980 additions exist, and ask DPSCD's board office where the 1990s minutes physically sit. The Detroit Public Library's Burton Historical Collection and U-M's Bentley Historical Library are unconfirmed holders. |
@@ -266,7 +271,7 @@ rungs 1 to 3. Nothing about it is federal.
 Two warnings. The 1999 to 2005 state takeover and the 2009 to 2016 emergency
 management may have moved or lost district records (unverified). And the
 state trail is thin because the statute is repealed and the funding line
-ended in 2006-07.
+ended in 2006-07 (both snippet, see rung 3).
 
 **Keep the CIA question in its own case.** The separate question "was the
 CIA's Personality Assessment System ever given to minors" lives on rungs 4
@@ -333,6 +338,7 @@ Rung 1 and 2
 - snippet: https://brechner.jou.ufl.edu/?p=4063
 - snippet: https://www.scotusblog.com/?p=410225
 - snippet: https://nfoic.org/?p=1320
+- unverified: https://seeingeye.org/wp-content/uploads/2026/05/seeing-eye-state-of-access-v4.html
 - snippet: https://michiganadvance.com/2026/01/18/were-just-not-going-to-do-foia-michigan-transparency-effort-stalls/
 
 Rung 3 (Michigan)
@@ -354,6 +360,8 @@ Rung 4
 - fetched: https://www.archives.gov/ogis/about-ogis/annual-reports/ogis-2026-annual-report-for-fy-2025-appendix-b
 - fetched: https://www.foiaadvisor.com/foia-blog/2026/7/29/foia-news-nyt-report-on-foia-requests-in-limbo-or-unfulfilled
 - fetched: https://www.congress.gov/bill/114th-congress/senate-bill/337
+- fetched: https://www.archives.gov/ogis
+- unverified: https://www.foia.gov/data.html
 - unverified: https://www.archives.gov/isoo/policy-documents/eo-13526
 
 Rung 5
@@ -361,5 +369,8 @@ Rung 5
 - fetched (shell only): https://catalog.archives.gov/api/v2/api-docs/
 - fetched: https://www.cia.gov/readingroom/collection/crest-25-year-program-archive
 - fetched: https://www.govinfo.gov/developers
+- fetched: https://www.govinfo.gov/api-signup
+- fetched: https://api.govinfo.gov/docs
+- unverified: https://www.govinfo.gov
+- unverified: https://www.congress.gov
 - snippet: https://intelligencecommunitynews.com/cia-posts-more-than-12-million-pages-of-crest-records-online/
-- snippet: https://aarclibrary.org/cia-records-search-tool-crest/
