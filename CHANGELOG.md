@@ -10,6 +10,35 @@ exhaustive lists.
 
 ## [Unreleased]
 
+### Added
+
+- Cases: `openfoia case new|list|use|show|export|close` groups one
+  investigation. While a case is active, `records search` logs each query to
+  it, `records fetch` and `records download --ingest` attach their documents
+  to it, and `analyze graph` graphs only that case (`--case <name>` to pick
+  one, `--all` for everything) and prints which scope it used. `case export`
+  lists each document (title, source URL, DocumentCloud id or filename, pages,
+  retrieved date) and the query log as Markdown or JSON. The active case is
+  stored by id only in `active_case.json` under the data directory. Database
+  migration `002`.
+- `records search --json` prints one compact object per result (id, title,
+  source, pages, created, url, 200-character snippet), one per line.
+- `records search --all-sources` queries every registered source and prints
+  a status line for each: `ok N`, `error: ...`, or `skipped` when a
+  `--jurisdiction`/`--type` filter does not apply to that source.
+- `OPENFOIA_MUCKROCK_TOKEN` supplies a MuckRock API token.
+
+### Fixed
+
+- `records search --limit` above 25 now pages DocumentCloud (up to 100 per
+  request) instead of silently stopping at 25.
+- A MuckRock HTTP 401/403 is now an error ("MuckRock API requires an API
+  token") instead of "No results found"; MuckRock 429 and 5xx responses are
+  errors too.
+- A single-source `records search` that fails (including DocumentCloud
+  timeouts and rate limits) now exits non-zero in every output mode, not only
+  with `--raw`.
+
 ### Internal
 
 - Releases are automated. Merging a `release/X.Y.Z` branch into `main` tags
