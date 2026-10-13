@@ -15,6 +15,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,13 +30,17 @@ class PDFExtractTimeout(RuntimeError):
     """The extraction binary did not finish within the size-scaled time limit."""
 
 
+#: Major version of the glyph `--json` contract this parser understands.
+JSON_CONTRACT_MAJOR = 0
+
+
 def timeout_for(pdf_path: Path) -> int:
-    """10 s plus 1 s per MB, capped at 600 s."""
+    """10 s plus 1 s per MB, never under 30 s (slow laptops), capped at 600 s."""
     try:
         size_mb = pdf_path.stat().st_size / (1024 * 1024)
     except OSError:
         size_mb = 0
-    return int(min(600, 10 + size_mb))
+    return int(min(600, max(30, 10 + size_mb)))
 
 
 @dataclass
@@ -204,6 +209,14 @@ def _parse_json(stdout: str) -> tuple[list[str], list[str]] | None:
     except ValueError:
         return None
     if not isinstance(data, dict) or data.get("engine") != "glyph-api":
+        return None
+    major = str(data.get("version", "")).split(".", 1)[0]
+    if major != str(JSON_CONTRACT_MAJOR):
+        print(
+            f"Note: pdf-extract --json contract version {data.get('version')!r} is not "
+            f"{JSON_CONTRACT_MAJOR}.x; using plain output without per-page verdicts.",
+            file=sys.stderr,
+        )
         return None
     pages = data.get("pages")
     if not isinstance(pages, list):

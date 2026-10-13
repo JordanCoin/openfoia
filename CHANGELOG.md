@@ -89,7 +89,7 @@ exhaustive lists.
   full-text index, applied automatically the first time a command opens the
   database.
 - PDF extraction no longer gives up after a fixed 30 seconds: the limit is
-  10 s plus 1 s per MB (max 600 s), and hitting it prints a warning naming
+  10 s plus 1 s per MB (never under 30 s, max 600 s), and hitting it prints a warning naming
   the file before falling back to OCR.
 
 ### Fixed

@@ -1476,9 +1476,13 @@ def docs_ingest(
 
         for result in results:
             if result.mime_type == "application/pdf":
+                verdicts = result.verdicts or []
+                if verdicts and all(v and v.startswith("ocr") for v in verdicts):
+                    rprint(f"  OCR: {result.filename} already OCR'd during ingest")
+                    continue
                 rprint(f"  OCR: {result.filename}...")
                 try:
-                    ocr_result = asyncio.run(engine.process_pdf(result.file_path))
+                    ocr_result = asyncio.run(engine.process_pdf(result.file_path, force_ocr=True))
                     rprint(
                         f"    [green]✓[/green] {ocr_result.page_count} pages, {ocr_result.confidence:.1%} confidence"
                     )

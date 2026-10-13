@@ -67,22 +67,26 @@ class OCREngine:
         self.pdf_extract_binary = pdf_extract_binary
         self.pdf_extract_min_chars = pdf_extract_min_chars
 
-    async def process_pdf(self, pdf_path: Path | str) -> OCRResult:
-        """Process a PDF: try direct text extraction first, fall back to OCR."""
+    async def process_pdf(self, pdf_path: Path | str, force_ocr: bool = False) -> OCRResult:
+        """Process a PDF: try direct text extraction first, fall back to OCR.
+
+        force_ocr=True skips extraction and OCRs every page.
+        """
         pdf_path = Path(pdf_path)
 
         # Try direct text extraction (not OCR — reads PDF structures directly)
         from .pdf_extract import PDFExtractTimeout, extract_text
 
+        extract_result = None
         try:
-            extract_result = await extract_text(
-                pdf_path,
-                binary_path=self.pdf_extract_binary,
-                min_chars=self.pdf_extract_min_chars,
-            )
+            if not force_ocr:
+                extract_result = await extract_text(
+                    pdf_path,
+                    binary_path=self.pdf_extract_binary,
+                    min_chars=self.pdf_extract_min_chars,
+                )
         except PDFExtractTimeout as e:
             print(f"Warning: {e}; falling back to OCR", file=sys.stderr)
-            extract_result = None
         if extract_result:
             from ..doctext import join_pages
 
