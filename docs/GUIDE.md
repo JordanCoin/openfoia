@@ -158,7 +158,9 @@ as RG 263, CIA). It needs a free API key: there is no signup form, you email
 10,000 queries a month. openfoia counts your queries locally in
 `nara_quota.json` under the data directory, warns at 80 percent and refuses at
 100 percent (`OPENFOIA_NARA_IGNORE_QUOTA=1` overrides if NARA raised your
-tier). Requests go out one per second.
+tier). Requests go out one per second. `OPENFOIA_NARA_API_BASE` is a
+test-only knob: it accepts only `https://catalog.archives.gov/...` or a
+localhost server, so the key is never sent anywhere else.
 
 ```bash
 openfoia records search "Gittinger" -s nara -n 50 --json

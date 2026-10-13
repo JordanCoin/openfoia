@@ -4472,6 +4472,13 @@ def _records_search_all(
         typer.echo(msg, err=json_lines)
 
     say(f"Sending '{query}' to {len(sources)} services: {', '.join(sources)}")
+    if "nara" in sources and getattr(get_adapter("nara"), "has_key", False):
+        from .records.nara import ATTRIBUTION
+
+        say(
+            f"Note: {query!r} also goes to catalog.archives.gov with your API key "
+            f"(counted against the 10,000/month quota). {ATTRIBUTION}"
+        )
 
     async def one(source: str):
         for key, owner in _FILTER_SOURCES.items():

@@ -32,12 +32,33 @@ ATTRIBUTION = (
     "This product uses the National Archives Catalog API but is not endorsed or "
     "certified by the National Archives and Records Administration."
 )
+DESCRIPTION_MARKER = "NARA catalog description (no OCR text)"
 NO_KEY_MESSAGE = (
     f"NARA Catalog API requires a key. Email Catalog_API@nara.gov for a free one "
     f"(there is no signup form) and set {KEY_ENV}."
 )
 
 _last_call = 0.0
+_quota_warned = False
+
+
+def api_base() -> str:
+    """The API base, honouring OPENFOIA_NARA_API_BASE only for NARA's host or a local test server.
+
+    The key goes in a header on every request, so an arbitrary base would send
+    it to an arbitrary host.
+    """
+    from urllib.parse import urlsplit
+
+    base = os.environ.get("OPENFOIA_NARA_API_BASE") or API_BASE_DEFAULT
+    parts = urlsplit(base)
+    local = parts.hostname in ("localhost", "127.0.0.1")
+    if not ((parts.scheme == "https" and parts.hostname == "catalog.archives.gov") or local):
+        raise AdapterRequestError(
+            "OPENFOIA_NARA_API_BASE must be https://catalog.archives.gov/... or a localhost "
+            f"test server; refusing to send the API key to {base!r}."
+        )
+    return base.rstrip("/")
 
 
 def quota_path():
@@ -76,7 +97,9 @@ def _check_quota() -> None:
             f"NARA monthly quota reached ({used}/{MONTHLY_QUOTA} queries this month by the local "
             f"counter). Wait for next month, ask NARA for a higher tier, or set {QUOTA_ENV}=1."
         )
-    if used >= MONTHLY_QUOTA * 0.8:
+    global _quota_warned
+    if used >= MONTHLY_QUOTA * 0.8 and not _quota_warned:
+        _quota_warned = True  # once per process; the number only goes up
         logger.warning("NARA quota: %d of %d queries used this month.", used, MONTHLY_QUOTA)
 
 
@@ -88,7 +111,6 @@ class NARAAdapter(RecordAdapter):
     def __init__(self, api_key: str | None = None, *, egress=None):
         super().__init__(egress=egress)
         self._api_key = api_key or os.environ.get(KEY_ENV)
-        self._base = os.environ.get("OPENFOIA_NARA_API_BASE", API_BASE_DEFAULT).rstrip("/")
 
     @property
     def has_key(self) -> bool:
@@ -98,6 +120,7 @@ class NARAAdapter(RecordAdapter):
         global _last_call
         if not self._api_key:
             raise AdapterRequestError(NO_KEY_MESSAGE)
+        base = api_base()  # refuses to send the key anywhere but NARA or localhost
         _check_quota()
         wait = 1.0 - (time.monotonic() - _last_call)  # ponytail: 1 req/s, process-wide
         if wait > 0:
@@ -105,7 +128,7 @@ class NARAAdapter(RecordAdapter):
         _last_call = time.monotonic()
         _record_request()
         return await self._request(
-            f"{self._base}/records/search",
+            f"{base}/records/search",
             params=params,
             headers={"x-api-key": self._api_key, "Content-Type": "application/json"},
             timeout=30,
@@ -146,12 +169,11 @@ class NARAAdapter(RecordAdapter):
         if entity is None:
             return None
         record = (hits[0].get("_source") or {}).get("record") or {}
+        # Keep blank pages as "" so positions hold: page 3 of the scan stays p.3.
         page_texts = [
-            (obj.get("extractedText") or "").strip()
-            for obj in record.get("digitalObjects") or []
-            if (obj.get("extractedText") or "").strip()
+            (obj.get("extractedText") or "").strip() for obj in record.get("digitalObjects") or []
         ]
-        if page_texts:
+        if any(page_texts):
             from ..doctext import join_pages
 
             entity.extra_data["page_texts"] = page_texts
@@ -159,8 +181,9 @@ class NARAAdapter(RecordAdapter):
             entity.extra_data["text_kind"] = "ocr"
         else:
             # No OCR text on this record: store the catalog description so the
-            # citation exists locally, and say so.
-            entity.extra_data["full_text"] = _description_text(record) or None
+            # citation exists locally, with a marker so it never reads as the record.
+            desc = _description_text(record)
+            entity.extra_data["full_text"] = f"{DESCRIPTION_MARKER}\n\n{desc}" if desc else None
             entity.extra_data["text_kind"] = "description"
         entity.extra_data["text_length"] = len(entity.extra_data.get("full_text") or "")
         return entity
@@ -175,11 +198,16 @@ class NARAAdapter(RecordAdapter):
         if not entity:
             return None, None
         naid = entity.identifiers.get("naid", identifier)
+        described = entity.extra_data.get("text_kind") == "description"
         return store_text_document(
             entity,
             request_number=f"NARA-{naid}",
-            filename=f"nara-{naid}.txt",
-            body=f"Pulled from the National Archives Catalog: {entity.source_url}",
+            filename=f"nara-{naid}{'-description' if described else ''}.txt",
+            body=(
+                f"{DESCRIPTION_MARKER}: {entity.source_url}"
+                if described
+                else f"Pulled from the National Archives Catalog: {entity.source_url}"
+            ),
             case_id=case_id,
         )
 

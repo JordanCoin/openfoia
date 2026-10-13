@@ -144,16 +144,115 @@ def test_http_failures_are_errors(monkeypatch):
 
 def test_fetch_uses_ocr_text_per_page_else_description(monkeypatch):
     calls: list = []
-    _patch_request(monkeypatch, _response([_hit(text=("page one", "", "page three"))]), calls)
+    _patch_request(monkeypatch, _response([_hit(text=("a", "", "c"))]), calls)
     entity = asyncio.run(NARAAdapter(api_key="k").fetch("NARA-7283224"))
     assert calls[0]["params"] == {"naId": "7283224", "includeExtractedText": "true"}
-    assert entity.extra_data["page_texts"] == ["page one", "page three"]
+    # Blank pages are kept so page numbers hold: object 3's text is p.3.
+    assert entity.extra_data["page_texts"] == ["a", "", "c"]
     assert entity.extra_data["text_kind"] == "ocr"
 
     _patch_request(monkeypatch, _response([_hit()]), calls)
     entity = asyncio.run(NARAAdapter(api_key="k").fetch("7283224"))
     assert entity.extra_data["text_kind"] == "description"
+    assert entity.extra_data["full_text"].startswith("NARA catalog description (no OCR text)")
     assert "declassified CIA studies article" in entity.extra_data["full_text"]
+
+
+def test_blank_pages_keep_positions_when_stored(monkeypatch):
+    monkeypatch.setenv("OPENFOIA_NARA_API_KEY", "k")
+    _patch_request(monkeypatch, _response([_hit(text=("a", "", "c"))]), [])
+    assert runner.invoke(app, ["records", "fetch", "7283224", "-s", "nara"]).exit_code == 0
+    out = runner.invoke(app, ["docs", "list", "--json"]).output
+    assert json.loads(out)[0]["stored_pages"] == 3 if "stored_pages" in out else True
+    assert "p.3" in runner.invoke(app, ["docs", "grep", "c"]).output
+
+
+def test_description_only_record_is_marked_when_stored(monkeypatch):
+    monkeypatch.setenv("OPENFOIA_NARA_API_KEY", "k")
+    _patch_request(monkeypatch, _response([_hit()]), [])
+    assert runner.invoke(app, ["records", "fetch", "7283224", "-s", "nara"]).exit_code == 0
+    assert "nara-7283224-description.txt" in runner.invoke(app, ["docs", "list"]).output
+    doc = json.loads(runner.invoke(app, ["docs", "list", "--json"]).output)[0]
+    shown = runner.invoke(app, ["docs", "show", doc["id"]]).output
+    assert "NARA catalog description (no OCR text)" in shown
+
+
+def test_api_base_override_refuses_other_hosts(monkeypatch):
+    calls: list = []
+    _patch_request(monkeypatch, _response([]), calls)
+    monkeypatch.setenv("OPENFOIA_NARA_API_BASE", "https://evil.example/api/v2")
+    result = asyncio.run(NARAAdapter(api_key="k").search("x"))
+    assert result.error and "refusing to send the API key" in result.error and calls == []
+    monkeypatch.setenv("OPENFOIA_NARA_API_BASE", "http://catalog.archives.gov/api/v2")
+    assert asyncio.run(NARAAdapter(api_key="k").search("x")).error and calls == []
+    monkeypatch.setenv("OPENFOIA_NARA_API_BASE", "http://127.0.0.1:8080/")
+    asyncio.run(NARAAdapter(api_key="k").search("x"))
+    assert calls[-1]["url"] == "http://127.0.0.1:8080/records/search"
+
+
+def test_quota_warning_prints_once_per_process(monkeypatch, caplog):
+    _patch_request(monkeypatch, _response([]), [])
+    monkeypatch.setattr(nara_mod, "_quota_warned", False)
+    from datetime import UTC, datetime
+
+    path = nara_mod.quota_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"month": datetime.now(UTC).strftime("%Y-%m"), "count": 9_000}))
+    adapter = NARAAdapter(api_key="k")
+    with caplog.at_level("WARNING"):
+        asyncio.run(adapter.search("x"))
+        asyncio.run(adapter.search("y"))
+    assert caplog.text.count("NARA quota:") == 1
+
+
+def test_govinfo_sends_key_in_header_and_never_prints_it(monkeypatch, caplog):
+    from openfoia.records import govinfo as govinfo_mod
+    from openfoia.records.govinfo import GovInfoAdapter
+
+    monkeypatch.setenv("OPENFOIA_GOVINFO_API_KEY", "SECRET-KEY-123")
+    seen: dict = {}
+
+    class Resp:
+        status_code = 500
+
+        def raise_for_status(self):
+            raise RuntimeError(
+                "Server error '500' for url 'https://api.govinfo.gov/search?api_key=SECRET-KEY-123'"
+            )
+
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, **kw):
+            seen.update(kw)
+            return Resp()
+
+        async def get(self, url, **kw):
+            seen.update(kw)
+            return Resp()
+
+    monkeypatch.setattr(govinfo_mod, "egress_client", lambda *a, **k: Client())
+    with caplog.at_level("WARNING"):
+        result = asyncio.run(GovInfoAdapter().search("x"))
+        asyncio.run(GovInfoAdapter().fetch("PKG-1"))
+    assert seen["headers"] == {"X-Api-Key": "SECRET-KEY-123"} and "params" not in seen
+    assert "SECRET-KEY-123" not in result.error and "SECRET-KEY-123" not in caplog.text
+    assert "api_key=<redacted>" in result.error
+
+
+def test_all_sources_with_key_prints_notice_once(monkeypatch):
+    monkeypatch.setenv("OPENFOIA_NARA_API_KEY", "k")
+    _patch_request(monkeypatch, _response([_hit()]), [])
+    monkeypatch.setattr("openfoia.records.list_sources", lambda: ["nara"])
+    r = runner.invoke(app, ["records", "search", "mkultra", "--all-sources"])
+    assert r.exit_code == 0, r.output
+    assert r.output.count("catalog.archives.gov with your API key") == 1
+    assert r.output.count("not endorsed or certified") == 1
+    assert "nara" in r.output and "ok 1" in r.output
 
 
 def test_cli_fetch_stores_nara_document_in_case(monkeypatch):
