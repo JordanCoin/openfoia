@@ -2482,15 +2482,37 @@ def template_generate(
         with get_session() as session:
             found = (
                 session.query(Agency)
-                .filter((Agency.abbreviation.ilike(agency)) | (Agency.name.ilike(f"%{agency}%")))
+                .filter((Agency.abbreviation.ilike(agency)) | (Agency.name.ilike(agency)))
                 .first()
             )
+            if found is None:
+                matches = (
+                    session.query(Agency).filter(Agency.name.ilike(f"%{agency}%")).limit(10).all()
+                )
+                if len(matches) > 1:
+                    rprint(f"[red]'{agency}' matches more than one agency; be exact:[/red]")
+                    for m in matches:
+                        rprint(f"  {m.name}" + (f" ({m.abbreviation})" if m.abbreviation else ""))
+                    raise typer.Exit(2)
+                found = matches[0] if matches else None
             if found:
                 agency_name = found.name
                 if jurisdiction is None and found.jurisdiction_id:
                     jurisdiction = found.jurisdiction_id
 
     j = _jurisdiction_or_exit(jurisdiction) if jurisdiction else None
+    non_federal = bool(j) and j["id"] != "us"
+    if non_federal and template_name == "self":
+        rprint(
+            "[red]The 'self' template is a federal FOIA and Privacy Act letter; "
+            "it cannot be written under a state law. Use 'standard' with --jurisdiction.[/red]"
+        )
+        raise typer.Exit(2)
+    if non_federal and expedited:
+        rprint(
+            "[yellow]Expedited processing is a federal FOIA provision; "
+            f"the {j['name']} letter omits it.[/yellow]"
+        )
     if j and not j["verified"]:
         rprint(
             f"[yellow]{j['name']} is an unverified stub: the letter leaves placeholders "

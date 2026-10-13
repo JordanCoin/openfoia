@@ -464,9 +464,11 @@ def _clock_sentence(j: dict) -> str:
     if not r["days"] or r["unit"] in (None, "none"):
         return ""
     text = f"I look forward to your response within {r['days']} {r['unit']} days"
-    if r["extension_days"]:
-        unit = r["extension_unit"] or r["unit"]
-        text += f", with any extension of up to {r['extension_days']} {unit} days stated in writing"
+    if r["extension_days"] and r["extension_unit"] not in (None, "none"):
+        text += (
+            f", with any extension of up to {r['extension_days']} {r['extension_unit']} days "
+            "stated in writing"
+        )
     return text + ", as the statute provides.\n\n"
 
 
@@ -508,7 +510,7 @@ def state_request(
 """
     if fee_waiver and fees["waiver_rule"]:
         rule = fees["waiver_rule"].rstrip(".")
-        letter += f"""I ask that fees be waived or reduced as the law allows ({rule}), because the records concern the operation of government and I am not requesting them for a commercial purpose.
+        letter += f"""Please apply any fee waiver or reduction the law provides: {rule}.
 
 """
     where = f" under {j['exemptions_citation']}" if j["exemptions_citation"] else ""
@@ -518,13 +520,16 @@ If any responsive record has been destroyed or cannot be located, please state t
 
 """
     appeal = j["appeal"]
-    if appeal["body"]:
-        within = ""
-        if appeal["deadline_days"]:
-            unit = appeal["deadline_unit"] or "calendar"
-            within = f" within {appeal['deadline_days']} {unit} days"
-        body = appeal["body"][0].lower() + appeal["body"][1:]
-        letter += f"""I understand that a denial may be appealed to the {body}{within}, and I reserve that right.
+    review = f"I reserve all rights of review provided by {statute['citation'] or law}"
+    if (
+        appeal["type"] in ("agency_head", "commission")
+        and appeal["deadline_days"]
+        and appeal["deadline_unit"] not in (None, "none")
+    ):
+        review += (
+            f", including an appeal within {appeal['deadline_days']} {appeal['deadline_unit']} days"
+        )
+    letter += f"""{review}.
 
 """
     letter += _clock_sentence(j)
@@ -542,6 +547,7 @@ SCHOOL_PROGRAM_RECORDS = """1. Board of education minutes, agendas and board pac
 5. Program evaluations, audit reports, annual reports and reports to the state education agency, including any state grant applications and grant files.
 6. Correspondence and memoranda between program staff and any outside evaluator, consultant or university partner.
 7. Aggregate counts only of students screened, identified and served by year.
+8. The records retention schedule series that applies to each record type above and, for any record that has been destroyed, the destruction log or certificate and a description of the search performed.
 
 The date range for this request is [START DATE] through [END DATE]."""
 
