@@ -190,7 +190,8 @@ class Agency(Base):
     preferred_method: Mapped[DeliveryMethod] = mapped_column(
         Enum(DeliveryMethod), default=DeliveryMethod.EMAIL
     )
-    typical_response_days: Mapped[int] = mapped_column(Integer, default=20)
+    # None means no statutory day count is known for this body; never fake 20.
+    typical_response_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     fee_waiver_criteria: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Stats (updated over time)

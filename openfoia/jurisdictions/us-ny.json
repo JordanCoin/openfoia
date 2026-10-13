@@ -10,7 +10,7 @@
   "response": {
     "days": null,
     "unit": null,
-    "rule_text": "Acknowledgment within 5 business days; a date for the full response must be given. Exact clocks not verified.",
+    "rule_text": "The fetched source did not state the acknowledgment or response clocks; check Public Officers Law 89(3) before quoting one.",
     "extension_days": null,
     "extension_unit": null,
     "silence_is_denial": null
@@ -30,17 +30,17 @@
   "appeal": {
     "body": "Committee on Open Government (advisory only); Article 78 in state Supreme Court",
     "type": "ombudsman_advisory",
-    "deadline_days": 30,
-    "deadline_unit": "calendar",
-    "rule_text": "Administrative appeal within 30 days to the body's appeals officer, decided in 10 business days; then Article 78 proceeding. COOG opinions are not binding."
+    "deadline_days": null,
+    "deadline_unit": null,
+    "rule_text": "Administrative appeal to the body's appeals officer, then an Article 78 proceeding in state Supreme Court. Committee on Open Government opinions are advisory, not binding. Appeal clocks were not confirmed from the fetched source."
   },
   "exemptions_citation": "N.Y. Pub. Off. Law 87(2)",
   "format_rule": null,
   "covers": {
-    "governor": true,
-    "legislature": true,
-    "universities_public": true,
-    "school_districts": true
+    "governor": null,
+    "legislature": null,
+    "universities_public": null,
+    "school_districts": null
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/new-york/"

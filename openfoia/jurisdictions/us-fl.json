@@ -37,7 +37,7 @@
   "exemptions_citation": "Fla. Stat. 119.071 and statute-specific exemptions",
   "format_rule": null,
   "covers": {
-    "governor": true,
+    "governor": null,
     "legislature": null,
     "universities_public": true,
     "school_districts": true
