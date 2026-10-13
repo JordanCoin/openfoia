@@ -28,6 +28,7 @@ class IngestResult:
     extracted_text: str | None
     checksum: str
     metadata: dict[str, Any]
+    pages: list[str] | None = None  # per-page text when the extractor knows page breaks
 
 
 class DocumentIngester:
@@ -90,7 +91,7 @@ class DocumentIngester:
             page_count = await self._get_pdf_page_count(dest_path)
 
         # Auto-extract text based on file type
-        extracted_text = await self._extract_text(dest_path, mime_type)
+        extracted_text, pages = await self._extract(dest_path, mime_type)
 
         return IngestResult(
             document_id=doc_id,
@@ -100,6 +101,7 @@ class DocumentIngester:
             mime_type=mime_type,
             page_count=page_count,
             extracted_text=extracted_text,
+            pages=pages,
             checksum=checksum,
             metadata={
                 "original_path": str(file_path),
@@ -147,7 +149,7 @@ class DocumentIngester:
             page_count = await self._get_pdf_page_count(dest_path)
 
         # Auto-extract text
-        extracted_text = await self._extract_text(dest_path, mime_type)
+        extracted_text, pages = await self._extract(dest_path, mime_type)
 
         return IngestResult(
             document_id=doc_id,
@@ -157,6 +159,7 @@ class DocumentIngester:
             mime_type=mime_type,
             page_count=page_count,
             extracted_text=extracted_text,
+            pages=pages,
             checksum=checksum,
             metadata={
                 "ingested_at": _utcnow().isoformat(),
@@ -251,7 +254,14 @@ class DocumentIngester:
         return await asyncio.to_thread(_hash)
 
     async def _extract_text(self, file_path: Path, mime_type: str) -> str | None:
-        """Auto-extract text from a file based on its type.
+        return (await self._extract(file_path, mime_type))[0]
+
+    async def _extract(
+        self, file_path: Path, mime_type: str
+    ) -> tuple[str | None, list[str] | None]:
+        """Auto-extract (text, pages) from a file based on its type.
+
+        pages is None unless the extractor knows page boundaries (PDFs).
 
         - PDFs: try pdf-extract binary first (fast, lossless), fall back to OCR
         - DOCX: extract paragraphs + table text via python-docx
@@ -261,30 +271,30 @@ class DocumentIngester:
         try:
             if mime_type == "application/pdf":
                 return await self._extract_text_pdf(file_path)
-            elif mime_type in (
+            text = None
+            if mime_type in (
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 "application/msword",
             ):
-                return await asyncio.to_thread(self._extract_text_docx, file_path)
+                text = await asyncio.to_thread(self._extract_text_docx, file_path)
             elif mime_type and mime_type.startswith("image/"):
-                return await self._extract_text_image(file_path)
+                text = await self._extract_text_image(file_path)
             elif mime_type and mime_type.startswith("text/"):
-                return await asyncio.to_thread(file_path.read_text, errors="replace")
+                text = await asyncio.to_thread(file_path.read_text, errors="replace")
             elif mime_type == "application/vnd.ms-outlook" or file_path.suffix.lower() == ".msg":
-                return await asyncio.to_thread(self._extract_text_msg, file_path)
-            return None
+                text = await asyncio.to_thread(self._extract_text_msg, file_path)
+            return text, None
         except Exception:
-            return None
+            return None, None
 
-    async def _extract_text_pdf(self, pdf_path: Path) -> str | None:
-        """Extract text from PDF: try compiled binary first, fall back to OCR."""
-        # Try the fast pdf-extract binary
+    async def _extract_text_pdf(self, pdf_path: Path) -> tuple[str | None, list[str] | None]:
+        """Extract (text, pages) from PDF: try compiled binary first, fall back to OCR."""
+        from ..doctext import join_pages
         from .pdf_extract import extract_text
 
         result = await extract_text(pdf_path)
         if result and result.char_count > 50:
-            # Clean up form feeds
-            return "\n\n".join(p.strip() for p in result.text.split("\f") if p.strip())
+            return join_pages(result.pages), result.pages
 
         # Fall back to OCR for scanned PDFs
         try:
@@ -293,11 +303,11 @@ class DocumentIngester:
             engine = OCREngine()
             ocr_result = await engine.process_pdf(pdf_path)
             if ocr_result.text and len(ocr_result.text.strip()) > 50:
-                return ocr_result.text
+                return ocr_result.text, [p["text"] for p in ocr_result.pages]
         except (ImportError, Exception):
             pass
 
-        return None
+        return None, None
 
     def _extract_text_docx(self, docx_path: Path) -> str | None:
         """Extract text from DOCX including tables."""

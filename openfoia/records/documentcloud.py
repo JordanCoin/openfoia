@@ -16,6 +16,7 @@ Rate limit: 10 req/sec, 500 req/day (anonymous). Free account removes daily limi
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -28,6 +29,41 @@ logger = logging.getLogger(__name__)
 
 API_BASE = "https://api.www.documentcloud.org/api"
 ASSET_BASE = "https://s3.documentcloud.org"
+
+#: Parallel per-page text requests. DocumentCloud allows 10 req/sec.
+PAGE_FETCH_CONCURRENCY = 4
+#: Beyond this many pages, keep the full text as one page instead of
+#: issuing one request per page.
+MAX_PAGE_FETCH = 2000
+
+
+async def _fetch_page_texts(
+    client: httpx.AsyncClient, base: str, page_count: int
+) -> list[str] | None:
+    """Fetch ``{base}-p{n}.txt`` for every page; None if any page fails."""
+    if not 0 < page_count <= MAX_PAGE_FETCH:
+        return None
+    sem = asyncio.Semaphore(PAGE_FETCH_CONCURRENCY)
+
+    async def one(n: int) -> str:
+        url = f"{base}-p{n}.txt"
+        validate_download_url(url)
+        async with sem:
+            resp = await client.get(url, timeout=15)
+        if resp.status_code in (429, 503):
+            raise RuntimeError(f"DocumentCloud rate limit on page {n}")
+        resp.raise_for_status()
+        return resp.text
+
+    try:
+        # TaskGroup cancels the remaining requests as soon as one page fails.
+        async with asyncio.TaskGroup() as tg:
+            tasks = [tg.create_task(one(n)) for n in range(1, page_count + 1)]
+    except Exception as e:  # ExceptionGroup from the TaskGroup
+        first = e.exceptions[0] if isinstance(e, ExceptionGroup) else e
+        logger.warning("Per-page text unavailable, keeping full text as one page: %s", first)
+        return None
+    return [t.result() for t in tasks]
 
 
 class DocumentCloudAdapter(RecordAdapter):
@@ -208,6 +244,7 @@ class DocumentCloudAdapter(RecordAdapter):
 
                 # Get full text (DC already extracted it)
                 full_text = None
+                page_texts = None
                 text_url = doc.get("asset_url")
                 slug = doc.get("slug", "")
                 doc_id = doc.get("id", identifier)
@@ -222,6 +259,15 @@ class DocumentCloudAdapter(RecordAdapter):
                             full_text = txt_resp.text
                     except Exception as e:
                         logger.debug("Could not fetch text: %s", e)
+                    page_texts = await _fetch_page_texts(
+                        client,
+                        f"{text_url}documents/{doc_id}/pages/{slug}",
+                        doc.get("page_count") or 0,
+                    )
+                    if full_text is None and page_texts:
+                        from ..doctext import join_pages
+
+                        full_text = join_pages(page_texts)
 
         except Exception as e:
             logger.warning("DocumentCloud fetch failed for %s: %s", identifier, e)
@@ -245,6 +291,7 @@ class DocumentCloudAdapter(RecordAdapter):
                 "created_at": doc.get("created_at"),
                 "pdf_url": doc.get("file_url"),
                 "full_text": full_text,
+                "page_texts": page_texts,
                 "text_length": len(full_text) if full_text else 0,
             },
         )
@@ -271,7 +318,8 @@ class DocumentCloudAdapter(RecordAdapter):
 
         from uuid import uuid4
 
-        from ..db import get_db_path, get_session, init_db
+        from ..db import ensure_db, get_session
+        from ..doctext import replace_pages
         from ..models import (
             Agency,
             DeliveryMethod,
@@ -282,9 +330,8 @@ class DocumentCloudAdapter(RecordAdapter):
             User,
         )
 
-        db_path = get_db_path()
-        if not db_path.exists():
-            init_db()
+        ensure_db()
+        pages = entity.extra_data.get("page_texts") or [full_text]
 
         dc_id = entity.identifiers.get("documentcloud_id", identifier)
 
@@ -303,6 +350,7 @@ class DocumentCloudAdapter(RecordAdapter):
                     # Update text in case it changed
                     existing_doc.extracted_text = full_text
                     existing_doc.file_size = len(full_text.encode())
+                    replace_pages(session, existing_doc.id, pages)
                     return existing_doc.id, full_text
 
             user = session.query(User).first()
@@ -345,5 +393,6 @@ class DocumentCloudAdapter(RecordAdapter):
                 ocr_completed=True,
             )
             session.add(doc)
+            replace_pages(session, doc_id, pages)
 
         return doc_id, full_text

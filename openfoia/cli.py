@@ -17,6 +17,7 @@ from rich import print as rprint
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
+from rich.text import Text
 
 from .models import utcnow as _utcnow
 
@@ -1316,14 +1317,10 @@ def docs_ingest(
     """
     import asyncio
 
-    from .db import get_data_dir, get_db_path, init_db
+    from .db import ensure_db, get_data_dir
     from .pipeline.ingest import DocumentIngester
 
-    # Ensure database exists
-    db_path = get_db_path()
-    if not db_path.exists():
-        rprint("[yellow]Initializing database...[/yellow]")
-        init_db()
+    ensure_db()
 
     storage_path = get_data_dir() / "docs"
     ingester = DocumentIngester(storage_path=storage_path)
@@ -1401,6 +1398,7 @@ def docs_ingest(
         from uuid import uuid4
 
         from .db import get_session
+        from .doctext import replace_pages
         from .models import Document, DocumentType
 
         with get_session() as session:
@@ -1446,6 +1444,8 @@ def docs_ingest(
                     session.flush()
                     doc.request_id = placeholder_req.id
                 session.add(doc)
+                if r.extracted_text:
+                    replace_pages(session, doc.id, r.pages or [r.extracted_text])
 
     # Summary
     rprint(f"\n[green]✓ Ingested {len(results)} documents[/green]")
@@ -1466,6 +1466,9 @@ def docs_ingest(
     # Run OCR if requested
     if ocr and results:
         rprint("\n[cyan]Running OCR...[/cyan]")
+        from .db import get_session
+        from .doctext import replace_pages
+        from .models import Document
         from .pipeline.ocr import OCREngine
 
         engine = OCREngine(backend="tesseract")
@@ -1478,6 +1481,14 @@ def docs_ingest(
                     rprint(
                         f"    [green]✓[/green] {ocr_result.page_count} pages, {ocr_result.confidence:.1%} confidence"
                     )
+                    if ocr_result.text.strip():
+                        with get_session() as session:
+                            doc = session.get(Document, result.document_id)
+                            if doc is None:
+                                continue
+                            doc.extracted_text = ocr_result.text
+                            doc.ocr_completed = True
+                            replace_pages(session, doc.id, [p["text"] for p in ocr_result.pages])
                 except Exception as e:
                     rprint(f"    [red]✗[/red] OCR failed: {e}")
 
@@ -1569,6 +1580,209 @@ def docs_ocr(
         rprint("\n[yellow]⚠️  Exemptions cited in document:[/yellow]")
         for ex in redactions["exemptions_cited"]:
             rprint(f"  • {ex['code']}: {ex['description']} ({ex['count']}x)")
+
+
+def _open_docs_db() -> None:
+    """Exit if there is no database; otherwise bring its schema up to date."""
+    from .db import get_db_path, run_migrations
+
+    if not get_db_path().exists():
+        rprint("[yellow]Database not initialized. Run 'openfoia init' first.[/yellow]")
+        raise typer.Exit(1)
+    run_migrations()
+
+
+def _resolve_doc(session, doc_id: str):
+    """Find one Document by full id or unique id prefix, or exit."""
+    from .models import Document
+
+    matches = session.query(Document).filter(Document.id.like(f"{doc_id}%")).limit(2).all()
+    if len(matches) != 1:
+        problem = "not found" if not matches else "is ambiguous; use more characters"
+        typer.echo(f"Document id '{doc_id}' {problem}.", err=True)
+        raise typer.Exit(1)
+    return matches[0]
+
+
+def _doc_source(request_number: str | None) -> str:
+    prefix = (request_number or "").split("-", 1)[0]
+    return {"DC": "documentcloud", "MUCKROCK": "muckrock"}.get(prefix, "local")
+
+
+@docs_app.command("list")
+def docs_list(
+    as_json: bool = typer.Option(False, "--json", help="Print JSON"),
+):
+    """List stored documents: id, title, pages, source, text length."""
+    from sqlalchemy import func
+
+    from .db import get_session
+    from .models import Document, DocumentPage, Request
+
+    _open_docs_db()
+    with get_session() as session:
+        stored = (
+            session.query(DocumentPage.document_id, func.count().label("n"))
+            .group_by(DocumentPage.document_id)
+            .subquery()
+        )
+        rows = (
+            session.query(
+                Document.id,
+                Document.filename,
+                Document.page_count,
+                func.length(Document.extracted_text),
+                Request.request_number,
+                Request.subject,
+                stored.c.n,
+            )
+            .outerjoin(Request, Request.id == Document.request_id)
+            .outerjoin(stored, stored.c.document_id == Document.id)
+            .order_by(Document.received_at)
+            .all()
+        )
+
+    docs = [
+        {
+            "id": doc_id,
+            "title": subject if _doc_source(num) == "documentcloud" and subject else filename,
+            "filename": filename,
+            "pages": page_count,
+            "stored_pages": n or 0,
+            "source": _doc_source(num),
+            "text_length": text_len or 0,
+        }
+        for doc_id, filename, page_count, text_len, num, subject, n in rows
+    ]
+    if as_json:
+        typer.echo(json.dumps(docs, indent=2, ensure_ascii=False))
+        return
+    if not docs:
+        rprint("[yellow]No documents stored yet.[/yellow]")
+        return
+    table = Table(title=f"Documents ({len(docs)})")
+    table.add_column("ID", style="cyan")
+    table.add_column("Title")
+    table.add_column("Pages", justify="right")
+    table.add_column("Source")
+    table.add_column("Text", justify="right")
+    for d in docs:
+        pages = str(d["stored_pages"])
+        if d["pages"] and d["pages"] != d["stored_pages"]:
+            pages += f"/{d['pages']}"
+        table.add_row(d["id"][:8], Text(d["title"]), pages, d["source"], f"{d['text_length']:,}")
+    console.print(table)
+    rprint("[dim]Pages shows stored/actual when they differ (text kept as fewer pages).[/dim]")
+
+
+@docs_app.command("show")
+def docs_show(
+    doc_id: str = typer.Argument(..., help="Document id (or unique prefix)"),
+    page: int | None = typer.Option(None, "--page", "-p", help="Only this page (1-based)"),
+    as_json: bool = typer.Option(False, "--json", help="Print JSON"),
+):
+    """Print a stored document's text and its page map.
+
+    Examples:
+        openfoia docs show 3f2a
+        openfoia docs show 3f2a --page 12
+    """
+    from .db import get_session
+    from .doctext import backfill_single_pages
+
+    _open_docs_db()
+    with get_session() as session:
+        backfill_single_pages(session.connection())
+        doc = _resolve_doc(session, doc_id)
+        pages = [(p.page_number, p.char_count, p.text) for p in doc.pages]
+        req = doc.request
+        from_dc = req is not None and _doc_source(req.request_number) == "documentcloud"
+        title = req.subject if from_dc else doc.filename
+        header = {"id": doc.id, "title": title, "filename": doc.filename}
+        declared = doc.page_count
+
+    selected = [p for p in pages if page is None or p[0] == page]
+    if page is not None and not selected:
+        typer.echo(f"Page {page} not stored; this document has {len(pages)} page(s).", err=True)
+        raise typer.Exit(1)
+
+    if as_json:
+        out = {
+            **header,
+            "page_count": declared,
+            "page_map": [{"page": n, "chars": c} for n, c, _ in pages],
+            "pages": [{"page": n, "text": t} for n, _, t in selected],
+        }
+        typer.echo(json.dumps(out, indent=2, ensure_ascii=False))
+        return
+
+    typer.echo(f"{header['id']}  {header['title']}")
+    typer.echo("Page map: " + ", ".join(f"p{n}={c:,}" for n, c, _ in pages))
+    if declared and declared > len(pages):
+        typer.echo(
+            f"Note: the source has {declared} pages but the text is stored as {len(pages)}; "
+            "page numbers here are not the source's page numbers."
+        )
+    for n, _, text in selected:
+        typer.echo(f"\n--- page {n} ---\n{text}")
+
+
+@docs_app.command("grep")
+def docs_grep(
+    query: str = typer.Argument(
+        ..., help='Search text. FTS5 syntax: "exact phrase", a OR b, NEAR(a b, 10)'
+    ),
+    context: int = typer.Option(
+        200, "--context", "-C", help="Characters shown each side of a match"
+    ),
+    limit: int = typer.Option(50, "--limit", "-n", help="Maximum passages"),
+    doc: list[str] | None = typer.Option(
+        None, "--doc", help="Only this document id or prefix (repeatable)"
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Print JSON"),
+):
+    """Keyword-in-context search over every stored page, fully offline.
+
+    Prints document id, title, page and the passage around each match.
+    Uses the local SQLite FTS5 index; if this SQLite build has no FTS5
+    (some SQLCipher builds) it falls back to a plain substring scan.
+
+    Examples:
+        openfoia docs grep Hocking
+        openfoia docs grep '"school board" OR WISC' --context 80
+        openfoia docs grep 'NEAR(contract audit, 15)' --doc 3f2a --json
+    """
+    from .db import get_session
+    from .doctext import search_pages
+
+    _open_docs_db()
+    with get_session() as session:
+        doc_ids = [_resolve_doc(session, d).id for d in doc] if doc else None
+        hits, engine = search_pages(
+            session, query, context=context, limit=limit, document_ids=doc_ids
+        )
+
+    notice = {
+        "like": "FTS5 is not available in this SQLite build; using a plain substring scan.",
+        "fts5-literal": "Query is not valid FTS5 syntax; searched it as an exact phrase.",
+    }.get(engine)
+    if notice:
+        typer.echo(f"Note: {notice}", err=True)
+
+    if as_json:
+        out = {"query": query, "engine": engine, "hits": [h.to_dict() for h in hits]}
+        typer.echo(json.dumps(out, indent=2, ensure_ascii=False))
+        return
+    if not hits:
+        typer.echo("No matches.")
+        return
+    for h in hits:
+        body = Text(h.passage)
+        body.stylize("bold yellow", h.match_start, h.match_end)
+        console.print(Text(f"{h.document_id[:8]}  {h.title}  p.{h.page}", style="cyan"))
+        console.print(body)
+        console.print()
+    typer.echo(f"{len(hits)} passage(s)" + (" (limit reached)" if len(hits) >= limit else ""))
 
 
 # === Agency Commands ===
@@ -4592,12 +4806,10 @@ def records_download(
     # Auto-ingest if requested
     if ingest and downloaded:
         rprint("\n[cyan]Ingesting into OpenFOIA...[/cyan]")
-        from .db import get_data_dir, get_db_path, init_db
+        from .db import ensure_db, get_data_dir
         from .pipeline.ingest import DocumentIngester
 
-        db_path = get_db_path()
-        if not db_path.exists():
-            init_db()
+        ensure_db()
 
         storage_path = get_data_dir() / "docs"
         ingester = DocumentIngester(storage_path=storage_path)
@@ -4621,6 +4833,7 @@ def records_download(
 
             from .cases import active_case_id_in_db
             from .db import get_session
+            from .doctext import replace_pages
             from .models import DeliveryMethod, Document, DocumentType, Request, RequestStatus, User
 
             case_id = active_case_id_in_db()
@@ -4667,6 +4880,8 @@ def records_download(
                         ocr_completed=bool(r.extracted_text),
                     )
                     session.add(doc)
+                    if r.extracted_text:
+                        replace_pages(session, doc.id, r.pages or [r.extracted_text])
 
         rprint(f"\n[green]{ingested} file(s) ingested.[/green]")
         rprint("[dim]Run 'openfoia analyze extract --all' to extract entities.[/dim]")

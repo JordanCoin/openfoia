@@ -26,6 +26,7 @@ class PDFExtractResult:
     page_count: int
     char_count: int
     backend: str  # which binary was used
+    pages: list[str]  # text of each page, page 1 first
 
 
 def find_binary(configured_path: str | None = None) -> str | None:
@@ -135,13 +136,15 @@ async def extract_text(
     if len(text.strip()) < min_chars:
         return None
 
+    from ..doctext import split_pages
+
     # Pages are separated by form feed (0x0C)
-    pages = text.split("\f")
-    page_count = len(pages)
+    pages = split_pages(text)
 
     return PDFExtractResult(
         text=text,
-        page_count=page_count,
+        page_count=len(pages),
         char_count=len(text.replace("\f", "")),
         backend=binary,
+        pages=pages,
     )

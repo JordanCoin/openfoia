@@ -4,6 +4,7 @@ Core entities:
 - Agency: Government body that handles FOIA requests
 - Request: A single FOIA request with full lifecycle tracking
 - Document: A received document (response, fee letter, denial, etc.)
+- DocumentPage: Per-page text of a Document
 - Entity: Extracted person, org, location, etc. from documents
 - Campaign: Coordinated crowdsourced request effort
 - Case: One investigation, grouping fetched documents and logged searches
@@ -27,6 +28,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    UniqueConstraint,
     create_engine,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -296,6 +298,32 @@ class Document(Base):
     # Relationships
     request: Mapped[Request] = relationship(back_populates="documents")
     entities: Mapped[list[Entity]] = relationship(back_populates="source_document")
+    pages: Mapped[list[DocumentPage]] = relationship(
+        back_populates="document",
+        order_by="DocumentPage.page_number",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class DocumentPage(Base):
+    """Text of one page of a document. Page numbers start at 1.
+
+    The integer id is the rowid the FTS5 index (document_pages_fts) links to.
+    """
+
+    __tablename__ = "document_pages"
+    __table_args__ = (UniqueConstraint("document_id", "page_number"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    document_id: Mapped[str] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), index=True
+    )
+    page_number: Mapped[int] = mapped_column(Integer)
+    text: Mapped[str] = mapped_column(Text)
+    char_count: Mapped[int] = mapped_column(Integer)
+
+    document: Mapped[Document] = relationship(back_populates="pages")
 
 
 class Entity(Base):
