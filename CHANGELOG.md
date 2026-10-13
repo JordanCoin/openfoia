@@ -10,6 +10,13 @@ exhaustive lists.
 
 ## [Unreleased]
 
+### Fixed
+
+- `analyze graph --mentions A B` now also checks the stored page text, so a
+  name the extractor never tagged still counts as a mention and the pages are
+  listed. `docs grep --save` records its notes as tier `says` (they are
+  verbatim passages), so they carry the tier in `case notes` and exports.
+
 ### Changed
 
 - Claude Code plugin 0.2.0: the `openfoia` skill and `/foia-investigate` now

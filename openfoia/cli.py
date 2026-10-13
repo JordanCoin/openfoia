@@ -1875,6 +1875,7 @@ def docs_grep(
                             page=h.page,
                             quote=h.passage,
                             note=note,
+                            tier="says",
                         )
                     )
                     saved += 1
@@ -3036,6 +3037,14 @@ def analyze_graph(
 
         entities = query.all()
 
+        if mentions:
+            if case:
+                doc_ids = _case_document_ids(session, case.id)
+            else:
+                doc_ids = [r[0] for r in session.query(Document.id)]
+            _print_mentions(session, entities, mentions, name, doc_ids)
+            return
+
         if not entities:
             if case:
                 rprint(
@@ -3044,10 +3053,6 @@ def analyze_graph(
                 )
             else:
                 rprint("[yellow]No entities found. Run entity extraction first.[/yellow]")
-            return
-
-        if mentions:
-            _print_mentions(session, entities, mentions, name)
             return
 
         entity_ids = {e.id for e in entities}
@@ -3144,8 +3149,15 @@ def analyze_graph(
             rprint("[cyan]Opened in browser.[/cyan]")
 
 
-def _print_mentions(session, entities, labels: tuple[str, str], graph_name: str | None) -> None:
-    """Documents where both labels occur (substring, case-insensitive) and their pages."""
+def _print_mentions(
+    session, entities, labels: tuple[str, str], graph_name: str | None, doc_ids: list[str]
+) -> None:
+    """Documents where both labels occur (whole word, case-insensitive) and their pages.
+
+    Extracted entities are checked first; documents whose entities miss a label
+    are then checked against their stored page text, so a name the extractor
+    never tagged still counts as a mention.
+    """
     from .models import Document, DocumentPage
     from .models import Request as RequestModel
 
@@ -3161,6 +3173,20 @@ def _print_mentions(session, entities, labels: tuple[str, str], graph_name: str 
                 if e.page_number:
                     slot[i].add(e.page_number)
     both = {d: hit for d, hit in found.items() if None not in hit}
+    for doc_id in doc_ids:
+        if doc_id in both:
+            continue
+        hit: list[set[int] | None] = [None, None]
+        for i, (label, pattern) in enumerate(zip(labels, patterns, strict=True)):
+            rows = session.query(DocumentPage.page_number, DocumentPage.text).filter(
+                DocumentPage.document_id == doc_id,
+                DocumentPage.text.ilike(f"%{_like_escape(label)}%", escape="\\"),
+            )
+            pages = {n for n, text in rows if pattern.search((text or "").lower())}
+            if pages:
+                hit[i] = pages
+        if None not in hit:
+            both[doc_id] = hit
     if not both:
         rprint(
             f"[yellow]No document in scope mentions both {labels[0]!r} and {labels[1]!r}.[/yellow]"
