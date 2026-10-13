@@ -27,6 +27,22 @@ exhaustive lists.
   school_district` filters; `agency info` shows the law and the custodian.
   Database migration `006` (nullable columns only; existing agencies are
   marked federal).
+- Jurisdiction-aware request letters: `openfoia template generate standard
+  --jurisdiction us-mi` (or any agency added with a jurisdiction) writes a
+  public-records letter under that state's law instead of federal FOIA. It
+  cites the statute and exemptions section when the jurisdiction file knows
+  them and leaves `[CITE STATUTE]` otherwise, states the response clock only
+  when it is known, asks for an itemized fee estimate before work with a
+  `[FEE CAP]` placeholder, an exemption citation for every withheld record,
+  and the retention schedule plus destruction log for any record reported
+  destroyed. Federal letters are unchanged. `template show <name>
+  --jurisdiction <id>` prints the skeleton; `template list` marks which
+  templates take a jurisdiction.
+- `school-program` template: asks a school district or state education agency
+  for program records (board minutes, plans, screening instruments, vendor
+  contracts, evaluations, grant files) and aggregate counts, and states that
+  individual student records under FERPA (20 U.S.C. 1232g) are not requested
+  and give no ground to deny the request as a whole.
 
 ## [4.4.0] - 2026-10-14
 

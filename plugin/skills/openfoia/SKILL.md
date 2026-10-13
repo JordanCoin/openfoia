@@ -145,11 +145,14 @@ openfoia agency list -j us-mi -l school_district
 ```bash
 openfoia template list
 openfoia template generate standard -a CIA -s "Records on PAS administration to persons under 18" -n "Your Name" -e you@example.com -o draft.txt
+openfoia template generate standard -a "Detroit Public Schools Community District" -s "Gifted program screening instruments 1990 to 1999" -n "Your Name" -e you@example.com --jurisdiction us-mi -o draft.txt
+openfoia template generate school-program -a "Detroit Public Schools Community District" -s "Gifted and Talented Program" -n "Your Name" -e you@example.com --jurisdiction us-mi -o draft.txt
+openfoia template show school-program --jurisdiction us-mi
 openfoia agency search "Central Intelligence Agency"
 openfoia request new -a <agency-id> -s "subject" -f draft.txt -n "Full Name" -e "you@email"
 ```
 
-File when the open record has a specific gap you can name by document number, date range and office (a MORI or CREST number from a document index that is not online is the ideal request). `template exemptions` explains the b(1) to b(9) codes when a denial comes back. `deadlines list` tracks the statutory clock.
+A letter to a state or local body cites that state's law, not FOIA: pass `--jurisdiction us-mi`, or add the body with `agency add` and the letter picks its law up. The state letter asks for an itemized fee estimate first, an exemption citation per withheld record, and the retention schedule plus destruction log for anything reported destroyed. It leaves `[CITE STATUTE]` and `[FEE CAP]` placeholders rather than guessing; fill them before sending. `school-program` asks a district for program records and aggregate counts and says in the letter that individual student records under FERPA are not requested. File when the open record has a specific gap you can name by document number, date range and office (a MORI or CREST number from a document index that is not online is the ideal request). `template exemptions` explains the b(1) to b(9) codes when a denial comes back. `deadlines list` tracks the statutory clock.
 
 ## Reading the output
 
@@ -209,4 +212,5 @@ openfoia init | guide | config --show | install-extras <name> | db upgrade | db 
 | Which law applies to a body | `openfoia jurisdiction show us-mi` |
 | Add a school district or city | `openfoia agency add --name "<body>" -j us-mi -l school_district` |
 | Draft a FOIA request | `openfoia template generate standard -a <agency> -s "..." -n "Name" -e you@example.com -o draft.txt` |
+| Draft a state or school records request | `openfoia template generate school-program -a "<district>" -s "<program>" -n "Name" -e you@example.com --jurisdiction us-mi` |
 | Check egress | `openfoia egress-status` |
