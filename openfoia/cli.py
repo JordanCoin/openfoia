@@ -4582,7 +4582,11 @@ def records_search(
     quiet = raw or json_lines
 
     if source == "cia":
-        notice = f"WARNING: This will send the query {query!r} to cia.gov (direct, real IP)."
+        from .records.cia import CIAReadingRoomAdapter
+
+        policy = _cia_policy_or_exit()
+        adapter = CIAReadingRoomAdapter(egress=policy)
+        notice = f"WARNING: This will send the query {query!r} to cia.gov ({_route_note(policy)})."
         if quiet:
             typer.echo(notice, err=True)
         else:
@@ -5099,6 +5103,19 @@ def records_fetch(
         raise typer.Exit(1 if not fetched and not skipped else 2)
 
 
+def _cia_policy_or_exit() -> EgressPolicy:
+    """Egress policy from config.network.tor, fail-closed when Tor is configured but down."""
+    from .config import load_config
+
+    policy = _egress_policy_from(load_config())
+    _check_tor_or_exit(policy)
+    return policy
+
+
+def _route_note(policy: EgressPolicy) -> str:
+    return "via Tor, real IP hidden" if policy.is_tor else "direct, real IP"
+
+
 def _records_fetch_cia(identifier: str) -> None:
     """Download a CIA reading room PDF, ingest it (text/OCR/pages), attach to the active case."""
     import asyncio
@@ -5114,12 +5131,15 @@ def _records_fetch_cia(identifier: str) -> None:
         rprint(f"[red]{e}[/red]")
         raise typer.Exit(1) from None
 
-    rprint(f"\n[yellow]WARNING: This will send the identifier {identifier!r} to cia.gov.[/yellow]")
-    rprint("[yellow]Egress: direct — cia.gov will see your real IP.[/yellow]")
+    policy = _cia_policy_or_exit()
+    rprint(
+        f"\n[yellow]WARNING: This will send the identifier {identifier!r} to cia.gov "
+        f"({_route_note(policy)}).[/yellow]"
+    )
     rprint(f"[dim]{kind}: {page_url}[/dim]")
 
     ensure_db()
-    adapter = CIAReadingRoomAdapter()
+    adapter = CIAReadingRoomAdapter(egress=policy)
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -5306,11 +5326,20 @@ def _persist_ingested(ingest_results, *, request_number: str, subject: str, body
             session.flush()
 
         agency = session.query(Agency).first()
-        dl_req = session.query(Request).filter(Request.request_number == request_number).first()
+        # One placeholder per (request number, case): a re-fetch under another
+        # active case must not land its documents in the first case.
+        dl_req = (
+            session.query(Request)
+            .filter(Request.request_number.startswith(request_number), Request.case_id == case_id)
+            .first()
+        )
         if dl_req is None:
+            taken = session.query(Request).filter(Request.request_number == request_number).first()
             dl_req = Request(
                 id=str(uuid4()),
-                request_number=request_number,
+                request_number=f"{request_number}@{case_id[:8]}"
+                if taken and case_id
+                else request_number,
                 requester_id=user.id,
                 agency_id=agency.id if agency else user.id,
                 subject=subject,
@@ -5321,8 +5350,6 @@ def _persist_ingested(ingest_results, *, request_number: str, subject: str, body
             )
             session.add(dl_req)
             session.flush()
-        elif case_id and dl_req.case_id is None:
-            dl_req.case_id = case_id
 
         for r in ingest_results:
             doc = Document(

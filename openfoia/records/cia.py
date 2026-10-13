@@ -169,7 +169,7 @@ class CIAReadingRoomAdapter(RecordAdapter):
             raise AdapterRequestError(
                 reason or f"cia.gov search form returned HTTP {posted.status_code}"
             )
-        url = f"{BASE}/search/site/{quote(query)}"
+        url = f"{BASE}/search/site/{quote(query, safe='')}"
         if page > 1:
             url += f"?page={page - 1}"
         resp = await self._get(client, url)

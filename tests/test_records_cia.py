@@ -328,3 +328,46 @@ def test_cli_fetch_cia_downloads_ingests_and_attaches_to_case(monkeypatch, tmp_p
         doc = session.query(Document).filter(Document.request_id == req.id).one()
         assert doc.id == "doc-cia-1"
         assert doc.extracted_text == "page one"
+
+
+def test_cli_fetch_same_document_under_two_cases_stays_separate(monkeypatch, tmp_path):
+    from openfoia.cli import app
+    from openfoia.db import ensure_db, get_session
+    from openfoia.models import Case, Document, Request
+    from openfoia.pipeline.ingest import IngestResult
+
+    _mock(monkeypatch, _site)
+    counter = iter(range(1, 10))
+
+    async def fake_ingest(self, file_path, **kwargs):
+        return IngestResult(
+            document_id=f"doc-{next(counter)}",
+            filename=Path(file_path).name,
+            file_path=str(file_path),
+            file_size=len(PDF),
+            mime_type="application/pdf",
+            page_count=1,
+            extracted_text="page one",
+            checksum="x",
+            metadata={},
+        )
+
+    monkeypatch.setattr("openfoia.pipeline.ingest.DocumentIngester.ingest_file", fake_ingest)
+    runner = CliRunner()
+    ensure_db()
+    ident = "CIA-RDP74-00390R000300140008-2"
+    for name in ("alpha", "beta"):
+        assert runner.invoke(app, ["case", "new", name]).exit_code == 0
+        r = runner.invoke(app, ["records", "fetch", ident, "--source", "cia"])
+        assert r.exit_code == 0, r.output
+
+    with get_session() as session:
+        by_case = {}
+        for case in session.query(Case).all():
+            reqs = session.query(Request).filter(Request.case_id == case.id).all()
+            by_case[case.name] = [
+                d.id
+                for r in reqs
+                for d in session.query(Document).filter(Document.request_id == r.id)
+            ]
+        assert by_case == {"alpha": ["doc-1"], "beta": ["doc-2"]}

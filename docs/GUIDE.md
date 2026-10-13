@@ -137,9 +137,11 @@ openfoia records search "Acme Corp" --all-sources
 ```
 
 Every source call prints which third party it contacts before the request
-leaves. cia.gov sits behind a bot filter; when it refuses a scripted request
-the command reports "blocked" (open the printed URL in a browser instead)
-rather than pretending there were no results.
+leaves. Current limitation: cia.gov's bot filter blocks non-browser clients,
+so `--source cia` search and fetch report "blocked" today rather than
+pretending there were no results. Workaround: open the printed URL in a
+browser, download the PDF, and `openfoia docs ingest <file.pdf>`. A Playwright
+route through `tor_browse.py` is a possible follow-up.
 
 A source that fails (rate limit, timeout, missing token) is reported as an
 error and the command exits non-zero; "No results found" means the source
