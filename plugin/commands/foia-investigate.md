@@ -1,64 +1,61 @@
 ---
 allowed-tools: Bash(openfoia:*)
-description: Run the full FOIA investigation loop on a topic or MuckRock ID — search, download, OCR, extract, crossref, and graph
+description: Investigate a claim or topic end to end — open a case, search, fetch, read every passage, record cited findings, graph, export
 ---
 
-Run an end-to-end FOIA investigation on: $ARGUMENTS
+Investigate: $ARGUMENTS
 
-The argument can be either a topic (like `Palantir contracts`) or a MuckRock request ID (like `195614`). If it's numeric, treat it as a MuckRock ID and skip the search step.
+The argument is a claim ("the PAS was given to schoolchildren") or a topic ("Palantir contracts, El Cajon"). Turn it into one question and keep every step inside one case.
 
-**Before running:** tell the user in plain language what network calls this will make — MuckRock for search/download, plus 10+ sources for crossref. Get explicit go-ahead.
+**Before any network call**, say in one sentence which source will see the query from the user's real IP, and get a go-ahead once per source.
 
-## Step-by-step
+## Steps
 
-1. **Search (if the argument is a topic, not an ID)**
+1. **Open the case**
    ```bash
-   openfoia records search "$ARGUMENTS" --source muckrock --limit 10
-   ```
-   Show results, then ask the user which ID to investigate. Stop here until they pick one.
-
-2. **Download the PDFs**
-   ```bash
-   openfoia records download <id> --source muckrock
-   ```
-   List what came down. Flag any obvious boilerplate ("Responsive Records Attached", "Fee Waiver", etc.) vs. the likely substantive records.
-
-3. **Ingest** — ask the user which file to focus on, or offer to ingest all with `--recursive`:
-   ```bash
-   openfoia docs ingest downloads/<file>.pdf
-   ```
-   Note the document ID returned.
-
-4. **Try extract first**
-   ```bash
-   openfoia analyze extract <doc-id>
-   ```
-   If entity count is very low (< 3 non-date entities) and the file is likely scanned, proceed to step 5. Otherwise skip to step 6.
-
-5. **OCR if needed**
-   ```bash
-   openfoia docs ocr downloads/<file>.pdf -o /tmp/<file>.txt
-   openfoia analyze extract <doc-id> --force
+   openfoia case new "<short question>" -d "<the claim as stated>"
    ```
 
-6. **Read the extraction output critically.** Name any entity that looks like a false positive (keyword collision, OCR artifact). Explain what the document actually says vs. what the request asked for — the gap itself is often the story.
-
-7. **Crossref, scoped to this request**
-   Find the request ID with `openfoia request list`, then:
+2. **Search, then triage.** Start with DocumentCloud (it mirrors the CIA CREST archive); add other sources when the topic calls for them.
    ```bash
-   openfoia crossref -r <request-id>
+   openfoia records search "<phrase>" -s documentcloud -n 100 --json --rank <keyword,keyword>
    ```
-   Read the hits. Call out any flagged entities that appear in multiple sources — those are the investigative leads.
+   Save the output to `hits.json`. Run two or three phrasings and the names that appear in the first hits. Show the user the top ranked hits and ask which to fetch; if they say "all", fetch all.
 
-8. **Build the graph**
+3. **Fetch into the case**
    ```bash
-   openfoia analyze graph --request <request-id> --name <slug> --view
+   openfoia records fetch --from hits.json
    ```
-   Pick a short, descriptive slug (e.g., `palantir-el-cajon`, `clearview-chicago`). `--view` opens the interactive HTML in the browser.
+   Report `fetched / skipped / failed` and name any failures.
 
-9. **Summarize the finding.** Three things:
-   - What the user asked the agency for
-   - What the agency actually disclosed
-   - Whether the response was substantively responsive or a null-response-as-compliance pattern (agencies often search their vendor DB on a keyword and ship whatever matches, regardless of whether it relates)
+4. **Read every passage for the key terms.** This is the investigation.
+   ```bash
+   openfoia docs grep '"<key phrase>"' -C 300
+   openfoia docs grep '<term> OR <term> OR <term>' -n 200
+   ```
+   Open full pages with `openfoia docs show <doc-id> --page N` when a passage needs context. Do not conclude until you have read the passages for every key term.
 
-Keep the narrative tight and honest. If the investigation hit a dead end (wrong entity, no matches, scanned doc that OCR couldn't read), say so and suggest the next thread to pull.
+5. **Record findings as you go**, with the tier kept honest.
+   ```bash
+   openfoia docs grep '"<phrase>"' --save --note "<what this shows>"
+   openfoia case note "<finding>" --doc <id> --page N --quote "<verbatim>" --tier says
+   openfoia case note "<inference>" --tier infer
+   ```
+
+6. **Link entities** (offline tiers unless the user wants the LLM)
+   ```bash
+   openfoia analyze extract <doc-id> --tier gliner
+   openfoia analyze graph --name <slug> --no-text --view
+   openfoia analyze graph --mentions "<A>" "<B>"
+   ```
+
+7. **Export and write up**
+   ```bash
+   openfoia case export -f md -o report.md
+   ```
+   Lead with the verdict (found, not found, partly found), then what was searched (sources, phrasings, document count), the hits with document id and page, the dead ends, and what a FOIA request could close. Keep "the document says", "reasonable inference" and "speculation" in separate paragraphs. If a source failed, say so; a dead source is not a null result.
+
+8. **Offer the FOIA draft** when a named gap exists:
+   ```bash
+   openfoia template generate standard -a <agency> -s "<records sought>" -n "<name>" -e <email> -o draft.txt
+   ```

@@ -10,6 +10,22 @@ exhaustive lists.
 
 ## [Unreleased]
 
+### Fixed
+
+- `analyze graph --mentions A B` now also checks the stored page text, so a
+  name the extractor never tagged still counts as a mention and the pages are
+  listed. `docs grep --save` records its notes as tier `says` (they are
+  verbatim passages), so they carry the tier in `case notes` and exports.
+
+### Changed
+
+- Claude Code plugin 0.2.0: the `openfoia` skill and `/foia-investigate` now
+  teach the case loop (`case new`, ranked `records search --json`,
+  `records fetch --from`, `docs grep`, cited `case note`, scoped graph,
+  `case export`) with the three evidence tiers, instead of the old
+  search-download-OCR-extract sequence. `docs/GUIDE.md` no longer suggests
+  automating a browser against cia.gov's bot filter.
+
 ## [4.3.0] - 2026-10-13
 
 The deep-research release: cases, per-page text with offline full-text

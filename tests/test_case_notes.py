@@ -163,7 +163,7 @@ def test_grep_save_attaches_hits_and_flags_partial_pages():
     notes = json.loads(_ok(runner.invoke(app, ["case", "notes", "--json"])))
     assert len(notes) == 2
     assert notes[0]["quote"] == "the WISC was given to children"
-    assert notes[0]["note"] is None and notes[0]["tier"] is None
+    assert notes[0]["note"] is None and notes[0]["tier"] == "says"
     assert notes[1]["note"] == "kids mentioned"
     assert notes[0]["page"] == 1 and notes[0]["page_is_real"] is False
 
@@ -261,3 +261,32 @@ def test_mentions_match_whole_words_only():
     _add_doc(["x"], title="Sub", case_id=get_active_case_id(), labels=[("Martin", 1), ("Bo", 1)])
     out = _ok(runner.invoke(app, ["analyze", "graph", "--mentions", "Art", "Bo"]))
     assert "Both" in out and "Sub" not in out
+
+
+def test_mentions_fall_back_to_page_text_when_entities_miss_a_label():
+    """A name the extractor never tagged still counts: the stored pages are the record."""
+    from openfoia.cases import get_active_case_id
+
+    _ok(runner.invoke(app, ["case", "new", "PAS"]))
+    case_id = get_active_case_id()
+    doc = _add_doc(
+        ["Gittinger wrote to Hocking.", "Hocking replied."],
+        title="Letters",
+        case_id=case_id,
+        labels=[("John Gittinger", 1)],
+    )
+    _add_doc(["Gittinger alone"], title="Solo", case_id=case_id, labels=[("John Gittinger", 1)])
+
+    out = _ok(runner.invoke(app, ["analyze", "graph", "--mentions", "Gittinger", "Hocking"]))
+    assert f"{doc[:8]}  Letters  Gittinger p.1; Hocking p.1,2" in out
+    assert "Solo" not in out
+
+
+def test_grep_save_records_the_says_tier():
+    from openfoia.cases import get_active_case_id
+
+    _ok(runner.invoke(app, ["case", "new", "PAS"]))
+    _add_doc(["The WAIS was used."], case_id=get_active_case_id())
+    _ok(runner.invoke(app, ["docs", "grep", "WAIS", "--save"]))
+    out = _ok(runner.invoke(app, ["case", "export", "-f", "json"]))
+    assert json.loads(out)["findings"][0]["tier"] == "says"
