@@ -143,7 +143,8 @@ def test_muckrock_401_is_an_error_not_no_results(monkeypatch):
     result = CliRunner().invoke(app, ["records", "search", "CIA", "-s", "muckrock"])
 
     assert result.exit_code == 1
-    assert "MuckRock API requires an API token (HTTP 401). Set it in config." in result.output
+    output = " ".join(result.output.split())
+    assert "MuckRock API requires an API token (HTTP 401). Set OPENFOIA_MUCKROCK_TOKEN." in output
     assert "No results found" not in result.output
 
 
@@ -175,14 +176,38 @@ def test_all_sources_reports_each_source_status(monkeypatch):
 
     result = CliRunner().invoke(app, ["records", "search", "PAS", "--all-sources"])
 
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 2, result.output  # partial failure
     assert "govinfo         ok 7" in result.output
     assert "muckrock        error: HTTP 401" in result.output
 
     result = CliRunner().invoke(app, ["records", "search", "PAS", "--all-sources", "-t", "10-K"])
 
+    assert result.exit_code == 0  # muckrock skipped, nothing errored
     assert "govinfo         skipped (filing_type filter not supported)" in result.output
     assert "sec             ok 7" in result.output
+
+
+def test_documentcloud_failed_page_keeps_earlier_pages(monkeypatch):
+    class Adapter:
+        async def search(self, query, page=1, page_size=25, **kwargs):
+            if page == 3:
+                return SearchResult(
+                    source="documentcloud", query=query, total_results=0, entities=[], error="429"
+                )
+            ents = [_dc_entity((page - 1) * page_size + i) for i in range(page_size)]
+            return SearchResult(
+                source="documentcloud", query=query, total_results=500, entities=ents
+            )
+
+    monkeypatch.setattr("openfoia.records.get_adapter", lambda source: Adapter())
+
+    result = CliRunner().invoke(
+        app, ["records", "search", "PAS", "-s", "documentcloud", "-n", "300", "--json"]
+    )
+
+    assert result.exit_code == 1
+    assert len(result.stdout.splitlines()) == 200
+    assert "Search error (documentcloud): 429" in result.stderr
 
 
 def test_all_sources_exits_nonzero_when_every_source_fails(monkeypatch):

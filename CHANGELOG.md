@@ -21,19 +21,24 @@ exhaustive lists.
   retrieved date) and the query log as Markdown or JSON. The active case is
   stored by id only in `active_case.json` under the data directory. Database
   migration `002`.
+- An existing database is upgraded to the current schema automatically the
+  first time any command opens it ("Upgrading database schema 001 -> 002" on
+  stderr); no need to run `openfoia db upgrade` first.
 - `records search --json` prints one compact object per result (id, title,
   source, pages, created, url, 200-character snippet), one per line.
 - `records search --all-sources` queries every registered source and prints
   a status line for each: `ok N`, `error: ...`, or `skipped` when a
-  `--jurisdiction`/`--type` filter does not apply to that source.
+  `--jurisdiction`/`--type` filter does not apply to that source. Exit code
+  0 when nothing errored, 2 when some sources errored, 1 when none succeeded.
 - `OPENFOIA_MUCKROCK_TOKEN` supplies a MuckRock API token.
 
 ### Fixed
 
 - `records search --limit` above 25 now pages DocumentCloud (up to 100 per
-  request) instead of silently stopping at 25.
+  request) instead of silently stopping at 25. If a later page fails, the
+  results already retrieved are still shown and the command exits non-zero.
 - A MuckRock HTTP 401/403 is now an error ("MuckRock API requires an API
-  token") instead of "No results found"; MuckRock 429 and 5xx responses are
+  token ... Set OPENFOIA_MUCKROCK_TOKEN.") instead of "No results found"; MuckRock 429 and 5xx responses are
   errors too.
 - A single-source `records search` that fails (including DocumentCloud
   timeouts and rate limits) now exits non-zero in every output mode, not only

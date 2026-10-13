@@ -271,6 +271,7 @@ def get_session_factory(engine: Engine | None = None) -> sessionmaker:
 @contextmanager
 def get_session(password: str | None = None) -> Generator[Session, None, None]:
     """Get a database session with automatic commit/rollback."""
+    _upgrade_schema_once(password)
     engine = get_engine(password=password)
     SessionLocal = sessionmaker(bind=engine)
     session = SessionLocal()
@@ -284,15 +285,64 @@ def get_session(password: str | None = None) -> Generator[Session, None, None]:
         session.close()
 
 
+def _alembic_config():
+    from alembic.config import Config
+
+    cfg = Config()
+    cfg.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
+    return cfg
+
+
+_schema_checked = False
+
+
+def _upgrade_schema_once(password: str | None) -> None:
+    """Migrate an existing database that is behind head, once per process.
+
+    Migrations otherwise only run on ``init`` or ``db upgrade``, so a database
+    from an older release would fail on the first query touching a new column.
+    """
+    global _schema_checked
+    if _schema_checked:
+        return
+    _schema_checked = True
+
+    db_path = get_db_path(password=password)
+    if not db_path.exists():
+        return
+
+    import sys
+
+    from alembic.runtime.migration import MigrationContext
+    from alembic.script import ScriptDirectory
+
+    script = ScriptDirectory.from_config(_alembic_config())
+    engine = get_engine(db_path=db_path, password=password)
+    try:
+        with engine.connect() as conn:
+            current = set(MigrationContext.configure(conn).get_current_heads())
+    finally:
+        engine.dispose()
+    heads = set(script.get_heads())
+    known = {r.revision for r in script.walk_revisions()}
+    # Unversioned (create_all) or newer-than-this-code databases are left alone.
+    if not current or current == heads or not current <= known:
+        return
+
+    print(
+        f"Upgrading database schema {', '.join(sorted(current))} -> {', '.join(sorted(heads))}",
+        file=sys.stderr,
+    )
+    run_migrations(password=password)
+
+
 def run_migrations(password: str | None = None) -> None:
     """Run alembic migrations to bring the database schema up to date."""
     from alembic import command
-    from alembic.config import Config
 
-    db_path = get_db_path()
+    db_path = get_db_path(password=password)
 
-    alembic_cfg = Config()
-    alembic_cfg.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
+    alembic_cfg = _alembic_config()
 
     if password is None:
         password = get_db_password()

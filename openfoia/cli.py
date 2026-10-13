@@ -2651,18 +2651,20 @@ def analyze_graph(
                 .filter(RequestModel.campaign_id.like(f"{campaign_id}%"))
             )
 
+        case = None
         if request_id:
             scope = f"request {request_id}"
         elif campaign_id:
             scope = f"campaign {campaign_id}"
         else:
-            from .cases import get_active_case
+            from .cases import get_active_case, get_active_case_id
 
-            case = None
             if case_name:
                 case = _resolve_case_or_exit(session, case_name)
             elif not all_cases:
                 case = get_active_case(session)
+                if case is None and get_active_case_id():
+                    rprint("[yellow]Active case not found; run `openfoia case use`.[/yellow]")
             if case:
                 query = (
                     query.join(Document).join(RequestModel).filter(RequestModel.case_id == case.id)
@@ -2675,7 +2677,13 @@ def analyze_graph(
         entities = query.all()
 
         if not entities:
-            rprint("[yellow]No entities found. Run entity extraction first.[/yellow]")
+            if case:
+                rprint(
+                    f"[yellow]No entities in case {case.name}. "
+                    "Run extraction or use --all.[/yellow]"
+                )
+            else:
+                rprint("[yellow]No entities found. Run entity extraction first.[/yellow]")
             return
 
         entity_ids = {e.id for e in entities}
@@ -3891,6 +3899,8 @@ async def _search_one(adapter, source: str, query: str, limit: int, kwargs: dict
     while True:
         result = await adapter.search(query, page=page, page_size=per_page, **kwargs)
         if result.error:
+            # Keep pages 1..N-1; the attached error still fails the command.
+            result.entities = entities[:limit]
             return result
         entities.extend(result.entities)
         if (
@@ -4005,6 +4015,8 @@ def _records_search_all(query: str, kwargs: dict[str, Any], limit: int, json_lin
 
     if not any(result for _, result, _ in outcomes):
         raise typer.Exit(1)
+    if any(status.startswith("error") for _, _, status in outcomes):
+        raise typer.Exit(2)
 
 
 @records_app.command("search")
@@ -4031,7 +4043,12 @@ def records_search(
         False, "--json", help="One compact JSON object per result, one per line"
     ),
     all_sources: bool = typer.Option(
-        False, "--all-sources", help="Query every registered source and report each one's status"
+        False,
+        "--all-sources",
+        help=(
+            "Query every registered source and report each one's status. "
+            "Exit 0: all ok or skipped; 2: some sources errored; 1: none succeeded."
+        ),
     ),
 ):
     """Search public records databases.
@@ -4101,12 +4118,21 @@ def records_search(
     if result.error:
         # An API failure must never read as "no results": report it and exit
         # non-zero (on stderr in pipe-safe modes so stdout stays parseable).
+        msg = f"Search error ({source}): {result.error}"
+        if result.entities:
+            msg += f" Showing the {len(result.entities)} results retrieved before it failed."
         if quiet:
-            typer.echo(f"Search error ({source}): {result.error}", err=True)
+            typer.echo(msg, err=True)
         else:
-            rprint(f"[red]Search error ({source}): {result.error}[/red]")
+            rprint(f"[red]{msg}[/red]")
+        if result.entities:
+            _print_search_result(result, source, query, limit, raw, json_lines, filing_type)
         raise typer.Exit(1)
 
+    _print_search_result(result, source, query, limit, raw, json_lines, filing_type)
+
+
+def _print_search_result(result, source, query, limit, raw, json_lines, filing_type) -> None:
     if json_lines:
         for e in result.entities[:limit]:
             typer.echo(json.dumps(_compact_result(e), ensure_ascii=False, default=str))

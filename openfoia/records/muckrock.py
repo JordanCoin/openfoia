@@ -44,7 +44,7 @@ def _raise_for_failure(resp: httpx.Response) -> None:
     code = resp.status_code
     if code in (401, 403):
         raise AdapterRequestError(
-            f"MuckRock API requires an API token (HTTP {code}). Set it in config."
+            f"MuckRock API requires an API token (HTTP {code}). Set OPENFOIA_MUCKROCK_TOKEN."
         )
     if code == 429 or code >= 500:
         raise AdapterRequestError(f"MuckRock API error (HTTP {code}).")

@@ -200,3 +200,33 @@ def test_graph_scopes_to_active_case_unless_all(tmp_path):
     assert got == {"in-case"}
     _, got = labels()
     assert got == {"in-case", "elsewhere"}
+
+
+def test_graph_explains_empty_case_and_missing_active_case(tmp_path):
+    from openfoia.cases import set_active_case_id
+
+    _ok(runner.invoke(app, ["case", "new", "PAS"]))
+    out = _ok(runner.invoke(app, ["analyze", "graph", "-o", str(tmp_path / "g.json")]))
+    assert "No entities in case PAS. Run extraction or use --all." in " ".join(out.split())
+
+    set_active_case_id("no-such-id")
+    out = _ok(runner.invoke(app, ["analyze", "graph", "-o", str(tmp_path / "g.json")]))
+    assert "Active case not found; run `openfoia case use`." in out
+    assert "Scope: all documents" in out
+
+
+def test_database_from_older_release_upgrades_on_first_session(monkeypatch):
+    from alembic import command
+
+    from openfoia import db
+
+    cfg = db._alembic_config()
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db.get_db_path()}")
+    command.upgrade(cfg, "001")  # a 4.2.0-era database
+    monkeypatch.setattr(db, "_schema_checked", False)
+
+    result = runner.invoke(app, ["request", "list"])
+
+    assert result.exit_code == 0, result.output
+    assert "Upgrading database schema 001 -> 002" in result.stderr
+    _ok(runner.invoke(app, ["case", "new", "After upgrade"]))
