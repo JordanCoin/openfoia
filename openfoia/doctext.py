@@ -45,14 +45,24 @@ def join_pages(pages: list[str]) -> str:
     return "\n\n".join(p.strip() for p in pages if p.strip())
 
 
-def replace_pages(session: Session, document_id: str, pages: list[str]) -> None:
-    """Store *pages* (page 1 first) for a document, replacing any earlier set."""
+def replace_pages(
+    session: Session,
+    document_id: str,
+    pages: list[str],
+    verdicts: list[str | None] | None = None,
+) -> None:
+    """Store *pages* (page 1 first) for a document, replacing any earlier set.
+
+    *verdicts* (same length as pages) is the per-page extraction verdict:
+    text_layer, garbled, image_only, or ocr:<original> once a page was OCR'd.
+    """
     from .models import DocumentPage
 
+    verdicts = verdicts or [None] * len(pages)
     session.query(DocumentPage).filter(DocumentPage.document_id == document_id).delete()
     session.add_all(
-        DocumentPage(document_id=document_id, page_number=i, text=t, char_count=len(t))
-        for i, t in enumerate((p.strip() for p in pages), start=1)
+        DocumentPage(document_id=document_id, page_number=i, text=t, char_count=len(t), verdict=v)
+        for i, (t, v) in enumerate(zip((p.strip() for p in pages), verdicts, strict=False), start=1)
     )
 
 

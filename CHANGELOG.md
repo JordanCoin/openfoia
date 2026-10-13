@@ -72,6 +72,13 @@ exhaustive lists.
 - `openfoia analyze extract --tier gliner|spacy|regex|llm` forces one
   extraction backend and fails clearly if it is not installed. The local
   tiers never call an LLM, so they also skip the slow LLM validation step.
+- **Per-page extraction verdicts.** PDF text extraction now uses the
+  extractor's `--json` output, which reports each page as `text_layer`,
+  `garbled` or `image_only`. Only garbled and image-only pages are OCR'd
+  (one page at a time, with tesseract); readable pages keep the extracted
+  text. The verdict is stored per page (`ocr:<original>` once a page was
+  OCR'd) and shown by `docs list` and `docs show`. Older extractors without
+  `--json` still work through the form-feed path. Database migration `005`.
 
 ### Changed
 
@@ -81,6 +88,9 @@ exhaustive lists.
 - Database schema migration `003` adds the `document_pages` table and its
   full-text index, applied automatically the first time a command opens the
   database.
+- PDF extraction no longer gives up after a fixed 30 seconds: the limit is
+  10 s plus 1 s per MB (never under 30 s, max 600 s), and hitting it prints a warning naming
+  the file before falling back to OCR.
 
 ### Fixed
 

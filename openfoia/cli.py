@@ -1446,7 +1446,7 @@ def docs_ingest(
                     doc.request_id = placeholder_req.id
                 session.add(doc)
                 if r.extracted_text:
-                    replace_pages(session, doc.id, r.pages or [r.extracted_text])
+                    replace_pages(session, doc.id, r.pages or [r.extracted_text], r.verdicts)
 
     # Summary
     rprint(f"\n[green]✓ Ingested {len(results)} documents[/green]")
@@ -1476,9 +1476,13 @@ def docs_ingest(
 
         for result in results:
             if result.mime_type == "application/pdf":
+                verdicts = result.verdicts or []
+                if verdicts and all(v and v.startswith("ocr") for v in verdicts):
+                    rprint(f"  OCR: {result.filename} already OCR'd during ingest")
+                    continue
                 rprint(f"  OCR: {result.filename}...")
                 try:
-                    ocr_result = asyncio.run(engine.process_pdf(result.file_path))
+                    ocr_result = asyncio.run(engine.process_pdf(result.file_path, force_ocr=True))
                     rprint(
                         f"    [green]✓[/green] {ocr_result.page_count} pages, {ocr_result.confidence:.1%} confidence"
                     )
@@ -1489,7 +1493,12 @@ def docs_ingest(
                                 continue
                             doc.extracted_text = ocr_result.text
                             doc.ocr_completed = True
-                            replace_pages(session, doc.id, [p["text"] for p in ocr_result.pages])
+                            replace_pages(
+                                session,
+                                doc.id,
+                                [p["text"] for p in ocr_result.pages],
+                                [p.get("verdict") for p in ocr_result.pages],
+                            )
                 except Exception as e:
                     rprint(f"    [red]✗[/red] OCR failed: {e}")
 
@@ -1622,6 +1631,10 @@ def _case_document_ids(session, case_id: str) -> list[str]:
     return [r[0] for r in rows]
 
 
+def _verdict_summary(counts: dict[str, int]) -> str:
+    return ", ".join(f"{k}={v}" for k, v in sorted(counts.items()))
+
+
 def _doc_source(request_number: str | None) -> str:
     prefix = (request_number or "").split("-", 1)[0]
     return {"DC": "documentcloud", "MUCKROCK": "muckrock"}.get(prefix, "local")
@@ -1659,6 +1672,13 @@ def docs_list(
             .order_by(Document.received_at)
             .all()
         )
+        verdicts: dict[str, dict[str, int]] = {}
+        for doc_id, verdict, n in (
+            session.query(DocumentPage.document_id, DocumentPage.verdict, func.count())
+            .filter(DocumentPage.verdict.isnot(None))
+            .group_by(DocumentPage.document_id, DocumentPage.verdict)
+        ):
+            verdicts.setdefault(doc_id, {})[verdict] = n
 
     docs = [
         {
@@ -1667,6 +1687,7 @@ def docs_list(
             "filename": filename,
             "pages": page_count,
             "stored_pages": n or 0,
+            "verdicts": verdicts.get(doc_id, {}),
             "source": _doc_source(num),
             "text_length": text_len or 0,
         }
@@ -1684,13 +1705,25 @@ def docs_list(
     table.add_column("Pages", justify="right")
     table.add_column("Source")
     table.add_column("Text", justify="right")
+    table.add_column("Verdicts")
     for d in docs:
         pages = str(d["stored_pages"])
         if d["pages"] and d["pages"] != d["stored_pages"]:
             pages += f"/{d['pages']}"
-        table.add_row(d["id"][:8], Text(d["title"]), pages, d["source"], f"{d['text_length']:,}")
+        table.add_row(
+            d["id"][:8],
+            Text(d["title"]),
+            pages,
+            d["source"],
+            f"{d['text_length']:,}",
+            _verdict_summary(d["verdicts"]),
+        )
     console.print(table)
     rprint("[dim]Pages shows stored/actual when they differ (text kept as fewer pages).[/dim]")
+    rprint(
+        "[dim]Verdicts: text_layer, garbled, image_only per page; "
+        "ocr:* means that page was OCR'd.[/dim]"
+    )
 
 
 @docs_app.command("show")
@@ -1712,7 +1745,7 @@ def docs_show(
     with get_session() as session:
         backfill_single_pages(session.connection())
         doc = _resolve_doc(session, doc_id)
-        pages = [(p.page_number, p.char_count, p.text) for p in doc.pages]
+        pages = [(p.page_number, p.char_count, p.text, p.verdict) for p in doc.pages]
         req = doc.request
         from_dc = req is not None and _doc_source(req.request_number) == "documentcloud"
         title = req.subject if from_dc else doc.filename
@@ -1728,21 +1761,27 @@ def docs_show(
         out = {
             **header,
             "page_count": declared,
-            "page_map": [{"page": n, "chars": c} for n, c, _ in pages],
-            "pages": [{"page": n, "text": t} for n, _, t in selected],
+            "page_map": [{"page": n, "chars": c, "verdict": v} for n, c, _, v in pages],
+            "pages": [{"page": n, "text": t} for n, _, t, _ in selected],
         }
         typer.echo(json.dumps(out, indent=2, ensure_ascii=False))
         return
 
     typer.echo(f"{header['id']}  {header['title']}")
-    typer.echo("Page map: " + ", ".join(f"p{n}={c:,}" for n, c, _ in pages))
+    typer.echo("Page map: " + ", ".join(f"p{n}={c:,}" for n, c, _, _ in pages))
+    counts: dict[str, int] = {}
+    for _, _, _, v in pages:
+        if v:
+            counts[v] = counts.get(v, 0) + 1
+    if counts:
+        typer.echo("Verdicts: " + _verdict_summary(counts))
     if declared and declared > len(pages):
         typer.echo(
             f"Note: the source has {declared} pages but the text is stored as {len(pages)}; "
             + SINGLE_PAGE_CAVEAT
         )
-    for n, _, text in selected:
-        typer.echo(f"\n--- page {n} ---\n{text}")
+    for n, _, text, v in selected:
+        typer.echo(f"\n--- page {n}{f' ({v})' if v else ''} ---\n{text}")
 
 
 @docs_app.command("grep")
@@ -5206,7 +5245,7 @@ def records_download(
                     )
                     session.add(doc)
                     if r.extracted_text:
-                        replace_pages(session, doc.id, r.pages or [r.extracted_text])
+                        replace_pages(session, doc.id, r.pages or [r.extracted_text], r.verdicts)
 
         rprint(f"\n[green]{ingested} file(s) ingested.[/green]")
         rprint("[dim]Run 'openfoia analyze extract --all' to extract entities.[/dim]")
