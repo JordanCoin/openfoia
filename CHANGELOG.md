@@ -10,6 +10,13 @@ exhaustive lists.
 
 ## [Unreleased]
 
+### Added
+
+- `docs/RECORDS_LADDER.md`: which rung of the US public-records system holds
+  a record (the public body, the state law, state agencies and archives,
+  federal FOIA, non-FOIA paths such as NARA and CREST), how to ask at each,
+  what goes wrong, a worked Detroit example, and what openfoia covers today.
+
 ## [4.4.0] - 2026-10-14
 
 Cases get update and delete: rename, re-describe, remove, and move documents
