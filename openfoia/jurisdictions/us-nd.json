@@ -3,49 +3,49 @@
   "name": "North Dakota",
   "level": "state",
   "statute": {
-    "name": null,
-    "citation": null,
+    "name": "Open Records law",
+    "citation": "N.D. Const. art. XI, § 6; N.D.C.C. § 44-04-18 (definitions § 44-04-17.1)",
     "url": null
   },
   "response": {
     "days": null,
-    "unit": null,
-    "rule_text": null,
+    "unit": "none",
+    "rule_text": "Public entity must respond within a reasonable time; AG opinion 98-O-22 says usually hours or a few days. No fixed deadline.",
     "extension_days": null,
     "extension_unit": null,
     "silence_is_denial": null
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
+    "search_allowed": true,
+    "labor_rule": "Up to $25/hour per request for locating records and for redaction, excluding the first hour; advance payment may be required.",
+    "copy_rule": "Up to $0.25 per impression for paper; non-paper copies at reasonable fee (actual cost incl. labor, materials, equipment); postage at actual cost.",
     "waiver_rule": null,
     "estimate_required": null,
     "late_penalty": null
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "Any member of the public may request; no reason or identity required (§ 44-04-18)."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Attorney General opinion, then district court civil action",
+    "type": "attorney_general",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "Request AG opinion within 30 days of alleged violation (§ 44-04-21.1); entity then has 7 days to disclose if violation found. Civil action within 60 days of when requester knew of violation or 30 days after AG opinion, whichever later (§ 44-04-21.2)."
   },
-  "exemptions_citation": null,
-  "format_rule": null,
+  "exemptions_citation": "N.D.C.C. § 44-04-17.1(3),(5); § 44-04-18.4; § 44-04-18.6; § 44-04-18.32",
+  "format_rule": "Electronic records in print or another available medium; no duty to create records or provide different structure (§ 44-04-18).",
   "covers": {
     "governor": null,
-    "legislature": null,
+    "legislature": true,
     "universities_public": null,
-    "school_districts": null
+    "school_districts": true
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/north-dakota/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Read chars 0-100k and 150-250k. Delay as denial: statute silent. Executive branch covered (§ 44-04-17.1(13)(i)), governor's office not separately named. Legislature covered with exemptions (§ 44-04-18.6). School districts: N.D.C.C. § 15.1-07-25.  AG-request deadline null: the 30-day unit is not labeled by RCFP."
 }

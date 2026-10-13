@@ -4,48 +4,48 @@
   "level": "state",
   "statute": {
     "name": "Alabama Public Records Law",
-    "citation": null,
-    "url": null
+    "citation": "Ala. Code § 36-12-40 et seq. (procedure at §§ 36-12-43 to -45)",
+    "url": "https://www.rcfp.org/open-government-guide/alabama/"
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
+    "days": 15,
+    "unit": "business",
+    "rule_text": "The 15 business days run from acknowledgment, not from the request: an officer must acknowledge a request within 10 business days (Ala. Code § 36-12-44(a)(3)) and give a substantive response to a standard request within 15 business days of acknowledgment (§ 36-12-44(a)(4)); time-intensive requests get 45 business days after the requester elects to proceed (§ 36-12-44(b)(4)).",
     "extension_days": null,
     "extension_unit": null,
-    "silence_is_denial": null
+    "silence_is_denial": true
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
-    "estimate_required": null,
-    "late_penalty": null
+    "search_allowed": true,
+    "labor_rule": "No statutory schedule; AG opinions imply a search fee if substantial employee time is required. Executive branch (EO 734): up to $20/hour for retrieval and preparation.",
+    "copy_rule": "No statutory copy schedule; fee must be reasonable. Executive branch (EO 734): up to $0.50 per standard page, no per-page fee for electronic records provided electronically.",
+    "waiver_rule": "Fees may be waived for 'standard' requests needing under 8 hours of staff time, Ala. Code § 36-12-44(a)(2).",
+    "estimate_required": true,
+    "late_penalty": "None: the Public Records Law has no fines or penalties for violations."
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": true,
+    "rule_text": "Only a 'resident' (individual permanently domiciled in Alabama) may request, Ala. Code § 36-12-43(b)(3); officer may ask for reasonable evidence of residency, § 36-12-44(f)."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Circuit court (civil action)",
+    "type": "court",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "Alabama has no administrative appeal and the AG has no enforcement role (advisory opinions only); enforcement is by civil suit. Failure to respond within the time limits creates a rebuttable presumption of denial, § 36-12-44(a)(5), (b)(6)."
   },
-  "exemptions_citation": null,
-  "format_rule": null,
+  "exemptions_citation": "Ala. Code § 36-12-40(a) (library records; security plans), plus many other statutes and common-law grounds",
+  "format_rule": "Statute silent on requester-chosen format; AG opinions say agency need not provide a specific form, and requester may use own copying equipment unless it unduly interferes.",
   "covers": {
-    "governor": null,
-    "legislature": null,
+    "governor": true,
+    "legislature": true,
     "universities_public": null,
     "school_districts": null
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/alabama/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Appeal deadline null: no administrative appeal. Governor/legislature coverage is 'presumptive' per RCFP (law silent). Universities and school districts not confirmed from raw RCFP text. 2024 amendments; statute text not fetched from legislature site. extension_days null: the 45-business-day track for time-intensive requests is a separate clock, not an extension of the 15."
 }

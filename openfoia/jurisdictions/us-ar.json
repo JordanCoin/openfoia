@@ -4,37 +4,37 @@
   "level": "state",
   "statute": {
     "name": "Arkansas Freedom of Information Act",
-    "citation": null,
-    "url": null
+    "citation": "Ark. Code Ann. § 25-19-101 et seq. (access/fees/timing at § 25-19-105)",
+    "url": "https://www.rcfp.org/open-government-guide/arkansas/"
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
+    "days": 3,
+    "unit": "business",
+    "rule_text": "Records must be available immediately unless in active use or storage, in which case within three working days, Ark. Code Ann. § 25-19-105(e); personnel/evaluation records within 24 hours.",
     "extension_days": null,
     "extension_unit": null,
     "silence_is_denial": null
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "search_allowed": false,
+    "labor_rule": "Copy fees may not include existing agency personnel time for searching, retrieving, reviewing or copying, § 25-19-105(d)(3)(A)(i).",
+    "copy_rule": "Actual cost of reproduction (medium, supplies, equipment, maintenance) plus actual mailing/transmission cost; itemized breakdown required, § 25-19-105(d)(3).",
+    "waiver_rule": "Copies may be furnished free or at reduced charge if records requested primarily for noncommercial purposes (Act 1653 of 2001, § 25-19-105(d)).",
     "estimate_required": null,
     "late_penalty": null
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": true,
+    "rule_text": "'Any citizen of the State of Arkansas' may request, Ark. Code Ann. § 25-19-105(a)(1); includes corporations doing business in state; incarcerated felons barred from DOC records."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Circuit court (Pulaski County or plaintiff's county)",
+    "type": "court",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "No administrative appeal exists; a citizen denied rights may appeal immediately to circuit court, Ark. Code Ann. § 25-19-107(a). No time limit in the FOIA; general five-year statute presumably applies."
   },
-  "exemptions_citation": null,
+  "exemptions_citation": "Ark. Code Ann. § 25-19-105(a)-(c)",
   "format_rule": null,
   "covers": {
     "governor": null,
@@ -45,7 +45,7 @@
   "sources": [
     "https://www.rcfp.org/open-government-guide/arkansas/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Appeal deadline null (FOIA has none). Coverage of governor/legislature/universities/school districts not confirmed from raw RCFP text. Attorney General issues advisory opinions only. Citation to §25-19-101 inferred from 'et seq.' usage; §25-19-105 and -107 seen in text."
 }

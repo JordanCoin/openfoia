@@ -2,11 +2,16 @@
 
 One JSON file per public-records law, named by id: `us.json` (federal FOIA),
 `us-mi.json` (Michigan), `us-dc.json`. A field set to `null` means the value
-is not known. It never means "none" or "no rule". `verified` is true only when
-every non-null value in the file was checked against the listed `sources` on
-`verified_at`. Stubs ship with `verified: false` and the state's Reporters
-Committee for Freedom of the Press Open Government Guide page as their only
-source; the loader accepts them, the CLI warns on them.
+is not known. It never means "none" or "no rule". `verified` is true when the
+statute citation, response rule and appeal path were read from a fetched
+source on `verified_at`; other fields may carry caveats in `notes`. A file with `verified: false` may still carry values, but
+only with the page they came from in `sources` and a `notes` line saying what
+is missing (Tennessee: the response clock). The loader accepts such files,
+the CLI warns on them. The state files were read from the Reporters Committee
+for Freedom of the Press Open Government Guide
+(https://www.rcfp.org/open-government-guide/) on 2026-10-14;
+`scripts/rcfp_jurisdictions.py` drafts a file from a saved page so the pass
+can be repeated when a chapter is updated.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -16,7 +21,7 @@ source; the loader accepts them, the CLI warns on them.
 | `statute.name`, `statute.citation`, `statute.url` | string or null | The act and where it is published. |
 | `response.days`, `response.unit` | int or null; `business`, `calendar`, `none` | Time to respond. `none` means the statute sets no fixed clock. |
 | `response.rule_text` | string or null | The rule in words, when days alone mislead. |
-| `response.extension_days`, `response.extension_unit` | int or null; unit | A one-time statutory extension. |
+| `response.extension_days`, `response.extension_unit` | int or null; unit | A one-time statutory extension. `extension_days` is additional to `days`; a statute that states a total cap is encoded as the difference, and a cap that is not additive goes in `rule_text` with `days` null. |
 | `response.silence_is_denial` | bool or null | Whether a missed deadline counts as a denial that can be appealed. |
 | `fees.search_allowed` | bool or null | Whether search or labor time may be billed. |
 | `fees.labor_rule`, `fees.copy_rule`, `fees.waiver_rule`, `fees.late_penalty` | string or null | Fee rules in words. |

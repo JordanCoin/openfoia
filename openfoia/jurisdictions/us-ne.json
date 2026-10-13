@@ -4,48 +4,48 @@
   "level": "state",
   "statute": {
     "name": "Nebraska Public Records Statutes",
-    "citation": null,
+    "citation": "Neb. Rev. Stat. §§ 84-712 to 84-712.09",
     "url": null
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
+    "days": 4,
+    "unit": "business",
+    "rule_text": "Custodian must comply as soon as practicable, no more than four business days after receipt (§ 84-712(4)).",
     "extension_days": null,
     "extension_unit": null,
     "silence_is_denial": null
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "search_allowed": true,
+    "labor_rule": "Nonresidents may be charged proportional salary and attorney review costs (§ 84-712(3)(d)); RCFP text on residents' free hours is internally inconsistent.",
+    "copy_rule": "Actual cost of reproduction incl. staff time; AG treats $0.25/page or less as actual cost.",
+    "waiver_rule": "Custodian may waive or reduce fees in the public interest (§ 84-712(3)(h)).",
     "estimate_required": null,
-    "late_penalty": null
+    "late_penalty": "Charging more than reasonably calculated actual cost is a violation (§ 84-712.01(2))."
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "Since 2024 access extends to residents and all other interested persons (§ 84-712); nonresidents face the higher fee structure."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Attorney General, then district court",
+    "type": "attorney_general",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "Petition AG to review denial (§ 84-712.03); AG decides within 15 calendar days; requester may sue or demand AG sue (AG files within 15 days). No statutory filing limit."
   },
-  "exemptions_citation": null,
-  "format_rule": null,
+  "exemptions_citation": "Neb. Rev. Stat. § 84-712.05 (discretionary), § 84-712.01(1)",
+  "format_rule": "Requester may designate any form in which the record is maintained (§ 84-712(3)(a)); no new format must be created (§ 84-712(3)(c)).",
   "covers": {
     "governor": null,
-    "legislature": null,
+    "legislature": true,
     "universities_public": null,
     "school_districts": null
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/nebraska/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Extension: if exceptionally difficult, written explanation within the 4 days with earliest date and cost estimate; requester has 10 business days to respond. Silence not expressly denial per RCFP. nebraskalegislature.gov refused connection. Read both page halves."
 }

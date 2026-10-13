@@ -4,41 +4,41 @@
   "level": "state",
   "statute": {
     "name": "Illinois Freedom of Information Act",
-    "citation": "5 ILCS 140",
-    "url": null
+    "citation": "5 ILCS 140/1 et seq. (response § 3(d); fees § 6; review § 9.5)",
+    "url": "https://www.rcfp.org/open-government-guide/illinois/"
   },
   "response": {
     "days": 5,
     "unit": "business",
-    "rule_text": "5 business days to respond.",
-    "extension_days": null,
-    "extension_unit": null,
-    "silence_is_denial": null
+    "rule_text": "Public body must comply with or deny a written request within five business days of receipt, extendable by up to five business days for listed reasons, 5 ILCS 140/3(d), (e).",
+    "extension_days": 5,
+    "extension_unit": "business",
+    "silence_is_denial": true
   },
   "fees": {
     "search_allowed": false,
-    "labor_rule": "Search and review time generally cannot be charged.",
-    "copy_rule": "First 50 pages free, then up to 15 cents per page.",
+    "labor_rule": "Public body may not charge for search, review or personnel costs of reproducing records, 5 ILCS 140/6.",
+    "copy_rule": "First 50 pages of black-and-white letter/legal copies free; after that not over 15 cents per page (actual cost for other media), 5 ILCS 140/6(b).",
     "waiver_rule": null,
     "estimate_required": null,
-    "late_penalty": "A late response forfeits copy fees."
+    "late_penalty": null
   },
   "residency": {
     "restricted": false,
-    "rule_text": null
+    "rule_text": "Records available to 'any person' (individuals, corporations, associations), 5 ILCS 140/3(a), 2(b)."
   },
   "appeal": {
-    "body": "Public Access Counselor (Attorney General), or circuit court",
-    "type": "ombudsman_advisory",
+    "body": "Public Access Counselor (Office of the Attorney General) or circuit court",
+    "type": "attorney_general",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": "Request for review to the Public Access Counselor, or suit in circuit court. The review deadline was not confirmed from the fetched source."
+    "rule_text": "A denied requester may file a request for review with the Public Access Counselor in the AG's office (5 ILCS 140/9.5(a)), who may issue a binding or advisory opinion or mediate, or sue directly in circuit court. Request is deemed denied if no response in 5 business days."
   },
   "exemptions_citation": "5 ILCS 140/7",
   "format_rule": null,
   "covers": {
     "governor": null,
-    "legislature": null,
+    "legislature": true,
     "universities_public": true,
     "school_districts": true
   },
@@ -47,5 +47,5 @@
   ],
   "verified": true,
   "verified_at": "2026-10-14",
-  "notes": null
+  "notes": "PAC review deadline not found in fetched RCFP text (null). PAC review not available against the General Assembly and its committees. fees.late_penalty null: RCFP's text on fees after a late response was truncated; 5 ILCS 140/3(d) is the place to check. Governor not extracted."
 }

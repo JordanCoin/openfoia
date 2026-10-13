@@ -4,48 +4,48 @@
   "level": "state",
   "statute": {
     "name": "Ohio Public Records Act",
-    "citation": null,
+    "citation": "Ohio Rev. Code § 149.43 (definitions § 149.011)",
     "url": null
   },
   "response": {
     "days": null,
-    "unit": null,
-    "rule_text": null,
+    "unit": "none",
+    "rule_text": "Offices must promptly prepare records for inspection and provide copies within a reasonable period of time (R.C. 149.43(B)(1)); no fixed day count.",
     "extension_days": null,
     "extension_unit": null,
-    "silence_is_denial": null
+    "silence_is_denial": true
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "search_allowed": false,
+    "labor_rule": "Cost means actual cost of depleted supplies, not labor (Data Trace per RCFP); inspection cannot be conditioned on a fee.",
+    "copy_rule": "Copies at cost (§ 149.43(B)); advance payment for mailed copies limited to postage and supplies (§ 149.43(B)(6),(7)).",
+    "waiver_rule": "No general waiver provision.",
     "estimate_required": null,
-    "late_penalty": null
+    "late_penalty": "Statutory damages $100 per business day up to $1,000 for hand/certified-mail requests (§ 149.43(C)); attorney fees discretionary."
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "Any person may request, not limited to citizens (§ 149.43(B)); incarcerated persons need a judge's consent unless records support a justiciable claim (§ 149.43(B)(8))."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Court of Claims (R.C. 2743.75) or mandamus in common pleas, court of appeals or Supreme Court",
+    "type": "court",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "No administrative appeal or AG role; aggrieved person files Court of Claims complaint ($25 fee, no deadline stated) or mandamus (R.C. 149.43(C)(1)), six years from accrual per RCFP (R.C. 2305.07); cannot do both for the same request."
   },
-  "exemptions_citation": null,
-  "format_rule": null,
+  "exemptions_citation": "Ohio Rev. Code § 149.43(A)(1) (exceptions for records prohibited by state or federal law)",
+  "format_rule": "Electronic records: requester may choose paper, original medium, or another medium the office can reasonably duplicate (§ 149.43(B)(6)); no duty to create records.",
   "covers": {
-    "governor": null,
-    "legislature": null,
-    "universities_public": null,
-    "school_districts": null
+    "governor": true,
+    "legislature": true,
+    "universities_public": true,
+    "school_districts": true
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/ohio/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Read chars 0-100k and 190-290k. Governor: separation of powers may limit application to Governor and other statewide officials per Ohio Supreme Court (RCFP). Delay itself gives standing to sue (DiFranco 2014). Legislature: certain staff records excluded by R.C. 101.30. exemptions_citation partly inferred from RCFP text; full list not read."
 }

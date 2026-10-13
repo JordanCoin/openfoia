@@ -3,36 +3,36 @@
   "name": "Connecticut",
   "level": "state",
   "statute": {
-    "name": "Connecticut Freedom of Information Act",
-    "citation": null,
-    "url": null
+    "name": "Connecticut Freedom of Information Act (FOIA)",
+    "citation": "Conn. Gen. Stat. § 1-200 et seq. (access § 1-210; appeals § 1-206; fees § 1-212)",
+    "url": "https://www.rcfp.org/open-government-guide/connecticut/"
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
+    "days": 4,
+    "unit": "business",
+    "rule_text": "Any denial must be made in writing within four business days of the request (ten business days for requests subject to § 1-214(b),(c)), Conn. Gen. Stat. § 1-206(a); no response within the applicable period is deemed a denial.",
     "extension_days": null,
     "extension_unit": null,
-    "silence_is_denial": null
+    "silence_is_denial": true
   },
   "fees": {
     "search_allowed": null,
     "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "copy_rule": "State agencies: not over $0.25 per page; other agencies: not over $0.50 per page; inspection free; certified copies $1 first page, $0.50 each additional, Conn. Gen. Stat. § 1-212.",
+    "waiver_rule": "Agency must waive the fee if requester is indigent, or records are found exempt, or in other statutory cases (§ 1-212(d)).",
     "estimate_required": null,
     "late_penalty": null
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "FOIA applies to 'every person' without regard to citizenship, § 1-210(a); special limits for incarcerated requesters, § 1-210(c)."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Freedom of Information Commission (FOIC)",
+    "type": "commission",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "Any person denied access may appeal to the FOIC by notice of appeal, Conn. Gen. Stat. § 1-206(b); FOIC must decide within one year; further appeal to Superior Court under UAPA within 45 days of the FOIC decision notice (§ 4-183(b)). AG plays no role."
   },
   "exemptions_citation": null,
   "format_rule": null,
@@ -45,7 +45,7 @@
   "sources": [
     "https://www.rcfp.org/open-government-guide/connecticut/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "FOIC filing deadline not found in fetched text (appeal_deadline null); 45 days is the court-appeal deadline after FOIC decision. Governor/legislature/universities not confirmed; public agency definition includes school districts. Fee waiver and prepayment (if estimate >= $10) from RCFP text; 'indigent' waiver cited as in §1-212 only by RCFP summary."
 }

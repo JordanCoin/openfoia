@@ -4,48 +4,48 @@
   "level": "state",
   "statute": {
     "name": "Alaska Public Records Act",
-    "citation": null,
-    "url": null
+    "citation": "AS 40.25.110 - .220",
+    "url": "https://www.rcfp.org/open-government-guide/alaska/"
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
-    "extension_days": null,
-    "extension_unit": null,
-    "silence_is_denial": null
+    "days": 10,
+    "unit": "business",
+    "rule_text": "Under the state agency regulations (2 AAC 96), the agency must furnish disclosable records within 10 working days; the statute itself sets no waiting period (AS 40.25.125 says no exhaustion required).",
+    "extension_days": 10,
+    "extension_unit": "business",
+    "silence_is_denial": true
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "search_allowed": true,
+    "labor_rule": "Personnel costs for search and copying are chargeable only when production for one requester exceeds five person-hours in a calendar month, AS 40.25.110(c).",
+    "copy_rule": "Limited to the agency's 'standard unit cost of duplication', AS 40.25.110(b); electronic copies limited to actual incremental cost, AS 40.25.115(c).",
+    "waiver_rule": "Agencies may reduce or waive fees in the public interest, AS 40.25.110(d); copying charges of $5 or less may be waived.",
     "estimate_required": null,
     "late_penalty": null
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "Alaska law makes no distinction as to who may request public records."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Head of the agency that denied (state agencies, 2 AAC 96.345(c)); court suit allowed without exhausting remedies",
+    "type": "agency_head",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "Denials of state-agency requests are appealed to the agency head, who must decide by the tenth working day after the record closes (2 AAC 96.345(a)); suit may be filed without exhaustion (AS 40.25.125). If no response arrives within a reasonable time after the limit, the request may be treated as denied (2 AAC 96.325(f))."
   },
-  "exemptions_citation": null,
+  "exemptions_citation": "AS 40.25.120",
   "format_rule": null,
   "covers": {
-    "governor": null,
-    "legislature": null,
+    "governor": true,
+    "legislature": true,
     "universities_public": null,
-    "school_districts": null
+    "school_districts": true
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/alaska/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Governor covered with deliberative-process/executive privilege caveat. Legislature records public via legislative rules and statutes, but enforceability doubtful (Abood). School boards 'clearly covered'. Appeal-to-agency-head deadline not found; 10-working-day response and 10-day extension come from RCFP's description of 2 AAC 96 regs, not statute. Unit 'working days' mapped to business."
 }

@@ -128,7 +128,7 @@ The export has a Findings section (tier, note, quote, document, page, CREST numb
 
 ### 6b. Which law applies
 
-Federal FOIA reaches only federal executive agencies. A school district, city, county, police department or public university answers under its state's public-records act, with that state's clock, fees and appeal path. Check before drafting:
+The jurisdiction table was read from the Reporters Committee Open Government Guide (https://www.rcfp.org/open-government-guide/). `verified: true` means only that the statute citation, response rule and appeal path were read from a fetched source; other fields may carry caveats in notes, so read notes before quoting a fee or coverage value. `jurisdiction show` prints UNVERIFIED on the one file that is still partial; check that line before quoting a clock in a letter. Federal FOIA reaches only federal executive agencies. A school district, city, county, police department or public university answers under its state's public-records act, with that state's clock, fees and appeal path. Check before drafting:
 
 ```bash
 openfoia jurisdiction list

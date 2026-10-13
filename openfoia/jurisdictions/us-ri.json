@@ -3,49 +3,49 @@
   "name": "Rhode Island",
   "level": "state",
   "statute": {
-    "name": "Access to Public Records Act",
-    "citation": null,
+    "name": "Access to Public Records Act (APRA)",
+    "citation": "R.I. Gen. Laws §§ 38-2-1 et seq.",
     "url": null
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
+    "days": 10,
+    "unit": "business",
+    "rule_text": "Agency must respond or deny in writing with reasons and appeal procedures within ten business days (§§ 38-2-3(e), 38-2-7); failure is deemed a denial (§ 38-2-7(b)). For good cause the period may be extended, capped at 30 business days total per RCFP.",
     "extension_days": null,
-    "extension_unit": null,
-    "silence_is_denial": null
+    "extension_unit": "business",
+    "silence_is_denial": true
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
-    "estimate_required": null,
-    "late_penalty": null
+    "search_allowed": true,
+    "labor_rule": "Reasonable search and retrieval charge capped at $15 per hour with the first hour free (§ 38-2-4(b)).",
+    "copy_rule": "Up to $0.15 per page for standard-size paper (§ 38-2-4(a)).",
+    "waiver_rule": "Court may reduce or waive search/retrieval fees in the public interest (§ 38-2-4(e); § 38-2-9(d)).",
+    "estimate_required": "Estimates and itemized costs available on request (§ 38-2-4(c)-(d)).",
+    "late_penalty": "Fees waived if records not produced within ten business days (RCFP, citation garbled)."
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "Every person or entity may request records (§ 38-2-3(a)); purpose cannot justify withholding."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Agency chief administrative officer, then Attorney General complaint or Superior Court",
+    "type": "agency_head",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "Appeal to the agency's chief administrative officer, who decides within ten business days (§ 38-2-8(a)); then complaint to the AG or suit in Superior Court of the county where records are kept (§ 38-2-8(b)). No APRA filing deadline stated; initial denial counts as exhaustion."
   },
-  "exemptions_citation": null,
-  "format_rule": null,
+  "exemptions_citation": "R.I. Gen. Laws § 38-2-2(4)(A)-(AA)",
+  "format_rule": "Requester may choose any media the agency can provide (§ 38-2-3(g)); no duty to compile or reorganize data (§ 38-2-3(h)).",
   "covers": {
     "governor": null,
-    "legislature": null,
+    "legislature": true,
     "universities_public": null,
-    "school_districts": null
+    "school_districts": true
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/rhode-island/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Read chars 0-200k. Executive branch covered without limit but governor not named. Courts covered only for administrative functions. extension_days left null because RCFP states a 30-business-day cap, ambiguous whether total or additional. Universities not directly addressed."
 }

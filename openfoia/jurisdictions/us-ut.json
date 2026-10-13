@@ -3,49 +3,49 @@
   "name": "Utah",
   "level": "state",
   "statute": {
-    "name": "Government Records Access and Management Act",
-    "citation": null,
+    "name": "Government Records Access and Management Act (GRAMA)",
+    "citation": "Utah Code § 63G-2-101 et seq.",
     "url": null
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
+    "days": 10,
+    "unit": "business",
+    "rule_text": "Entity must respond to a written request no later than ten business days after receipt (five for qualifying expedited requests); missing the deadline is treated as a denial that can be appealed (Utah Code ch. 63G-2, per RCFP).",
     "extension_days": null,
-    "extension_unit": null,
-    "silence_is_denial": null
+    "extension_unit": "business",
+    "silence_is_denial": true
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
-    "estimate_required": null,
-    "late_penalty": null
+    "search_allowed": true,
+    "labor_rule": "Staff search/retrieval time chargeable only when the record must be compiled in a form not normally maintained (§ 63G-2-203(2)); no fee for review or inspection (§ 63G-2-203(5)(b)).",
+    "copy_rule": "Actual cost, must be reasonable (§ 63G-2-203(1)).",
+    "waiver_rule": "Waivers encouraged when release primarily benefits the public; news media presumed to qualify (§ 63G-2-203(4)(a)).",
+    "estimate_required": "Entity may require payment of estimated fees if over $50 or past fees unpaid; excess refunded (§ 63G-2-203(8)).",
+    "late_penalty": "Attorney fees if requester substantially prevails on judicial appeal (§ 63G-2-802(3)(a))."
   },
   "residency": {
     "restricted": null,
-    "rule_text": null
+    "rule_text": "Not addressed in the fetched RCFP text; the right to inspect is stated for 'a person' (§ 63G-2-201(1))."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Chief administrative officer, then Government Records Office director (§ 63A-12-203), then district court",
+    "type": "agency_head",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "Appeal to the entity's chief administrative officer, who decides in five business days; then to the Government Records Office director within 30 days of the final determination (45 days after the request if none), who decides within 73 days; district court generally within 30 days of the order. Ombudsman mediates (§ 63A-12-204)."
   },
-  "exemptions_citation": null,
-  "format_rule": null,
+  "exemptions_citation": "Utah Code §§ 63G-2-302 (private), 63G-2-304 (controlled), 63G-2-305 (protected)",
+  "format_rule": "Entity need not provide a record in a format, medium, or program not currently maintained (§ 63G-2-201(7)(a)(iii)); storage form may not be used to hinder access (§ 63G-2-201(12)).",
   "covers": {
-    "governor": null,
-    "legislature": null,
-    "universities_public": null,
+    "governor": true,
+    "legislature": true,
+    "universities_public": true,
     "school_districts": null
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/utah/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Read chars 0-100k and 150-250k. Extension for extraordinary circumstances (e.g. 5 more business days for legal issues, 15 for extensive editing). Legislature covered but not subject to GRAMA fee/appeal provisions (§ 63G-2-703(2)(a)). RCFP does not mention State Records Committee. Appeal deadline null: the 30-day unit is not labeled by RCFP."
 }

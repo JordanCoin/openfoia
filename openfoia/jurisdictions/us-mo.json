@@ -4,48 +4,48 @@
   "level": "state",
   "statute": {
     "name": "Missouri Sunshine Law",
-    "citation": null,
-    "url": null
+    "citation": "Mo. Rev. Stat. ch. 610 (§§ 610.010-.030; response § 610.023.3; enforcement § 610.027)",
+    "url": "https://www.rcfp.org/open-government-guide/missouri/"
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
+    "days": 3,
+    "unit": "business",
+    "rule_text": "Each request must be acted on as soon as possible and no later than the end of the third business day after the custodian receives it; delay beyond three days is allowed for 'reasonable cause' with a written explanation of the cause and earliest date, Mo. Rev. Stat. § 610.023.3.",
     "extension_days": null,
     "extension_unit": null,
     "silence_is_denial": null
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "search_allowed": true,
+    "labor_rule": "Research time may be charged at actual cost (lowest-cost method); staff time capped at average hourly pay of staff of the body.",
+    "copy_rule": "Not over ten cents per page for paper copies up to 9x14 in; hourly duplication fee not over average clerical hourly pay.",
+    "waiver_rule": "Records may be furnished free or at reduced charge if the body finds waiver in the public interest because disclosure is likely to contribute significantly to public understanding.",
     "estimate_required": null,
     "late_penalty": null
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "Any member of the public may request; access is not limited to U.S., Missouri or local citizens, Mo. Rev. Stat. §§ 610.010-.030."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Circuit court of the county where the body has its principal place of business; AG may sue",
+    "type": "court",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "No express administrative appeal (informal appeal to a superior may help); suit lies in circuit court under Mo. Rev. Stat. § 610.027.1 and may be brought by any aggrieved person, taxpayer, the Attorney General or prosecuting attorney."
   },
   "exemptions_citation": null,
   "format_rule": null,
   "covers": {
-    "governor": null,
-    "legislature": null,
+    "governor": true,
+    "legislature": true,
     "universities_public": null,
     "school_districts": null
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/missouri/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Appeal deadline null (not found in fetched text). Executive and legislative branches are 'public governmental bodies' (§ 610.011). Silence-is-denial not extracted. Universities/school districts not confirmed as explicit rule."
 }

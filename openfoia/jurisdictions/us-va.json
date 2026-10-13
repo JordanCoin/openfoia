@@ -4,48 +4,48 @@
   "level": "state",
   "statute": {
     "name": "Virginia Freedom of Information Act",
-    "citation": null,
+    "citation": "Va. Code Ann. § 2.2-3700 et seq.",
     "url": null
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
-    "extension_days": null,
-    "extension_unit": null,
-    "silence_is_denial": null
+    "days": 5,
+    "unit": "business",
+    "rule_text": "Custodian must respond promptly, in all cases within five working days (Va. Code § 2.2-3704.B); failure to respond is a denial (§ 2.2-3704.E).",
+    "extension_days": 7,
+    "extension_unit": "business",
+    "silence_is_denial": true
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
-    "estimate_required": null,
-    "late_penalty": null
+    "search_allowed": true,
+    "labor_rule": "Search, access, duplication and supply charges allowed only up to actual cost (§ 2.2-3704.F); surplus fees prohibited.",
+    "copy_rule": "Duplication capped at actual cost.",
+    "waiver_rule": "No statutory fee-waiver provision.",
+    "estimate_required": "Estimate must be given in advance on request; request deemed withdrawn if no reply within 30 days; deposit allowed if charges likely over $200 (§ 2.2-3704.H).",
+    "late_penalty": "Willful and knowing violations: $500-$2,000 (repeat $2,000-$5,000) civil penalty on individual officers (§ 2.2-3714)."
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": true,
+    "rule_text": "'Any citizen of the Commonwealth may inspect records' (§ 2.2-3704.A), upheld in McBurney v. Young (2013); the Act also grants rights to representatives of newspapers, magazines, radio and TV with circulation or broadcast in Virginia. A citizen may request on behalf of a non-citizen."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "General district or circuit court (mandamus or injunction)",
+    "type": "court",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "No administrative appeal, no AG or ombudsman role; petition for mandamus/injunction with good-cause affidavit (§ 2.2-3713.A) filed without unreasonable delay; heard within seven days of filing if respondent given 3 working days notice. FOIA Council advisory only."
   },
-  "exemptions_citation": null,
-  "format_rule": null,
+  "exemptions_citation": "Va. Code §§ 2.2-3705.1 to 2.2-3705.7, 2.2-3706, 2.2-3706.1",
+  "format_rule": "Requester may inspect or copy; electronic records in any tangible medium the body regularly uses (§ 2.2-3704.G); no duty to create records (§ 2.2-3704.D).",
   "covers": {
     "governor": null,
-    "legislature": null,
-    "universities_public": null,
-    "school_districts": null
+    "legislature": true,
+    "universities_public": true,
+    "school_districts": true
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/virginia/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Read chars 0-100k and 165-265k. Residency restriction confirmed from page text. Governor not excluded by category, but Taylor v. Worrell (1991) held Governor's office phone list outside access on separation of powers, so covers.governor left null. Criminal investigative files get 60 work days. Court filing deadline not given in fetched text. RCFP chapter updated Sept 2021."
 }

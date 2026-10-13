@@ -12,6 +12,15 @@ exhaustive lists.
 
 ### Added
 
+- All 50 states and DC now carry sourced statute, clock, fee, residency and
+  appeal data for their public-records law, read from the Reporters Committee
+  for Freedom of the Press Open Government Guide
+  (https://www.rcfp.org/open-government-guide/); Tennessee is partial (its
+  response clock was not in the fetched text). `openfoia jurisdiction list`
+  ends with a verified/unverified count. `scripts/rcfp_jurisdictions.py`
+  drafts a jurisdiction file from a saved guide page, so the data can be
+  rebuilt without retyping it; it fetches nothing itself.
+
 - Request clocks come from the agency's jurisdiction: `openfoia request mark
   <id> acknowledged|extended|tolled --until <date>|received|denied|appealed|
   still-interested --due <date>|replied|closed [--on <date>]` records the
@@ -32,9 +41,7 @@ exhaustive lists.
   (`us` plus all 50 states and DC) with the statute, response clock, fee,
   residency and appeal rules; a null field means unknown, never "none", and
   stubs say `verified: false`. `openfoia jurisdiction list|show <id>|search
-  <text>` reads them. Verified today: us, us-mi, us-il, us-tx, us-ny, us-wa,
-  us-fl, each with its sources; the other 44 are stubs to be filled from the
-  statute.
+  <text>` reads them, each with its sources.
 - Local public bodies: `openfoia agency add --name ... --jurisdiction us-mi
   --level school_district [--email --address --portal --custodian-title
   --response-days]` adds a school district, city, county or university with

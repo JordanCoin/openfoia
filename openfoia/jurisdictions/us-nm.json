@@ -3,49 +3,49 @@
   "name": "New Mexico",
   "level": "state",
   "statute": {
-    "name": "Inspection of Public Records Act",
-    "citation": null,
+    "name": "Inspection of Public Records Act (IPRA)",
+    "citation": "NMSA 1978 § 14-2-1 et seq.",
     "url": null
   },
   "response": {
     "days": null,
     "unit": null,
-    "rule_text": null,
+    "rule_text": "Custodian must permit inspection not later than 15 days after a written request; if not within 3 business days it must explain in writing when records will be available (§ 14-2-8(D)). Unit of the 15 days is not labeled by RCFP (calendar inferred).",
     "extension_days": null,
     "extension_unit": null,
-    "silence_is_denial": null
+    "silence_is_denial": true
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "search_allowed": false,
+    "labor_rule": "No fee for the cost of determining whether a record is subject to disclosure (§ 14-2-9(C)(6)); commonly read to bar search fees.",
+    "copy_rule": "Reasonable copy fee, not over $1 per page up to 11x17; download at actual cost plus device cost (§ 14-2-9(C)).",
+    "waiver_rule": "No provisions for fee waivers.",
     "estimate_required": null,
-    "late_penalty": null
+    "late_penalty": "Court awards damages, costs and attorney fees to prevailing requester (§ 14-2-12(D))."
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "Every person has the right to inspect public records (§ 14-2-1)."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "State District Court (Attorney General or district attorney may also enforce)",
+    "type": "court",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "No administrative appeal or ombudsman; sue in district court or ask AG/DA to enforce (§ 14-2-12). RCFP gives no firm deadline (suit likely not barred for at least two years)."
   },
-  "exemptions_citation": null,
-  "format_rule": null,
+  "exemptions_citation": "NMSA 1978 § 14-2-1(A)-(I)",
+  "format_rule": "Electronic copy provided if available electronically, in the format existing at request time (§ 14-2-9(B)); no duty to create records (§ 14-2-8(B)).",
   "covers": {
-    "governor": null,
-    "legislature": null,
+    "governor": true,
+    "legislature": true,
     "universities_public": null,
     "school_districts": null
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/new-mexico/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Two halves read. Denial may be deemed after 15 days (§ 14-2-10); excessively burdensome requests get extension with written notice within 15 days. Governor has qualified executive privilege. Legislature covered but disputes legislator emails (Joint Rule 12-1). RCFP chapter last updated Aug 2021. Response days null: the 15-day unit is not labeled by RCFP; rule stays in rule_text."
 }

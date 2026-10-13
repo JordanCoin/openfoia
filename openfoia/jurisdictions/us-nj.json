@@ -3,39 +3,39 @@
   "name": "New Jersey",
   "level": "state",
   "statute": {
-    "name": "Open Public Records Act",
-    "citation": null,
+    "name": "Open Public Records Act (OPRA)",
+    "citation": "N.J.S.A. 47:1A-1 et seq.",
     "url": null
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
+    "days": 7,
+    "unit": "business",
+    "rule_text": "Custodian must act not later than seven business days after receiving the request (N.J.S.A. 47:1A-5(i)(1)); failure to respond is deemed a denial.",
     "extension_days": null,
     "extension_unit": null,
-    "silence_is_denial": null
+    "silence_is_denial": true
   },
   "fees": {
     "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "labor_rule": "Special service charge allowed for extraordinary time/effort; must be reasonable and based on direct cost; requester may object first.",
+    "copy_rule": "$0.05 per letter-size page, $0.07 per legal-size or larger; electronic records free except actual supply cost.",
+    "waiver_rule": "No fee for crime victim's copies of records they are entitled to.",
     "estimate_required": null,
-    "late_penalty": null
+    "late_penalty": "Knowing and willful violation: civil penalty $1,000 / $2,500 / $5,000 (47:1A-11); prevailing requester gets attorney fees."
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": true,
+    "rule_text": "OPRA refers to access by citizens of this State (47:1A-1); RCFP says the Attorney General's Office takes the position OPRA does not bar access by residents of other states."
   },
   "appeal": {
-    "body": null,
-    "type": null,
-    "deadline_days": null,
-    "deadline_unit": null,
-    "rule_text": null
+    "body": "Government Records Council or Superior Court",
+    "type": "commission",
+    "deadline_days": 60,
+    "deadline_unit": "calendar",
+    "rule_text": "Requester may file with the GRC within 60 calendar days of denial (N.J.A.C. 5:105-2.1) or sue in Superior Court (47:1A-6); court action 45 days per Mason v. Hoboken."
   },
-  "exemptions_citation": null,
-  "format_rule": null,
+  "exemptions_citation": "N.J.S.A. 47:1A-1.1 and 47:1A-9 (also 1A-3, 1A-10)",
+  "format_rule": "Records provided in the medium requested if agency maintains them in that medium (47:1A-5(d)); requests must be in writing (47:1A-5(g)).",
   "covers": {
     "governor": null,
     "legislature": null,
@@ -45,7 +45,7 @@
   "sources": [
     "https://www.rcfp.org/open-government-guide/new-jersey/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Fetched in three 100k chunks. Governor partly covered (executive privilege excluded, EO 26); legislature partly excluded (constituent info, member memoranda); universities have listed exclusions; school districts not separately addressed, so covers fields left null rather than boolean. Residency: statutory text says citizens, AG does not enforce. Common-law access preserved. Court filing: 45 days per Mason (unclear whether it applies to GRC)."
 }

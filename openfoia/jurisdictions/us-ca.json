@@ -3,49 +3,49 @@
   "name": "California",
   "level": "state",
   "statute": {
-    "name": "California Public Records Act",
-    "citation": null,
-    "url": null
+    "name": "California Public Records Act (CPRA)",
+    "citation": "Cal. Gov't Code § 7920.000 et seq. (disclosure at §§ 7922.510, 7922.530; suit at § 7923.000)",
+    "url": "https://www.rcfp.org/open-government-guide/california/"
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
-    "extension_days": null,
-    "extension_unit": null,
+    "days": 10,
+    "unit": "calendar",
+    "rule_text": "Agency must make nonexempt records 'promptly' available, and has 10 days from receipt to determine whether the records are disclosable, Cal. Gov't Code §§ 7922.530(a), 7922.535(a).",
+    "extension_days": 14,
+    "extension_unit": "calendar",
     "silence_is_denial": null
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "search_allowed": false,
+    "labor_rule": "Only 'direct costs of duplication' (copy machine and operator time); staff search/review time not chargeable for paper records; data-extraction cost chargeable for electronic records, Cal. Gov't Code § 7922.530(a).",
+    "copy_rule": "Direct costs of duplication or statutory fee, § 7922.530(a).",
+    "waiver_rule": "CPRA contains no provision for fee waivers.",
     "estimate_required": null,
     "late_penalty": null
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "'Every person' may inspect public records, Cal. Gov't Code § 7922.510."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Superior court (any court of competent jurisdiction)",
+    "type": "court",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "CPRA has no administrative appeal and allows immediate court action without exhaustion, Cal. Gov't Code § 7923.000; AG may not enforce unless the AG was itself denied. No statutory limitations period (general 3 years, Civ. Proc. Code § 338, may apply)."
   },
   "exemptions_citation": null,
   "format_rule": null,
   "covers": {
     "governor": null,
-    "legislature": null,
+    "legislature": false,
     "universities_public": null,
     "school_districts": null
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/california/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Extension: 'unusual circumstances' add up to 14 days (10+14=24, per RCFP). Legislature excluded from CPRA (Gov't Code § 7920.510); covered instead by Legislative Open Records Act § 9070. Whether delay equals denial is only 'arguable' per RCFP, so null. Exemption citation, governor, universities, schools not extracted."
 }

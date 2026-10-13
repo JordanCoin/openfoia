@@ -3,49 +3,49 @@
   "name": "Mississippi",
   "level": "state",
   "statute": {
-    "name": "Mississippi Public Records Act",
-    "citation": null,
-    "url": null
+    "name": "Mississippi Public Records Act of 1983",
+    "citation": "Miss. Code Ann. § 25-61-1 et seq. (response § 25-61-5; fees § 25-61-7; enforcement § 25-61-13)",
+    "url": "https://www.rcfp.org/open-government-guide/mississippi/"
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
-    "extension_days": null,
-    "extension_unit": null,
-    "silence_is_denial": null
+    "days": 7,
+    "unit": "business",
+    "rule_text": "Public body must produce or deny within 7 working days of the request (one day if it has no written procedures); with written reasons it may take 7 additional working days, 14 total, Miss. Code Ann. § 25-61-5(1).",
+    "extension_days": 7,
+    "extension_unit": "business",
+    "silence_is_denial": false
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "search_allowed": true,
+    "labor_rule": "Fees must be reasonably calculated to reimburse, and never exceed, the actual cost of searching, reviewing, duplicating and, if needed, mailing records (e.g. AG allowed $75/hour for building a search program).",
+    "copy_rule": "Actual cost of duplication; fees collected in advance, § 25-61-7.",
+    "waiver_rule": "No statutory provision for fee waivers.",
     "estimate_required": null,
     "late_penalty": null
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "'Any person' may request records, Miss. Code Ann. § 25-61-5."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Mississippi Ethics Commission (complaint) or chancery court",
+    "type": "commission",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "After any internal agency review, a requester may file a free complaint with the Ethics Commission (public body must respond within 14 days) or sue in chancery court of the county where the body sits, § 25-61-13; no specific time limit (general 3-year statute applies)."
   },
   "exemptions_citation": null,
   "format_rule": null,
   "covers": {
     "governor": null,
-    "legislature": null,
+    "legislature": true,
     "universities_public": null,
     "school_districts": null
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/mississippi/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Delay is not classified as denial by the Act (RCFP). Legislature covered but retains right to regulate access to its own records (§ 25-61-17). Appeal deadline null. Governor, universities, school districts not confirmed as coverage rules."
 }

@@ -3,49 +3,49 @@
   "name": "Maine",
   "level": "state",
   "statute": {
-    "name": "Freedom of Access Act",
-    "citation": null,
-    "url": null
+    "name": "Maine Freedom of Access Act (FOAA)",
+    "citation": "1 M.R.S.A. § 400 et seq. (response § 408-A; enforcement § 409-410)",
+    "url": "https://www.rcfp.org/open-government-guide/maine/"
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
+    "days": 5,
+    "unit": "business",
+    "rule_text": "Agency must confirm receipt within five working days with a good-faith, nonbinding time and cost estimate, and must deny within five working days of receipt; records must be provided within a reasonable time, 1 M.R.S.A. § 408-A.",
     "extension_days": null,
     "extension_unit": null,
     "silence_is_denial": null
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
-    "estimate_required": null,
+    "search_allowed": true,
+    "labor_rule": "Actual cost of searching, retrieving and compiling, not more than $15 per hour after the first hour of staff time per request.",
+    "copy_rule": "Reasonable fee to cover the cost of copying (1 M.R.S.A. § 408-A).",
+    "waiver_rule": "Agency may waive all or part of a fee if requester is indigent or release is in the public interest.",
+    "estimate_required": true,
     "late_penalty": null
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "The status of the requester is not relevant to the right to inspect and copy, 1 M.R.S.A. § 408-A."
   },
   "appeal": {
-    "body": null,
-    "type": null,
-    "deadline_days": null,
-    "deadline_unit": null,
-    "rule_text": null
+    "body": "Superior court (suit); FOAA ombudsman informal",
+    "type": "court",
+    "deadline_days": 30,
+    "deadline_unit": "calendar",
+    "rule_text": "No administrative appeal; an informal complaint may go to the Attorney General's FOAA ombudsman (5 M.R.S.A. § 200-I) who cannot issue binding rulings. Appeal to court must be brought within 30 days after denial, 1 M.R.S.A. § 409."
   },
   "exemptions_citation": null,
   "format_rule": null,
   "covers": {
-    "governor": null,
-    "legislature": null,
+    "governor": true,
+    "legislature": true,
     "universities_public": null,
     "school_districts": null
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/maine/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Governor covered (executive-branch records). Legislature covered, but legislative working papers, drafts and internal memoranda excluded. Estimate: agency must provide good-faith cost estimate. Advance payment only if estimate > $100. Silence-is-denial not confirmed from fetched text. Universities/school districts not extracted. § 409 subsection for the 30 days not seen verbatim."
 }

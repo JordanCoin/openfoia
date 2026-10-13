@@ -4,41 +4,41 @@
   "level": "state",
   "statute": {
     "name": "Tennessee Public Records Act",
-    "citation": null,
+    "citation": "T.C.A. §§ 10-7-501 et seq. (access § 10-7-503, exemptions § 10-7-504, enforcement § 10-7-505, copying § 10-7-506)",
     "url": null
   },
   "response": {
     "days": null,
     "unit": null,
-    "rule_text": null,
+    "rule_text": "RCFP says 2008 revisions added a deadline for custodians to respond, but the day count and deemed-denial rule are not in the fetched text.",
     "extension_days": null,
     "extension_unit": null,
     "silence_is_denial": null
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "search_allowed": true,
+    "labor_rule": "OORC Schedule of Charges (T.C.A. § 8-4-604(a)) allows labor for locating, retrieving, reviewing, redacting and reproducing; first hour free; hourly rate of the employee.",
+    "copy_rule": "About $0.15 per black-and-white copy and $0.50 per color copy under the Schedule; custodians may charge less or more if actual costs higher.",
+    "waiver_rule": "Act has no waiver provision; Schedule permits waiver only under a written custodian policy.",
     "estimate_required": null,
-    "late_penalty": null
+    "late_penalty": "Court costs and attorney fees only if refusal was willful (§ 10-7-505(g))."
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": true,
+    "rule_text": "RCFP quotes: any citizen of the state of Tennessee can request access; requester must be a citizen of Tennessee. 2008 study group recommended removing this, not adopted."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Chancery or circuit court (Office of Open Records Counsel mediates and issues opinions)",
+    "type": "court",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "Petition chancery/circuit court of the county where the records are, or for state records Davidson County or requester's county (T.C.A. § 10-7-505(b)); no limit in the Act, six-year limitation may apply per RCFP. OORC is an informal ombudsman, no AG role."
   },
-  "exemptions_citation": null,
-  "format_rule": null,
+  "exemptions_citation": "T.C.A. § 10-7-504 (48 categories (a)(1)-(vv)); § 10-7-503(a)",
+  "format_rule": "Information obtainable in any format the agency maintains, including electronic (§ 8-4-604(a)(1)(A)(ii)(d)); no customized database search provision.",
   "covers": {
     "governor": null,
-    "legislature": null,
+    "legislature": true,
     "universities_public": null,
     "school_districts": null
   },
@@ -47,5 +47,5 @@
   ],
   "verified": false,
   "verified_at": null,
-  "notes": null
+  "notes": "Response day count NOT confirmed: RCFP sections IV.B.1/B.3 were empty in fetched text; Justia fetch returned 403 (60s pause taken). Read RCFP chars 0-100k and 110-210k. Legislators' official emails covered (AG Op. 05-099). Appeal type 'court' with ombudsman-style OORC role (ombudsman_advisory)."
 }
