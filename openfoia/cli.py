@@ -5330,7 +5330,12 @@ def _persist_ingested(ingest_results, *, request_number: str, subject: str, body
         # active case must not land its documents in the first case.
         dl_req = (
             session.query(Request)
-            .filter(Request.request_number.startswith(request_number), Request.case_id == case_id)
+            .filter(
+                Request.request_number.in_(
+                    [request_number, f"{request_number}@{(case_id or '')[:8]}"]
+                ),
+                Request.case_id == case_id,
+            )
             .first()
         )
         if dl_req is None:
