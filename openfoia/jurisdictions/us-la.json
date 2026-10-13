@@ -16,7 +16,7 @@
     "silence_is_denial": true
   },
   "fees": {
-    "search_allowed": false,
+    "search_allowed": null,
     "labor_rule": "No fee to examine or review records except for after-hours examination; no examination fees otherwise.",
     "copy_rule": "Reasonable copy fees (schedule not extracted).",
     "waiver_rule": "Copies may be furnished free or at reduced charge to indigent persons of the state.",
@@ -47,5 +47,5 @@
   ],
   "verified": true,
   "verified_at": "2026-10-14",
-  "notes": "Governor's records covered but intraoffice communications of governor and staff may be privileged (§ 44:5). Silence treated as denial after passage of five days per RCFP text (truncated sentence). Appeal deadline null. Legislature/universities/school districts not confirmed. Search fee 'false' is inferred from no-examination-fee language, not an explicit ban on search labor."
+  "notes": "Governor's records covered but intraoffice communications of governor and staff may be privileged (§ 44:5). Silence treated as denial after passage of five days per RCFP text (truncated sentence). Appeal deadline null. Legislature/universities/school districts not confirmed. fees.search_allowed null: the no-examination-fee language is not an explicit rule on search labor."
 }

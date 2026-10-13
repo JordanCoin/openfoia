@@ -16,7 +16,7 @@
     "silence_is_denial": null
   },
   "fees": {
-    "search_allowed": true,
+    "search_allowed": null,
     "labor_rule": "Copy fees may not exceed actual cost of furnishing copies, including staff time; state-agency memo gives free service for under one hour of staff time or fewer than 25 pages.",
     "copy_rule": "Actual cost of furnishing copies; $0.25 per page deemed reasonable; AG reports 20 cents per page also reasonable.",
     "waiver_rule": null,
@@ -47,5 +47,5 @@
   ],
   "verified": true,
   "verified_at": "2026-10-14",
-  "notes": "Governor and other executive offices are 'public agencies' under KORA. Legislature: records kept by individual legislators are not public records (partial); universities: a university athletic association was held not a public agency (partial). Silence-is-denial and appeal deadline not found. K.S.A. 45-219 fee citation inferred from fee topic, not seen."
+  "notes": "Governor and other executive offices are 'public agencies' under KORA. Legislature: records kept by individual legislators are not public records (partial); universities: a university athletic association was held not a public agency (partial). Silence-is-denial and appeal deadline not found. K.S.A. 45-219 fee citation inferred from fee topic, not seen. fees.search_allowed null: staff time appears only in the copy-cost rule, not as an explicit search fee."
 }

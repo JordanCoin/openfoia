@@ -30,8 +30,8 @@
   "appeal": {
     "body": "Attorney General opinion, then district court civil action",
     "type": "attorney_general",
-    "deadline_days": 30,
-    "deadline_unit": "calendar",
+    "deadline_days": null,
+    "deadline_unit": null,
     "rule_text": "Request AG opinion within 30 days of alleged violation (§ 44-04-21.1); entity then has 7 days to disclose if violation found. Civil action within 60 days of when requester knew of violation or 30 days after AG opinion, whichever later (§ 44-04-21.2)."
   },
   "exemptions_citation": "N.D.C.C. § 44-04-17.1(3),(5); § 44-04-18.4; § 44-04-18.6; § 44-04-18.32",
@@ -47,5 +47,5 @@
   ],
   "verified": true,
   "verified_at": "2026-10-14",
-  "notes": "Read chars 0-100k and 150-250k. Delay as denial: statute silent. Executive branch covered (§ 44-04-17.1(13)(i)), governor's office not separately named. Legislature covered with exemptions (§ 44-04-18.6). School districts: N.D.C.C. § 15.1-07-25. Deadline units for AG request assumed calendar (text says 30 days)."
+  "notes": "Read chars 0-100k and 150-250k. Delay as denial: statute silent. Executive branch covered (§ 44-04-17.1(13)(i)), governor's office not separately named. Legislature covered with exemptions (§ 44-04-18.6). School districts: N.D.C.C. § 15.1-07-25.  AG-request deadline null: the 30-day unit is not labeled by RCFP."
 }

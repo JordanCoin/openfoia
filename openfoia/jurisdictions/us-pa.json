@@ -10,9 +10,9 @@
   "response": {
     "days": 5,
     "unit": "business",
-    "rule_text": "Agency must respond within five business days of the open-records officer receiving a written request; no response is a deemed denial (65 P.S. § 67.901).",
-    "extension_days": 30,
-    "extension_unit": "calendar",
+    "rule_text": "Agency must respond within five business days of the open-records officer receiving a written request; no response is a deemed denial (65 P.S. § 67.901). With one of seven listed reasons and notice within the five business days, the agency gets up to 30 days to respond (§ 67.902); RCFP does not label the unit.",
+    "extension_days": null,
+    "extension_unit": null,
     "silence_is_denial": true
   },
   "fees": {
@@ -47,5 +47,5 @@
   ],
   "verified": true,
   "verified_at": "2026-10-14",
-  "notes": "Read chars 0-100k and 170-270k. Extension to 30 days only if one of seven listed reasons applies with notice in 5 business days (the 30-day unit is not labeled; calendar inferred). RCFP chapter last updated Oct 2019. Legislature covered for 'legislative records' only. State-related universities (Temple, Pitt, Penn State, Lincoln) have reporting duties under §§ 67.1501-1504; PASSHE and community colleges are state-affiliated."
+  "notes": "Read chars 0-100k and 170-270k. Extension nulled: the 30-day unit is not labeled by RCFP and whether it runs from the notice or the request is not stated; see rule_text. RCFP chapter last updated Oct 2019. Legislature covered for 'legislative records' only. State-related universities (Temple, Pitt, Penn State, Lincoln) have reporting duties under §§ 67.1501-1504; PASSHE and community colleges are state-affiliated."
 }

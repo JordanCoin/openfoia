@@ -30,8 +30,8 @@
   "appeal": {
     "body": "Attorney General (petition) or Superior Court suit",
     "type": "attorney_general",
-    "deadline_days": 60,
-    "deadline_unit": "calendar",
+    "deadline_days": null,
+    "deadline_unit": null,
     "rule_text": "No administrative appeal; a denied citizen may petition the AG, who determines within 20 days if a violation occurred, 29 Del. C. § 10005(e), or sue within 60 days of denial, § 10005(b)."
   },
   "exemptions_citation": null,
@@ -47,5 +47,5 @@
   ],
   "verified": true,
   "verified_at": "2026-10-14",
-  "notes": "60-day deadline is for suit (§10005(b)); AG petition deadline not found. Days read as calendar days. Governor's records subject to Act unless privileged. Legislature/universities/schools not confirmed. Silence-is-denial not confirmed."
+  "notes": "Governor's records subject to Act unless privileged. Legislature/universities/schools not confirmed. Silence-is-denial not confirmed. Appeal deadline null: the 60 days is the suit window (§ 10005(b)); no AG petition deadline found."
 }

@@ -8,11 +8,11 @@
     "url": "https://www.rcfp.org/open-government-guide/iowa/"
   },
   "response": {
-    "days": 10,
-    "unit": "business",
+    "days": null,
+    "unit": null,
     "rule_text": "A reasonable delay to decide whether a confidential record can be released 'should not exceed twenty calendar days and ordinarily should not exceed ten business days', Iowa Code § 22.8(4)(d); the limit is not absolute (Horsfield Materials).",
-    "extension_days": 20,
-    "extension_unit": "calendar",
+    "extension_days": null,
+    "extension_unit": null,
     "silence_is_denial": null
   },
   "fees": {
@@ -47,5 +47,5 @@
   ],
   "verified": true,
   "verified_at": "2026-10-14",
-  "notes": "Response numbers are an outer limit, not a hard deadline; 10/20 pair mapped to days/extension_days. IPIB complaint deadline not found. Rehearing text in RCFP (17A.16, 20 days) concerns agency final decisions, not IPIB records complaints. Governor: act treats governor as covered but IPIB lacks jurisdiction; executive privilege claimed 2025. Universities (ISU Foundation) held subject in case law; school districts not confirmed."
+  "notes": "No general response clock is stored: the 10-business/20-calendar-day figures are an outer limit on the delay to decide whether a confidential record may be released, not a deadline for every request; the rule stays in response.rule_text. IPIB complaint deadline not found. Rehearing text in RCFP (17A.16, 20 days) concerns agency final decisions, not IPIB records complaints. Governor: act treats governor as covered but IPIB lacks jurisdiction; executive privilege claimed 2025. Universities (ISU Foundation) held subject in case law; school districts not confirmed."
 }

@@ -30,9 +30,9 @@
   "appeal": {
     "body": "Public Access Ombudsman (mediation), then PIA Compliance Board; or circuit court",
     "type": "commission",
-    "deadline_days": 30,
-    "deadline_unit": "calendar",
-    "rule_text": "Since July 2022 requesters must first mediate with the Public Access Ombudsman (GP § 4-1B-04), then may complain to the PIA Compliance Board (binding orders, § 4-1A-04) within 30 days of the Ombudsman's final determination (§ 4-1A-05(b)(5)); judicial review (§ 4-362) needs no prior administrative step."
+    "deadline_days": null,
+    "deadline_unit": null,
+    "rule_text": "Since July 2022 requesters must first mediate with the Public Access Ombudsman (GP § 4-1B-04), then may complain to the PIA Compliance Board (binding orders, § 4-1A-04) within 30 days from the ombudsman's final determination (§ 4-1A-05(b)(5)); judicial review (§ 4-362) needs no prior administrative step."
   },
   "exemptions_citation": null,
   "format_rule": null,
@@ -47,5 +47,5 @@
   ],
   "verified": true,
   "verified_at": "2026-10-14",
-  "notes": "Deadline to request Ombudsman mediation is not set by statute. Compliance Board fee jurisdiction limited to fees over $350. School districts included in 'political subdivision' (§ 4-101). Governor case (Office of Governor v. Washington Post) cited but coverage rule not extracted. Silence-is-denial not found."
+  "notes": "Deadline to request Ombudsman mediation is not set by statute. Compliance Board fee jurisdiction limited to fees over $350. School districts included in 'political subdivision' (§ 4-101). Governor case (Office of Governor v. Washington Post) cited but coverage rule not extracted. Silence-is-denial not found. Appeal deadline null: the 30 days runs from the ombudsman's final determination, not from the denial."
 }

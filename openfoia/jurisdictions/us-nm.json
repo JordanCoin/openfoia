@@ -8,8 +8,8 @@
     "url": null
   },
   "response": {
-    "days": 15,
-    "unit": "calendar",
+    "days": null,
+    "unit": null,
     "rule_text": "Custodian must permit inspection not later than 15 days after a written request; if not within 3 business days it must explain in writing when records will be available (§ 14-2-8(D)). Unit of the 15 days is not labeled by RCFP (calendar inferred).",
     "extension_days": null,
     "extension_unit": null,
@@ -47,5 +47,5 @@
   ],
   "verified": true,
   "verified_at": "2026-10-14",
-  "notes": "Two halves read. Denial may be deemed after 15 days (§ 14-2-10); excessively burdensome requests get extension with written notice within 15 days. Governor has qualified executive privilege. Legislature covered but disputes legislator emails (Joint Rule 12-1). RCFP chapter last updated Aug 2021."
+  "notes": "Two halves read. Denial may be deemed after 15 days (§ 14-2-10); excessively burdensome requests get extension with written notice within 15 days. Governor has qualified executive privilege. Legislature covered but disputes legislator emails (Joint Rule 12-1). RCFP chapter last updated Aug 2021. Response days null: the 15-day unit is not labeled by RCFP; rule stays in rule_text."
 }

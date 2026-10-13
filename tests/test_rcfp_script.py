@@ -13,6 +13,10 @@ import rcfp_jurisdictions as rcfp
 PAGE = """
 Open Records
 	I. STATUTE
+	IV. PROCEDURE FOR OBTAINING RECORDS
+	B. How long to wait
+	Decoy: the custodian must respond within three calendar days.
+	C. Administrative appeal
 	Open Meetings
 	I. STATUTE
 Open Records

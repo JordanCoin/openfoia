@@ -30,8 +30,8 @@
   "appeal": {
     "body": "Circuit court, or Office of Hearing Examiners",
     "type": "court",
-    "deadline_days": 90,
-    "deadline_unit": "calendar",
+    "deadline_days": null,
+    "deadline_unit": null,
     "rule_text": "File civil action in circuit court within ninety days of the denial, or request review by the Office of Hearing Examiners by certified mail (SDCL 1-27-38); entity responds in ten business days (1-27-39); 30 days to comply or appeal after an order (1-27-40.1)."
   },
   "exemptions_citation": "SDCL 1-27-1.5 (27 categories), 1-27-1.6 to 1-27-1.10, 1-27-3",
@@ -47,5 +47,5 @@
   ],
   "verified": true,
   "verified_at": "2026-10-14",
-  "notes": "Read chars 0-100k only; all fields from that chunk. Governor records have special handling (1-27-1.19 to 1-27-1.21); Unified Judicial System excluded (1-27-1.12). Universities only mentioned for student/research exemptions. Clarification not answered in 10 business days is deemed withdrawn. 90 days unit assumed calendar."
+  "notes": "Read chars 0-100k only; all fields from that chunk. Governor records have special handling (1-27-1.19 to 1-27-1.21); Unified Judicial System excluded (1-27-1.12). Universities only mentioned for student/research exemptions. Clarification not answered in 10 business days is deemed withdrawn.  Suit deadline null: the 90-day unit is not labeled by RCFP."
 }

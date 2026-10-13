@@ -30,8 +30,8 @@
   "appeal": {
     "body": "Commissioner of Administration (advisory opinion) or Office of Administrative Hearings; or district court",
     "type": "ombudsman_advisory",
-    "deadline_days": 730,
-    "deadline_unit": "calendar",
+    "deadline_days": null,
+    "deadline_unit": null,
     "rule_text": "An aggrieved person may ask the Commissioner of Administration for a non-binding opinion (Minn. Stat. § 13.072), file an OAH complaint within two years of the entity's initial failure to act (§ 13.085, subd. 2(b)), or sue in civil court (§ 13.08, subd. 4)."
   },
   "exemptions_citation": null,
@@ -47,5 +47,5 @@
   ],
   "verified": true,
   "verified_at": "2026-10-14",
-  "notes": "deadline_days 730 = approximation of the 2-year OAH complaint limit. Commissioner opinions are not binding but court gives deference. Data Practices Act generally does not apply to the legislature. 'State agency' includes the University of Minnesota. Governor not extracted. Response has no day count for the general public."
+  "notes": "Commissioner opinions are not binding but court gives deference. Data Practices Act generally does not apply to the legislature. 'State agency' includes the University of Minnesota. Governor not extracted. Response has no day count for the general public. Appeal deadline null: the two-year window is for an OAH complaint, not the Commissioner opinion; see rule_text."
 }

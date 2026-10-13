@@ -10,8 +10,8 @@
   "response": {
     "days": 3,
     "unit": "business",
-    "rule_text": "Agency has three working days to grant or deny; if more time is needed to locate or retrieve records it must notify the requester in writing and grant or deny within ten working days of the request, Idaho Code § 74-103(1).",
-    "extension_days": 10,
+    "rule_text": "Agency has three working days to grant or deny; if more time is needed to locate or retrieve records it must notify the requester in writing and grant or deny within 10 working days from the request in total, Idaho Code § 74-103(1).",
+    "extension_days": 7,
     "extension_unit": "business",
     "silence_is_denial": true
   },

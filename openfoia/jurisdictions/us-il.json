@@ -21,7 +21,7 @@
     "copy_rule": "First 50 pages of black-and-white letter/legal copies free; after that not over 15 cents per page (actual cost for other media), 5 ILCS 140/6(b).",
     "waiver_rule": null,
     "estimate_required": null,
-    "late_penalty": "Public body that fails to respond on time may not charge fees for copies or treat the request as unduly burdensome (5 ILCS 140/3(d)); RCFP text on this partly truncated."
+    "late_penalty": null
   },
   "residency": {
     "restricted": false,
@@ -47,5 +47,5 @@
   ],
   "verified": true,
   "verified_at": "2026-10-14",
-  "notes": "PAC review deadline not found in fetched RCFP text (null). PAC review not available against the General Assembly and its committees. 'Late penalty' clause in fees is from the response-timing text; verify before citing. Governor not extracted."
+  "notes": "PAC review deadline not found in fetched RCFP text (null). PAC review not available against the General Assembly and its committees. fees.late_penalty null: RCFP's text on fees after a late response was truncated; 5 ILCS 140/3(d) is the place to check. Governor not extracted."
 }

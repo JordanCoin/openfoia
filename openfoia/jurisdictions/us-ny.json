@@ -11,8 +11,8 @@
     "days": null,
     "unit": null,
     "rule_text": "Agency must within five business days grant, deny in writing, or acknowledge and give an approximate date; if granting, access within 20 business days of acknowledgment unless it gives written reasons and a specific date (Pub. Off. Law § 89(4)(a)).",
-    "extension_days": 20,
-    "extension_unit": "business",
+    "extension_days": null,
+    "extension_unit": null,
     "silence_is_denial": true
   },
   "fees": {
@@ -30,8 +30,8 @@
   "appeal": {
     "body": "Agency records appeals officer, then Article 78 proceeding in NY Supreme Court",
     "type": "agency_head",
-    "deadline_days": 30,
-    "deadline_unit": "calendar",
+    "deadline_days": null,
+    "deadline_unit": null,
     "rule_text": "Appeal denial to the agency within 30 days (unit not labeled; calendar inferred); appeals officer decides in 10 business days (§ 89(4)(b)); then Article 78 within 4 months (CPLR 217). Committee on Open Government gives advisory opinions only."
   },
   "exemptions_citation": "N.Y. Pub. Off. Law § 87(2)",
@@ -47,5 +47,5 @@
   ],
   "verified": true,
   "verified_at": "2026-10-14",
-  "notes": "Page is 487k chars; read chars 0-100k and 300-400k. Governor covered per case law (RCFP). Legislature handled under separate § 88. A community college held an agency; school boards ordered to disclose. extension_days reflects the 20-business-day grant window, not a separate extension. Response days kept null: the 5-business-day acknowledgment and 20-day production clocks are in rule_text, not modelled. Appeal deadline unit not labeled in RCFP; 30 days likely calendar."
+  "notes": "Page is 487k chars; read chars 0-100k and 300-400k. Governor covered per case law (RCFP). Legislature handled under separate § 88. A community college held an agency; school boards ordered to disclose. Response days kept null: the 5-business-day acknowledgment and 20-day production clocks are in rule_text, not modelled.  Appeal deadline null: the 30-day unit is not labeled by RCFP. extension_days null: the 20 business days is a production window after acknowledgment, not an extension; see rule_text."
 }

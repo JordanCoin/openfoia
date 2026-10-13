@@ -10,9 +10,9 @@
   "response": {
     "days": 15,
     "unit": "business",
-    "rule_text": "An officer must acknowledge a request within 10 business days (Ala. Code § 36-12-44(a)(3)) and give a substantive response to a standard request within 15 business days of acknowledgment (§ 36-12-44(a)(4)); time-intensive requests get 45 business days after the requester elects to proceed (§ 36-12-44(b)(4)).",
-    "extension_days": 15,
-    "extension_unit": "business",
+    "rule_text": "The 15 business days run from acknowledgment, not from the request: an officer must acknowledge a request within 10 business days (Ala. Code § 36-12-44(a)(3)) and give a substantive response to a standard request within 15 business days of acknowledgment (§ 36-12-44(a)(4)); time-intensive requests get 45 business days after the requester elects to proceed (§ 36-12-44(b)(4)).",
+    "extension_days": null,
+    "extension_unit": null,
     "silence_is_denial": true
   },
   "fees": {
@@ -47,5 +47,5 @@
   ],
   "verified": true,
   "verified_at": "2026-10-14",
-  "notes": "Appeal deadline null: no administrative appeal. Governor/legislature coverage is 'presumptive' per RCFP (law silent). Universities and school districts not confirmed from raw RCFP text. 2024 amendments; statute text not fetched from legislature site."
+  "notes": "Appeal deadline null: no administrative appeal. Governor/legislature coverage is 'presumptive' per RCFP (law silent). Universities and school districts not confirmed from raw RCFP text. 2024 amendments; statute text not fetched from legislature site. extension_days null: the 45-business-day track for time-intensive requests is a separate clock, not an extension of the 15."
 }

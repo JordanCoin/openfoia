@@ -14,7 +14,8 @@ exhaustive lists.
 
 - All 50 states and DC now carry sourced statute, clock, fee, residency and
   appeal data for their public-records law, read from the Reporters Committee
-  for Freedom of the Press Open Government Guide; Tennessee is partial (its
+  for Freedom of the Press Open Government Guide
+  (https://www.rcfp.org/open-government-guide/); Tennessee is partial (its
   response clock was not in the fetched text). `openfoia jurisdiction list`
   ends with a verified/unverified count. `scripts/rcfp_jurisdictions.py`
   drafts a jurisdiction file from a saved guide page, so the data can be

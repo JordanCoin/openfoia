@@ -10,8 +10,8 @@
   "response": {
     "days": 3,
     "unit": "business",
-    "rule_text": "Records must be produced within a 'reasonable time' presumed to be three working days or less, extendable to seven working days for extenuating circumstances found in writing, Colo. Rev. Stat. § 24-72-203(3)(b).",
-    "extension_days": 7,
+    "rule_text": "Records must be produced within a 'reasonable time' presumed to be three working days or less, extendable to seven working days in total for extenuating circumstances found in writing, Colo. Rev. Stat. § 24-72-203(3)(b).",
+    "extension_days": 4,
     "extension_unit": "business",
     "silence_is_denial": null
   },
