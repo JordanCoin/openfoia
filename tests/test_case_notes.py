@@ -290,3 +290,14 @@ def test_grep_save_records_the_says_tier():
     _ok(runner.invoke(app, ["docs", "grep", "WAIS", "--save"]))
     out = _ok(runner.invoke(app, ["case", "export", "-f", "json"]))
     assert json.loads(out)["findings"][0]["tier"] == "says"
+
+
+def test_note_edit_changes_only_what_is_passed():
+    _ok(runner.invoke(app, ["case", "new", "PAS"]))
+    _ok(runner.invoke(app, ["case", "note", "first draft", "--tier", "speculation"]))
+    _ok(runner.invoke(app, ["case", "note", "edit", "1", "--tier", "infer", "--page", "4"]))
+    _ok(runner.invoke(app, ["case", "note", "edit", "1", "second", "draft"]))
+    notes = json.loads(_ok(runner.invoke(app, ["case", "notes", "--json"])))
+    assert (notes[0]["note"], notes[0]["tier"], notes[0]["page"]) == ("second draft", "infer", 4)
+    assert runner.invoke(app, ["case", "note", "edit", "9"]).exit_code == 1
+    assert runner.invoke(app, ["case", "note", "edit", "x"]).exit_code == 2
