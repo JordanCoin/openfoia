@@ -72,10 +72,9 @@ class DocumentCloudAdapter(RecordAdapter):
         params: dict[str, Any] = {
             "q": query,
             "per_page": min(page_size, 100),
+            "page": page,
             "hl": "true",
         }
-        # Use cursor pagination for page > 1 if we have a cursor
-        # For page 1, just send the query
 
         try:
             async with egress_client(self._egress, timeout=15) as client:
@@ -250,11 +249,15 @@ class DocumentCloudAdapter(RecordAdapter):
             },
         )
 
-    async def pull_text(self, identifier: str) -> tuple[str | None, str | None]:
+    async def pull_text(
+        self, identifier: str, case_id: str | None = None
+    ) -> tuple[str | None, str | None]:
         """Pull a document's text into the local OpenFOIA database.
 
         Fetches from DocumentCloud, saves a Document row with extracted_text
         already populated. Ready for entity extraction immediately.
+
+        *case_id* attaches the document's request to that investigation.
 
         Returns (document_id, full_text) or (None, None) on failure.
         """
@@ -291,6 +294,8 @@ class DocumentCloudAdapter(RecordAdapter):
                 session.query(Request).filter(Request.request_number == f"DC-{dc_id}").first()
             )
             if existing_req:
+                if case_id and existing_req.case_id is None:
+                    existing_req.case_id = case_id
                 existing_doc = (
                     session.query(Document).filter(Document.request_id == existing_req.id).first()
                 )
@@ -321,6 +326,7 @@ class DocumentCloudAdapter(RecordAdapter):
                 body=f"Pulled from DocumentCloud: {entity.source_url or dc_id}",
                 delivery_method=DeliveryMethod.EMAIL,
                 status=RequestStatus.COMPLETE,
+                case_id=case_id,
             )
             session.add(req)
             session.flush()

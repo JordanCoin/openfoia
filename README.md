@@ -42,6 +42,7 @@ File FOIA requests. Analyze documents. Extract entities. Build relationship grap
 
 ```bash
 openfoia init                                          # 53 federal agencies pre-loaded
+openfoia case new "EPA water"                          # group the work below into one investigation
 openfoia records search "EPA water" --source muckrock       # search 46k+ completed FOIA requests
 openfoia records search "Palantir" --source documentcloud  # search 10M+ public documents
 openfoia records fetch 3411897 --source documentcloud      # pull full text into local database
@@ -86,7 +87,7 @@ that disclosure.
 
 | Source | What | Access |
 |--------|------|--------|
-| [MuckRock](https://www.muckrock.com/) | Completed FOIA requests with downloadable response documents | Public API |
+| [MuckRock](https://www.muckrock.com/) | Completed FOIA requests with downloadable response documents | API token (`OPENFOIA_MUCKROCK_TOKEN`) |
 | [DocumentCloud](https://www.documentcloud.org/) | Public documents with pre-extracted text | Public API |
 | [OpenCorporates](https://opencorporates.com/) | Global company registrations, ownership, directors, and filings | Free basic search |
 | [SEC EDGAR](https://www.sec.gov/edgar/) | US public-company filings | No API key |

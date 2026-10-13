@@ -6,6 +6,7 @@ Core entities:
 - Document: A received document (response, fee letter, denial, etc.)
 - Entity: Extracted person, org, location, etc. from documents
 - Campaign: Coordinated crowdsourced request effort
+- Case: One investigation, grouping fetched documents and logged searches
 """
 
 from __future__ import annotations
@@ -206,6 +207,7 @@ class Request(Base):
     requester_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
     agency_id: Mapped[str] = mapped_column(ForeignKey("agencies.id"))
     campaign_id: Mapped[str | None] = mapped_column(ForeignKey("campaigns.id"), nullable=True)
+    case_id: Mapped[str | None] = mapped_column(ForeignKey("cases.id"), nullable=True, index=True)
 
     # Request content
     subject: Mapped[str] = mapped_column(Text)
@@ -367,6 +369,32 @@ class Campaign(Base):
             return 0.0
         completed = sum(1 for r in self.requests if r.status == RequestStatus.COMPLETE)
         return completed / len(self.requests)
+
+
+class Case(Base):
+    """One investigation: the documents fetched for it and the searches run."""
+
+    __tablename__ = "cases"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    name: Mapped[str] = mapped_column(String(255))
+    slug: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class CaseQuery(Base):
+    """A records search run while a case was active."""
+
+    __tablename__ = "case_queries"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    case_id: Mapped[str] = mapped_column(ForeignKey("cases.id"), index=True)
+    source: Mapped[str] = mapped_column(String(50))
+    query: Mapped[str] = mapped_column(Text)
+    total_results: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class TimelineEvent(Base):

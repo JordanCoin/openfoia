@@ -37,6 +37,28 @@ From that point, everything stays on the USB. Unplug it and there's no trace on 
 
 ## Starting an investigation
 
+### Keep it together: cases
+
+A case groups the searches you run, the documents you fetch and the graph you
+build for one investigation. Open one first; while it is active, `records
+search` logs each query to it, `records fetch` / `records download --ingest`
+attach their documents to it, and `analyze graph` only graphs its documents.
+
+```bash
+openfoia case new "CIA PAS" --desc "PAS program records"   # create + make active
+openfoia records search "PAS" -s documentcloud -n 200 --json
+openfoia records fetch 2090186
+openfoia case show                       # documents, entities, queries, last activity
+openfoia case export -o pas.md           # document list + query log (md or --format json)
+openfoia case list                       # * marks the active case
+openfoia case use "other case"           # switch
+openfoia case close                      # no active case; nothing is deleted
+```
+
+The active case is remembered by id only (`active_case.json` in your data
+directory); its name stays inside the database. `case export` writes plaintext
+outside the database, like graph exports.
+
 ### Option A: File a new FOIA request
 
 ```bash
@@ -90,7 +112,15 @@ openfoia records search "Shell Corp LLC" --source opencorporates
 
 # Search US corporate filings
 openfoia records search "Acme Corp" --source sec
+
+# Ask every source at once; each reports ok N / error / skipped
+openfoia records search "Acme Corp" --all-sources
 ```
+
+A source that fails (rate limit, timeout, missing token) is reported as an
+error and the command exits non-zero; "No results found" means the source
+answered and had nothing. MuckRock's API now needs a token: set
+`OPENFOIA_MUCKROCK_TOKEN`.
 
 ---
 
@@ -124,8 +154,12 @@ openfoia analyze extract <document-id>
 ## Building investigation graphs
 
 ```bash
-# Graph everything
+# Graph the active case (or everything when no case is active)
 openfoia analyze graph --view
+
+# Graph one case, or everything regardless of the active case
+openfoia analyze graph --case "CIA PAS" --view
+openfoia analyze graph --all --view
 
 # Graph a specific investigation and save it
 openfoia analyze graph --name defense-contracts --view

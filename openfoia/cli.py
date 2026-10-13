@@ -521,6 +521,7 @@ records_app = typer.Typer(help="Search public records")
 entities_app = typer.Typer(help="Manage custom entity types")
 deadline_app = typer.Typer(help="Track FOIA deadlines")
 db_app = typer.Typer(help="Database management")
+case_app = typer.Typer(help="Group searches, documents and graphs into an investigation")
 
 app.add_typer(request_app, name="request")
 app.add_typer(docs_app, name="docs")
@@ -532,6 +533,7 @@ app.add_typer(records_app, name="records")
 app.add_typer(entities_app, name="entities")
 app.add_typer(deadline_app, name="deadlines")
 app.add_typer(db_app, name="db")
+app.add_typer(case_app, name="case")
 
 
 @db_app.command()
@@ -2598,6 +2600,10 @@ def analyze_graph(
         "--no-text",
         help="Omit full document text from the export (keeps entities, links and context snippets)",
     ),
+    case_name: str | None = typer.Option(None, "--case", help="Scope to one case"),
+    all_cases: bool = typer.Option(
+        False, "--all", help="Ignore the active case and graph every document"
+    ),
 ):
     """Build entity relationship graph from extracted entities.
 
@@ -2614,6 +2620,8 @@ def analyze_graph(
         openfoia analyze graph --name defense-contracts --view # save + view
         openfoia analyze graph --request REQ-001 --name epa    # filter + save
         openfoia analyze graph --no-text --name epa            # structure only, no doc bodies
+        openfoia analyze graph --case "CIA PAS" --view         # one investigation
+        openfoia analyze graph --all                           # ignore the active case
         openfoia analyze graphs                                # list saved graphs
     """
     from .db import get_db_path, get_session
@@ -2643,10 +2651,39 @@ def analyze_graph(
                 .filter(RequestModel.campaign_id.like(f"{campaign_id}%"))
             )
 
+        case = None
+        if request_id:
+            scope = f"request {request_id}"
+        elif campaign_id:
+            scope = f"campaign {campaign_id}"
+        else:
+            from .cases import get_active_case, get_active_case_id
+
+            if case_name:
+                case = _resolve_case_or_exit(session, case_name)
+            elif not all_cases:
+                case = get_active_case(session)
+                if case is None and get_active_case_id():
+                    rprint("[yellow]Active case not found; run `openfoia case use`.[/yellow]")
+            if case:
+                query = (
+                    query.join(Document).join(RequestModel).filter(RequestModel.case_id == case.id)
+                )
+                scope = f"case '{case.name}'"
+            else:
+                scope = "all documents (every investigation in this database)"
+        rprint(f"[dim]Scope: {scope}[/dim]")
+
         entities = query.all()
 
         if not entities:
-            rprint("[yellow]No entities found. Run entity extraction first.[/yellow]")
+            if case:
+                rprint(
+                    f"[yellow]No entities in case {case.name}. "
+                    "Run extraction or use --all.[/yellow]"
+                )
+            else:
+                rprint("[yellow]No entities found. Run entity extraction first.[/yellow]")
             return
 
         entity_ids = {e.id for e in entities}
@@ -2685,29 +2722,12 @@ def analyze_graph(
         doc_ids = {e.document_id for e in entities if e.document_id}
         documents = {}
         if doc_ids:
-            import re as re_mod
-
             from .models import Document as DocModel
             from .models import Request as ReqModel
 
             for doc in session.query(DocModel).filter(DocModel.id.in_(doc_ids)).all():
-                # Derive source URL from request body or filename
-                source_url = None
-                if doc.request_id:
-                    req = session.query(ReqModel).filter(ReqModel.id == doc.request_id).first()
-                    if req and req.body:
-                        # Extract URL from "Pulled from DocumentCloud: https://..."
-                        url_match = re_mod.search(r"https?://\S+", req.body)
-                        if url_match:
-                            source_url = url_match.group(0)
-                # Fallback: derive from filename pattern
-                if not source_url and doc.filename:
-                    dc_match = re_mod.match(r"documentcloud-(\d+)", doc.filename)
-                    if dc_match:
-                        source_url = f"https://www.documentcloud.org/documents/{dc_match.group(1)}/"
-                    mr_match = re_mod.match(r"muckrock-(\d+)", doc.filename or "")
-                    if mr_match:
-                        source_url = f"https://www.muckrock.com/foi/{mr_match.group(1)}/"
+                req = session.get(ReqModel, doc.request_id) if doc.request_id else None
+                source_url = _doc_source_url(doc, req)
 
                 documents[doc.id] = {
                     "id": doc.id,
@@ -3863,6 +3883,141 @@ def ingest_url(
 
 # === Public Records Commands ===
 
+#: Search filters only some adapters understand; other sources are skipped
+#: rather than returning unfiltered results under a filtered query.
+_FILTER_SOURCES = {"jurisdiction": "opencorporates", "filing_type": "sec"}
+
+
+async def _search_one(adapter, source: str, query: str, limit: int, kwargs: dict[str, Any]):
+    """Run one source's search, paging DocumentCloud until *limit* results."""
+    if source != "documentcloud":
+        return await adapter.search(query, **kwargs)
+
+    per_page = min(limit, 100)
+    entities = []
+    page = 1
+    while True:
+        result = await adapter.search(query, page=page, page_size=per_page, **kwargs)
+        if result.error:
+            # Keep pages 1..N-1; the attached error still fails the command.
+            result.entities = entities[:limit]
+            return result
+        entities.extend(result.entities)
+        if (
+            len(entities) >= limit
+            or len(result.entities) < per_page
+            or len(entities) >= result.total_results
+        ):
+            break
+        page += 1
+    result.entities = entities[:limit]
+    result.page = 1
+    return result
+
+
+def _compact_result(e) -> dict[str, Any]:
+    x = e.extra_data
+    snippet = (x.get("highlights") or [None])[0] or x.get("description") or x.get("snippet")
+    created = next(
+        (
+            x.get(k)
+            for k in (
+                "created_at",
+                "submitted",
+                "filing_date",
+                "date_issued",
+                "posted_date",
+                "date",
+            )
+            if x.get(k)
+        ),
+        None,
+    )
+    return {
+        "id": next(iter(e.identifiers.values()), None),
+        "title": e.name,
+        "source": e.source,
+        "pages": x.get("pages"),
+        "created": created,
+        "url": e.source_url,
+        "snippet": (snippet or "")[:200],
+    }
+
+
+def _log_case_queries(rows: list[tuple[str, str, int | None]]) -> None:
+    """Record searches against the active case. total None = the search failed."""
+    from .cases import active_case_id_in_db
+
+    case_id = active_case_id_in_db()
+    if not case_id:
+        return
+    from .db import get_session
+    from .models import CaseQuery
+
+    with get_session() as session:
+        for source, query, total in rows:
+            session.add(CaseQuery(case_id=case_id, source=source, query=query, total_results=total))
+
+
+def _records_search_all(query: str, kwargs: dict[str, Any], limit: int, json_lines: bool) -> None:
+    import asyncio
+
+    from .records import get_adapter, list_sources
+
+    sources = list_sources()
+
+    def say(msg: str) -> None:
+        # Status goes to stderr in --json mode so stdout stays pure JSON lines.
+        typer.echo(msg, err=json_lines)
+
+    say(f"Sending '{query}' to {len(sources)} services: {', '.join(sources)}")
+
+    async def one(source: str):
+        for key, owner in _FILTER_SOURCES.items():
+            if kwargs.get(key) and source != owner:
+                return source, None, f"skipped ({key} filter not supported)"
+        try:
+            adapter = get_adapter(source)
+            result = await _search_one(adapter, source, query, limit, kwargs)
+        except Exception as e:
+            return source, None, f"error: {e}"
+        if result.error:
+            return source, None, f"error: {result.error}"
+        return source, result, f"ok {result.total_results}"
+
+    async def run_all():
+        return await asyncio.gather(*(one(s) for s in sources))
+
+    outcomes = asyncio.run(run_all())
+    for source, _, status in outcomes:
+        say(f"  {source:<15} {status}")
+
+    _log_case_queries(
+        [
+            (source, query, result.total_results if result else None)
+            for source, result, status in outcomes
+            if not status.startswith("skipped")
+        ]
+    )
+
+    for source, result, _ in outcomes:
+        if not result:
+            continue
+        for e in result.entities[:limit]:
+            c = _compact_result(e)
+            if json_lines:
+                typer.echo(json.dumps(c, ensure_ascii=False, default=str))
+            else:
+                pages = f" ({c['pages']}p)" if c["pages"] else ""
+                line = f"{source:<14} {c['id'] or '-':<12} {c['title']}{pages}"
+                # Titles are upstream data: drop control chars (terminal escapes).
+                typer.echo("".join(ch for ch in line if ch.isprintable()))
+
+    if not any(result for _, result, _ in outcomes):
+        raise typer.Exit(1)
+    if any(status.startswith("error") for _, _, status in outcomes):
+        raise typer.Exit(2)
+
 
 @records_app.command("search")
 def records_search(
@@ -3884,11 +4039,23 @@ def records_search(
     ),
     limit: int = typer.Option(10, "--limit", "-n", help="Maximum results to display"),
     raw: bool = typer.Option(False, "--raw", help="Print raw JSON output"),
+    json_lines: bool = typer.Option(
+        False, "--json", help="One compact JSON object per result, one per line"
+    ),
+    all_sources: bool = typer.Option(
+        False,
+        "--all-sources",
+        help=(
+            "Query every registered source and report each one's status. "
+            "Exit 0: all ok or skipped; 2: some sources errored; 1: none succeeded."
+        ),
+    ),
 ):
     """Search public records databases.
 
     Searches external public records APIs and returns normalized entities.
-    No API keys needed for basic searches.
+    No API keys needed for basic searches. When a case is active the query
+    is logged to it (see 'openfoia case').
 
     Sources:
       opencorporates  - Company registrations worldwide
@@ -3900,10 +4067,22 @@ def records_search(
         openfoia records search "Palantir" --source sec --type 10-K
         openfoia records search "Shell" --source opencorporates -j gb
         openfoia records search "EPA water" --source muckrock
+        openfoia records search "PAS" -s documentcloud -n 300 --json
+        openfoia records search "PAS" --all-sources
     """
     import asyncio
 
     from .records import get_adapter, list_sources
+
+    kwargs: dict[str, Any] = {}
+    if jurisdiction:
+        kwargs["jurisdiction"] = jurisdiction
+    if filing_type:
+        kwargs["filing_type"] = filing_type
+
+    if all_sources:
+        _records_search_all(query, kwargs, limit, json_lines)
+        return
 
     # Validate source
     available = list_sources()
@@ -3912,18 +4091,12 @@ def records_search(
         raise typer.Exit(1)
 
     adapter = get_adapter(source)
-
-    kwargs: dict[str, Any] = {}
-    if jurisdiction:
-        kwargs["jurisdiction"] = jurisdiction
-    if filing_type:
-        kwargs["filing_type"] = filing_type
+    # Pipe-safe modes: stdout carries only JSON, so no spinner or Rich markup.
+    quiet = raw or json_lines
 
     try:
-        if raw:
-            # Raw output is intended for pipes and scripts, so it must contain
-            # only JSON -- no spinner or Rich markup before the document.
-            result = asyncio.run(adapter.search(query, **kwargs))
+        if quiet:
+            result = asyncio.run(_search_one(adapter, source, query, limit, kwargs))
         else:
             with Progress(
                 SpinnerColumn(),
@@ -3931,22 +4104,41 @@ def records_search(
                 console=console,
             ) as progress:
                 progress.add_task(f"Searching {source} for '{query}'...", total=None)
-                result = asyncio.run(adapter.search(query, **kwargs))
+                result = asyncio.run(_search_one(adapter, source, query, limit, kwargs))
     except Exception as e:
-        if raw:
+        _log_case_queries([(source, query, None)])
+        if quiet:
             typer.echo(f"Search failed: {e}", err=True)
         else:
             rprint(f"[red]Search failed: {e}[/red]")
         raise typer.Exit(1) from None
 
-    if raw:
-        if result.error:
-            # stdout has to stay parseable JSON for pipes, so the failure is
-            # reported on stderr and in the exit code. Without this a script
-            # reading `--raw` cannot tell an API failure from "no results".
-            typer.echo(f"Search error ({source}): {result.error}", err=True)
-            raise typer.Exit(1)
+    _log_case_queries([(source, query, None if result.error else result.total_results)])
 
+    if result.error:
+        # An API failure must never read as "no results": report it and exit
+        # non-zero (on stderr in pipe-safe modes so stdout stays parseable).
+        msg = f"Search error ({source}): {result.error}"
+        if result.entities:
+            msg += f" Showing the {len(result.entities)} results retrieved before it failed."
+        if quiet:
+            typer.echo(msg, err=True)
+        else:
+            rprint(f"[red]{msg}[/red]")
+        if result.entities:
+            _print_search_result(result, source, query, limit, raw, json_lines, filing_type)
+        raise typer.Exit(1)
+
+    _print_search_result(result, source, query, limit, raw, json_lines, filing_type)
+
+
+def _print_search_result(result, source, query, limit, raw, json_lines, filing_type) -> None:
+    if json_lines:
+        for e in result.entities[:limit]:
+            typer.echo(json.dumps(_compact_result(e), ensure_ascii=False, default=str))
+        return
+
+    if raw:
         typer.echo(
             json.dumps(
                 [e.to_dict() for e in result.entities[:limit]],
@@ -3958,9 +4150,7 @@ def records_search(
         return
 
     if not result.entities:
-        if result.error:
-            rprint(f"[red]Search error ({source}): {result.error}[/red]")
-        elif source == "sec":
+        if source == "sec":
             rprint(
                 f"[yellow]{source} returned {result.total_results} total results for '{query}'.[/yellow]"
             )
@@ -4285,9 +4475,11 @@ def records_fetch(
     import asyncio
 
     if source == "documentcloud":
+        from .cases import active_case_id_in_db
         from .records.documentcloud import DocumentCloudAdapter
 
         adapter = DocumentCloudAdapter()
+        case_id = active_case_id_in_db()
 
         with Progress(
             SpinnerColumn(),
@@ -4296,7 +4488,7 @@ def records_fetch(
         ) as progress:
             progress.add_task(f"Fetching document {doc_id} from DocumentCloud...", total=None)
             try:
-                result_id, text = asyncio.run(adapter.pull_text(doc_id))
+                result_id, text = asyncio.run(adapter.pull_text(doc_id, case_id=case_id))
             except Exception as e:
                 rprint(f"[red]Fetch failed: {e}[/red]")
                 raise typer.Exit(1) from None
@@ -4308,6 +4500,8 @@ def records_fetch(
 
         rprint(f"\n[green]Saved to database:[/green] {result_id[:8]}...")
         rprint(f"  Text length: {len(text):,} characters")
+        if case_id:
+            rprint("  [dim]Attached to the active case.[/dim]")
         rprint(f"\n[dim]Extract entities: openfoia analyze extract {result_id}[/dim]")
     else:
         rprint(
@@ -4425,9 +4619,11 @@ def records_download(
         if ingest_results:
             from uuid import uuid4
 
+            from .cases import active_case_id_in_db
             from .db import get_session
             from .models import DeliveryMethod, Document, DocumentType, Request, RequestStatus, User
 
+            case_id = active_case_id_in_db()
             with get_session() as session:
                 # Create a placeholder request for downloaded docs
                 user = session.query(User).first()
@@ -4452,6 +4648,7 @@ def records_download(
                     body="Downloaded from MuckRock",
                     delivery_method=DeliveryMethod.EMAIL,
                     status=RequestStatus.COMPLETE,
+                    case_id=case_id,
                 )
                 session.add(dl_req)
                 session.flush()
@@ -4473,6 +4670,238 @@ def records_download(
 
         rprint(f"\n[green]{ingested} file(s) ingested.[/green]")
         rprint("[dim]Run 'openfoia analyze extract --all' to extract entities.[/dim]")
+
+
+# === Case Commands ===
+
+
+def _require_db() -> None:
+    from .db import get_db_path
+
+    if not get_db_path().exists():
+        rprint("[yellow]Database not initialized. Run 'openfoia init' first.[/yellow]")
+        raise typer.Exit(1)
+
+
+def _resolve_case_or_exit(session, name: str | None):
+    """The named case, else the active case; exits when neither resolves."""
+    from .cases import find_case, get_active_case
+
+    case = find_case(session, name) if name else get_active_case(session)
+    if case is None:
+        if name:
+            rprint(f"[red]No case named '{name}'. See 'openfoia case list'.[/red]")
+        else:
+            rprint(
+                "[yellow]No active case. Pass a name or run 'openfoia case use <name>'.[/yellow]"
+            )
+        raise typer.Exit(1)
+    return case
+
+
+def _doc_source_url(doc, req) -> str | None:
+    import re
+
+    if req is not None and req.body:
+        url_match = re.search(r"https?://\S+", req.body)
+        if url_match:
+            return url_match.group(0)
+    dc_match = re.match(r"documentcloud-(\d+)", doc.filename or "")
+    if dc_match:
+        return f"https://www.documentcloud.org/documents/{dc_match.group(1)}/"
+    mr_match = re.match(r"muckrock-(\d+)", doc.filename or "")
+    if mr_match:
+        return f"https://www.muckrock.com/foi/{mr_match.group(1)}/"
+    return None
+
+
+def _case_summary(session, case) -> dict[str, Any]:
+    from .models import CaseQuery, Document, Entity
+    from .models import Request as RequestModel
+
+    rows = (
+        session.query(Document, RequestModel)
+        .join(RequestModel, Document.request_id == RequestModel.id)
+        .filter(RequestModel.case_id == case.id)
+        .order_by(Document.received_at)
+        .all()
+    )
+    queries = (
+        session.query(CaseQuery)
+        .filter(CaseQuery.case_id == case.id)
+        .order_by(CaseQuery.created_at)
+        .all()
+    )
+    entity_count = (
+        session.query(Entity)
+        .join(Document)
+        .join(RequestModel)
+        .filter(RequestModel.case_id == case.id)
+        .count()
+    )
+    stamps = [case.updated_at, *(d.received_at for d, _ in rows), *(q.created_at for q in queries)]
+    documents = []
+    for doc, req in rows:
+        is_dc = req.request_number.startswith("DC-")
+        documents.append(
+            {
+                "title": req.subject,
+                "source_url": _doc_source_url(doc, req),
+                "documentcloud_id": req.request_number.removeprefix("DC-") if is_dc else None,
+                "filename": doc.filename,
+                "pages": doc.page_count,
+                "retrieved": doc.received_at.isoformat() if doc.received_at else None,
+            }
+        )
+    return {
+        "name": case.name,
+        "slug": case.slug,
+        "description": case.description,
+        "created": case.created_at.isoformat(),
+        "last_activity": max(s for s in stamps if s).isoformat(),
+        "entity_count": entity_count,
+        "documents": documents,
+        "queries": [
+            {
+                "source": q.source,
+                "query": q.query,
+                "total_results": q.total_results,
+                "run_at": q.created_at.isoformat(),
+            }
+            for q in queries
+        ],
+    }
+
+
+@case_app.command("new")
+def case_new(
+    name: str = typer.Argument(..., help="Case name, e.g. 'CIA PAS'"),
+    desc: str | None = typer.Option(None, "--desc", "-d", help="Short description"),
+):
+    """Create a case and make it the active one."""
+    from .cases import set_active_case_id, slugify
+    from .db import get_db_path, get_session, init_db
+    from .models import Case
+
+    if not get_db_path().exists():
+        init_db()
+
+    with get_session() as session:
+        slug = slugify(name)
+        if session.query(Case).filter(Case.slug == slug).first():
+            rprint(f"[red]A case with slug '{slug}' already exists.[/red]")
+            raise typer.Exit(1)
+        case = Case(name=name, slug=slug, description=desc)
+        session.add(case)
+        session.flush()
+        set_active_case_id(case.id)
+
+    rprint(f"[green]Created case[/green] [cyan]{name}[/cyan] ({slug}) — now active.")
+
+
+@case_app.command("list")
+def case_list():
+    """List cases. The active one is marked with *."""
+    from .cases import get_active_case_id
+    from .db import get_session
+    from .models import Case
+
+    _require_db()
+    active_id = get_active_case_id()
+    with get_session() as session:
+        cases = session.query(Case).order_by(Case.created_at).all()
+        if not cases:
+            rprint("[yellow]No cases yet. Create one: openfoia case new <name>[/yellow]")
+            return
+        for c in cases:
+            marker = "*" if c.id == active_id else " "
+            rprint(f"{marker} [cyan]{c.name}[/cyan]  [dim]{c.slug}[/dim]")
+
+
+@case_app.command("use")
+def case_use(name: str = typer.Argument(..., help="Case name or slug")):
+    """Make a case active. Searches, fetches and graphs then attach to it."""
+    from .cases import set_active_case_id
+    from .db import get_session
+
+    _require_db()
+    with get_session() as session:
+        case = _resolve_case_or_exit(session, name)
+        set_active_case_id(case.id)
+        rprint(f"[green]Active case:[/green] [cyan]{case.name}[/cyan]")
+
+
+@case_app.command("close")
+def case_close():
+    """Clear the active case. Nothing is deleted."""
+    from .cases import clear_active_case
+
+    clear_active_case()
+    rprint("[green]No active case.[/green]")
+
+
+@case_app.command("show")
+def case_show(name: str | None = typer.Argument(None, help="Case name (default: active)")):
+    """Documents, entities, logged queries and last activity for a case."""
+    from .db import get_session
+
+    _require_db()
+    with get_session() as session:
+        s = _case_summary(session, _resolve_case_or_exit(session, name))
+
+    rprint(f"\n[bold cyan]{s['name']}[/bold cyan] [dim]({s['slug']})[/dim]")
+    if s["description"]:
+        rprint(f"  {s['description']}")
+    rprint(f"  Documents:      {len(s['documents'])}")
+    rprint(f"  Entities:       {s['entity_count']}")
+    rprint(f"  Queries logged: {len(s['queries'])}")
+    rprint(f"  Last activity:  {s['last_activity'][:19]}")
+
+
+@case_app.command("export")
+def case_export(
+    name: str | None = typer.Argument(None, help="Case name (default: active)"),
+    fmt: str = typer.Option("md", "--format", "-f", help="md or json"),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Write to file"),
+):
+    """Export a case's document list and query log (no document text)."""
+    from .db import get_session
+
+    if fmt not in ("md", "json"):
+        rprint("[red]--format must be md or json.[/red]")
+        raise typer.Exit(2)
+    _require_db()
+    with get_session() as session:
+        s = _case_summary(session, _resolve_case_or_exit(session, name))
+
+    if fmt == "json":
+        text = json.dumps(s, indent=2, ensure_ascii=False)
+    else:
+        lines = [f"# {s['name']}", ""]
+        if s["description"]:
+            lines += [s["description"], ""]
+        lines += [f"Exported {_utcnow().isoformat()[:19]} UTC", "", "## Documents", ""]
+        lines += ["| Title | Source | ID / file | Pages | Retrieved |", "|---|---|---|---|---|"]
+        for d in s["documents"]:
+            cells = [
+                d["title"],
+                d["source_url"] or "-",
+                d["documentcloud_id"] or d["filename"],
+                str(d["pages"] or "-"),
+                (d["retrieved"] or "-")[:10],
+            ]
+            lines.append("| " + " | ".join(str(c).replace("|", "\\|") for c in cells) + " |")
+        lines += ["", "## Queries", ""]
+        for q in s["queries"]:
+            total = "?" if q["total_results"] is None else q["total_results"]
+            lines.append(f"- {q['run_at'][:19]} `{q['source']}` {q['query']!r} ({total} results)")
+        text = "\n".join(lines) + "\n"
+
+    if output:
+        output.write_text(text)
+        rprint(f"[green]Exported to {output}[/green] [dim](plaintext, outside the database)[/dim]")
+    else:
+        typer.echo(text, nl=False)
 
 
 # === Cross-Reference Command ===
