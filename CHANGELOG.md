@@ -23,6 +23,11 @@ exhaustive lists.
 - `OPENFOIA_GOVINFO_API_KEY` supplies a GovInfo (api.data.gov) key; a 403 or
   429 from GovInfo now names it.
 
+- `docs/RECORDS_LADDER.md`: which rung of the US public-records system holds
+  a record (the public body, the state law, state agencies and archives,
+  federal FOIA, non-FOIA paths such as NARA and CREST), how to ask at each,
+  what goes wrong, a worked Detroit example, and what openfoia covers today.
+
 ### Internal
 
 - Text-pulling adapters share one storage path (`openfoia/records/store.py`),

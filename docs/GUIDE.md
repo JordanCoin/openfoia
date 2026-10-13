@@ -61,6 +61,9 @@ outside the database, like graph exports.
 
 ### Option A: File a new FOIA request
 
+Not sure whether your record is federal, state or local, or who holds it?
+Read [The Records Ladder](RECORDS_LADDER.md) first.
+
 ```bash
 # Search for the right agency
 openfoia records search "FBI" --source muckrock
