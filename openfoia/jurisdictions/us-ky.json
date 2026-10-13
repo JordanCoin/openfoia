@@ -4,48 +4,48 @@
   "level": "state",
   "statute": {
     "name": "Kentucky Open Records Act",
-    "citation": null,
-    "url": null
+    "citation": "Ky. Rev. Stat. 61.870 to 61.884 (response 61.880(1); AG review 61.880(2))",
+    "url": "https://www.rcfp.org/open-government-guide/kentucky/"
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
+    "days": 5,
+    "unit": "business",
+    "rule_text": "Agency has five days, excluding weekends and holidays, to notify the requester in writing whether it will allow or deny inspection, Ky. Rev. Stat. 61.880(1).",
     "extension_days": null,
     "extension_unit": null,
-    "silence_is_denial": null
+    "silence_is_denial": true
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "search_allowed": false,
+    "labor_rule": "No charge for labor/time searching for records requested for noncommercial use; search charges permitted for commercial use.",
+    "copy_rule": "Reasonable copy fee; state agencies charge 10 cents per page (200 KAR 1:020 § 3(1)); county clerks up to 50 cents per page.",
+    "waiver_rule": "No provision for waiving fees (94-ORD-90).",
     "estimate_required": null,
     "late_penalty": null
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": true,
+    "rule_text": "Kentucky residents have an enforceable right under the Act; nonresidents may request and be granted records but their requests are not enforceable, Ky. Rev. Stat. 61.872(1), (3)."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Attorney General (then Circuit Court)",
+    "type": "attorney_general",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "A requester denied access may ask the Attorney General to review under Ky. Rev. Stat. 61.880(2); the AG has 20 business days (extendable 30 more) to issue a decision, and either party may appeal to Circuit Court within 30 days of that decision."
   },
   "exemptions_citation": null,
   "format_rule": null,
   "covers": {
-    "governor": null,
-    "legislature": null,
+    "governor": true,
+    "legislature": true,
     "universities_public": null,
-    "school_districts": null
+    "school_districts": true
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/kentucky/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "appeal.deadline_days left null: 30 days in RCFP is the circuit-court deadline after the AG decision; the deadline to ask the AG was not found in fetched text. Legislature is covered but AG does not review its denials (separate body reviews). Failure to give written response within five business days permits AG enforcement. Universities: foundation donor-name case suggests coverage but not confirmed as a rule."
 }

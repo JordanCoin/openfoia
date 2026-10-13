@@ -3,49 +3,49 @@
   "name": "Hawaii",
   "level": "state",
   "statute": {
-    "name": "Uniform Information Practices Act",
-    "citation": null,
-    "url": null
+    "name": "Uniform Information Practices Act (Modified) (UIPA)",
+    "citation": "Haw. Rev. Stat. ch. 92F (access § 92F-11; suit § 92F-15; OIP § 92F-41 et seq.)",
+    "url": "https://www.rcfp.org/open-government-guide/hawaii/"
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
-    "extension_days": null,
-    "extension_unit": null,
+    "days": 10,
+    "unit": "business",
+    "rule_text": "For formal requests the agency has ten business days to disclose records released in full, or to give notice if records will be segregated, Haw. Code R. § 2-71-13; in extenuating circumstances it may acknowledge within ten business days and give written notice within twenty business days.",
+    "extension_days": 10,
+    "extension_unit": "business",
     "silence_is_denial": null
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "search_allowed": true,
+    "labor_rule": "OIP rules set fees for searching, reviewing and segregating records; reproduction costs may include labor for search and reproduction.",
+    "copy_rule": "Reasonable costs, not less than five cents per page, Haw. Rev. Stat. § 92-21.",
+    "waiver_rule": "UIPA directs OIP to adopt rules on waivers of fees when the public interest would be served.",
     "estimate_required": null,
     "late_penalty": null
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "No citizenship restriction; 'any person' may request, Haw. Rev. Stat. § 92F-11(b)."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Office of Information Practices (OIP); then circuit court",
+    "type": "ombudsman_advisory",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "A person denied access may appeal to the OIP under Haw. Code R. ch. 2-73 or sue within two years of the denial (Haw. Rev. Stat. § 92F-15); exhaustion not required."
   },
   "exemptions_citation": null,
   "format_rule": null,
   "covers": {
     "governor": null,
-    "legislature": null,
+    "legislature": true,
     "universities_public": null,
     "school_districts": null
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/hawaii/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Appeal type is my classification of OIP (RCFP: OIP 'review and rule on' denials); OIP appeal filing deadline not found (court suit window is 2 years). Silence-is-denial not confirmed. Legislature covered except inchoate/draft working papers (§ 92F-13(5))."
 }

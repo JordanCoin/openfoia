@@ -4,35 +4,35 @@
   "level": "state",
   "statute": {
     "name": "Idaho Public Records Act",
-    "citation": null,
-    "url": null
+    "citation": "Idaho Code § 74-101 et seq. (response § 74-103; fees § 74-102(10); suit § 74-115)",
+    "url": "https://www.rcfp.org/open-government-guide/idaho/"
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
-    "extension_days": null,
-    "extension_unit": null,
-    "silence_is_denial": null
+    "days": 3,
+    "unit": "business",
+    "rule_text": "Agency has three working days to grant or deny; if more time is needed to locate or retrieve records it must notify the requester in writing and grant or deny within 10 working days from the request in total, Idaho Code § 74-103(1).",
+    "extension_days": 7,
+    "extension_unit": "business",
+    "silence_is_denial": true
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
+    "search_allowed": true,
+    "labor_rule": "Labor charged at the hourly rate of the lowest-paid qualified staff member (attorney rate for attorney redactions) when labor exceeds the free threshold (two person-hours), Idaho Code § 74-102(10)(b).",
+    "copy_rule": "Copy fees may not exceed actual labor and copying cost; statements must be itemized, § 74-102(10)(b).",
     "waiver_rule": null,
     "estimate_required": null,
     "late_penalty": null
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "'Any person' may request; no distinction between citizens and non-citizens, Idaho Code § 74-102(1), § 74-101(9)."
   },
   "appeal": {
-    "body": null,
-    "type": null,
-    "deadline_days": null,
-    "deadline_unit": null,
-    "rule_text": null
+    "body": "District court of the county where records are located (Public Records Ombudsman is informal)",
+    "type": "court",
+    "deadline_days": 180,
+    "deadline_unit": "calendar",
+    "rule_text": "The sole remedy is a district court action, Idaho Code § 74-115(1); RCFP notes a 180-day period running from mailing of the denial notice. No response within ten working days is deemed a denial."
   },
   "exemptions_citation": null,
   "format_rule": null,
@@ -40,12 +40,12 @@
     "governor": null,
     "legislature": null,
     "universities_public": null,
-    "school_districts": null
+    "school_districts": true
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/idaho/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Silence deemed denied after ten working days. Free-threshold detail (two person-hours; page count not confirmed). Governor created a Public Records Ombudsman (informal, non-binding). Governor/legislature/universities not extracted. The 180-day period is stated in RCFP time text; statutory subsection not captured."
 }

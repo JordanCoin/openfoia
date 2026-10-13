@@ -4,48 +4,48 @@
   "level": "state",
   "statute": {
     "name": "Nevada Public Records Act",
-    "citation": null,
+    "citation": "NRS Chapter 239 (esp. 239.010, 239.0107, 239.011, 239.052)",
     "url": null
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
+    "days": 5,
+    "unit": "business",
+    "rule_text": "Agency must respond not later than the end of the fifth business day after receipt (NRS 239.0107).",
     "extension_days": null,
     "extension_unit": null,
     "silence_is_denial": null
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "search_allowed": false,
+    "labor_rule": "No fee for determining whether a record is public, searching/retrieving, or staff time (NAC 239.864 per RCFP).",
+    "copy_rule": "Copy fee may not exceed actual cost unless statute says otherwise (NRS 239.052(1)).",
+    "waiver_rule": "Discretionary waivers require written policy and posted notice (NRS 239.052(2)).",
     "estimate_required": null,
     "late_penalty": null
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "Any person may request records (NRS 239.0107(1))."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "District court",
+    "type": "court",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "No administrative review; seek order in district court of county where record is held (NRS 239.011(1)); no filing deadline stated. Supreme Court appeal notice within 30 days of notice of entry of judgment (NRAP 4(a)(1))."
   },
-  "exemptions_citation": null,
-  "format_rule": null,
+  "exemptions_citation": "NRS 239.010 (list of confidential statutes); NRS 239.001(3) narrow construction",
+  "format_rule": "Copy may be provided in any medium in which the record is readily available (NRS 239.010(4)); oral or written requests valid.",
   "covers": {
-    "governor": null,
-    "legislature": null,
+    "governor": true,
+    "legislature": false,
     "universities_public": null,
     "school_districts": null
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/nevada/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Silence-as-denial not stated; RCFP says no case authority treats delay as denial. Legislature excluded per LCB memo/NRS 41.071 (RCFP). First 100k chars read only."
 }

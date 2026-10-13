@@ -3,36 +3,36 @@
   "name": "Indiana",
   "level": "state",
   "statute": {
-    "name": "Access to Public Records Act",
-    "citation": null,
-    "url": null
+    "name": "Access to Public Records Act (APRA)",
+    "citation": "Ind. Code § 5-14-3-1 et seq. (access § 5-14-3-3; denial § 5-14-3-9)",
+    "url": "https://www.rcfp.org/open-government-guide/indiana/"
   },
   "response": {
     "days": null,
     "unit": null,
-    "rule_text": null,
+    "rule_text": "A written (mail/fax) request is deemed denied if not answered within seven days of receipt; in-person or phone requests are deemed denied immediately on refusal or after 24 hours, Ind. Code § 5-14-3-9.",
     "extension_days": null,
     "extension_unit": null,
-    "silence_is_denial": null
+    "silence_is_denial": true
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "search_allowed": false,
+    "labor_rule": "Agencies generally may not charge to inspect, search for, examine or review a record to decide disclosability (court-ordered exceptions), Ind. Code § 5-14-3-8.",
+    "copy_rule": "Non-state agencies: up to the greater of 10 cents per B&W page (25 cents color) or actual copy cost; state agencies follow a uniform fee set by the Dept of Administration, not above the greater of average cost or 10 cents per page, § 5-14-3-8.",
+    "waiver_rule": "No mandatory waivers (as of 2017); agencies may waive at discretion.",
     "estimate_required": null,
     "late_penalty": null
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "'Any person' may inspect and copy public records, Ind. Code § 5-14-3-3(a)."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Public Access Counselor (advisory), then any court of competent jurisdiction",
+    "type": "ombudsman_advisory",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "No administrative appeal; the requester may file a complaint with the Public Access Counselor within 30 days of the denial (Ind. Code § 5-14-5) who issues an advisory opinion within 30 days, and may sue in court; AG has no enforcement role."
   },
   "exemptions_citation": null,
   "format_rule": null,
@@ -45,7 +45,7 @@
   "sources": [
     "https://www.rcfp.org/open-government-guide/indiana/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Governor/legislature/universities/school districts not extracted (Pence 'white paper' case only). The 30-day PAC complaint window per RCFP time text (Ind. Code § 5-14-5-7 not captured). Search-fee subsection cite § 5-14-3-8 inferred from RCFP fee discussion. Response days and appeal deadline null: RCFP says 'seven days' and '30 days' without a unit; both rules stay in rule_text."
 }

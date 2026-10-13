@@ -432,19 +432,11 @@ Please contact me if you have questions about this request.
         request.status = RequestStatus.SENT
         request.sent_at = _utcnow()
 
-        # Auto-set due date (20 business days under federal FOIA; a body under a
-        # state law with no known clock gets no due date rather than a fake one)
-        response_days = request.agency.typical_response_days if request.agency else 20
-        if not request.due_date and response_days is not None:
-            from datetime import timedelta
+        # Same code path as the CLI: the agency's jurisdiction rule decides the
+        # clock, and a law with no known clock yields no due date, never a fake one.
+        from .clocks import request_clocks
 
-            current = request.sent_at
-            days_added = 0
-            while days_added < response_days:
-                current += timedelta(days=1)
-                if current.weekday() < 5:
-                    days_added += 1
-            request.due_date = current
+        request.due_date = request_clocks(request).response_due
 
         self.db.commit()
 

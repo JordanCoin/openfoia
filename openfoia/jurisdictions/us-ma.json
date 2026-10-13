@@ -4,48 +4,48 @@
   "level": "state",
   "statute": {
     "name": "Massachusetts Public Records Law",
-    "citation": null,
-    "url": null
+    "citation": "G.L. c. 66, § 10; definition at G.L. c. 4, § 7, cl. 26; regs 950 CMR 32.00",
+    "url": "https://www.rcfp.org/open-government-guide/massachusetts/"
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
+    "days": 10,
+    "unit": "business",
+    "rule_text": "Custodian must respond within 10 business days of receiving the request, G.L. c. 66, § 10(a); a custodian may ask the Supervisor of Records for more time (within 20 business days of the request) but must still send an initial response in 10 business days.",
     "extension_days": null,
     "extension_unit": null,
-    "silence_is_denial": null
+    "silence_is_denial": true
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "search_allowed": true,
+    "labor_rule": "No charge for the first four hours (state agencies; municipalities over 20,000 first two hours); not more than $25/hour thereafter; no fee for segregation/redaction unless required by law (950 CMR 32.07).",
+    "copy_rule": "Reasonable actual copying cost (schedule not extracted).",
+    "waiver_rule": "Custodian may consider fee waiver requests (public interest); fees are waived if the custodian fails to respond to the initial request in 10 business days.",
     "estimate_required": null,
-    "late_penalty": null
+    "late_penalty": "Fees are waived if custodian does not respond within 10 business days."
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "'Any person' may request, G.L. c. 66, § 10(a); appears to include non-residents; custodian may not ask about status or motive (950 CMR 32.06(1)(h))."
   },
   "appeal": {
-    "body": null,
-    "type": null,
-    "deadline_days": null,
-    "deadline_unit": null,
-    "rule_text": null
+    "body": "Supervisor of Public Records (Secretary of the Commonwealth); or Superior Court",
+    "type": "ombudsman_advisory",
+    "deadline_days": 90,
+    "deadline_unit": "calendar",
+    "rule_text": "Optional administrative appeal to the Supervisor of Records within 90 calendar days of the response, G.L. c. 66, § 10(b); 950 CMR 32.08. The Supervisor can order compliance but has no enforcement power (may refer to AG/DA); requester may instead go to court."
   },
   "exemptions_citation": null,
   "format_rule": null,
   "covers": {
-    "governor": null,
-    "legislature": null,
+    "governor": false,
+    "legislature": false,
     "universities_public": null,
     "school_districts": null
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/massachusetts/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Appeal type classification is my judgement (Supervisor can order but not enforce). Governor held not explicitly covered by the law (SJC) and the Supervisor says governor's records are not subject; legislature and courts not subject. Universities/school districts not confirmed as rule. Extension amounts beyond request-to-Supervisor not extracted."
 }

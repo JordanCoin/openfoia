@@ -4,48 +4,48 @@
   "level": "state",
   "statute": {
     "name": "Right-to-Know Law",
-    "citation": null,
+    "citation": "65 Pa. Stat. Ann. § 67.101 et seq.",
     "url": null
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
+    "days": 5,
+    "unit": "business",
+    "rule_text": "Agency must respond within five business days of the open-records officer receiving a written request; no response is a deemed denial (65 P.S. § 67.901). With one of seven listed reasons and notice within the five business days, the agency gets up to 30 days to respond (§ 67.902); RCFP does not label the unit.",
     "extension_days": null,
     "extension_unit": null,
-    "silence_is_denial": null
+    "silence_is_denial": true
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
-    "estimate_required": null,
+    "search_allowed": false,
+    "labor_rule": "No fee for agency review to decide whether a record is public; other fees only where agency necessarily incurs costs and must be reasonable; staff payroll not chargeable (§ 67.1307(g)).",
+    "copy_rule": "Duplication fees reasonable and based on prevailing fees for comparable services (§ 67.1307(b)(2)); postage at actual cost.",
+    "waiver_rule": "Optional: agency may waive duplication fees if requester duplicates or public interest (§ 67.1307(f)).",
+    "estimate_required": "Prepayment of estimate allowed if fees expected to exceed $100 (§ 67.1307(h)).",
     "late_penalty": null
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": true,
+    "rule_text": "Requester must be a legal resident of the United States (§ 67.102 'requester'); state residency not required."
   },
   "appeal": {
-    "body": null,
-    "type": null,
-    "deadline_days": null,
-    "deadline_unit": null,
-    "rule_text": null
+    "body": "Office of Open Records (appeals officer), then Commonwealth Court or county Court of Common Pleas",
+    "type": "commission",
+    "deadline_days": 15,
+    "deadline_unit": "business",
+    "rule_text": "Appeal to OOR within 15 business days of the agency response mailing or deemed denial; OOR final determination within 30 days (§ 67.1101-1310); petition for review within 30 days of final determination."
   },
-  "exemptions_citation": null,
-  "format_rule": null,
+  "exemptions_citation": "65 P.S. § 67.708(b)",
+  "format_rule": "Record provided in the medium requested if it exists in that medium (§ 67.701(a)); no duty to create new records (§ 67.705).",
   "covers": {
-    "governor": null,
-    "legislature": null,
-    "universities_public": null,
-    "school_districts": null
+    "governor": true,
+    "legislature": true,
+    "universities_public": true,
+    "school_districts": true
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/pennsylvania/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Read chars 0-100k and 170-270k. Extension nulled: the 30-day unit is not labeled by RCFP and whether it runs from the notice or the request is not stated; see rule_text. RCFP chapter last updated Oct 2019. Legislature covered for 'legislative records' only. State-related universities (Temple, Pitt, Penn State, Lincoln) have reporting duties under §§ 67.1501-1504; PASSHE and community colleges are state-affiliated."
 }

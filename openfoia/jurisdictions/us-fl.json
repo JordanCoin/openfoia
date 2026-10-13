@@ -4,21 +4,21 @@
   "level": "state",
   "statute": {
     "name": "Florida Public Records Act",
-    "citation": "Fla. Stat. ch. 119",
-    "url": null
+    "citation": "Fla. Stat. ch. 119 (access § 119.01; inspection/fees § 119.07)",
+    "url": "https://www.rcfp.org/open-government-guide/florida/"
   },
   "response": {
     "days": null,
     "unit": "none",
-    "rule_text": "No fixed deadline; records must be produced within a reasonable time and the only delay allowed is that needed to retrieve and redact.",
+    "rule_text": "No set time limit; only a reasonable time to retrieve and redact is permitted (Tribune Co. v. Cannella; automatic 24/48-hour delays impermissible).",
     "extension_days": null,
     "extension_unit": null,
     "silence_is_denial": null
   },
   "fees": {
-    "search_allowed": true,
-    "labor_rule": "A 'special service fee' for extensive clerical or information-technology work.",
-    "copy_rule": "Actual cost of duplication, or 15 cents per page (plus 5 cents two-sided) where no fee is prescribed.",
+    "search_allowed": false,
+    "labor_rule": "'Search or exploration' and employee-time fees may not be charged, but a special service charge is allowed for extensive clerical or IT resources, Fla. Stat. § 119.07(4)(d).",
+    "copy_rule": "Actual cost of duplication; if no fee prescribed by law, not more than $0.15 per one-sided copy up to 14x8.5 in and $0.05 extra per two-sided copy, § 119.07(4)(a).",
     "waiver_rule": null,
     "estimate_required": null,
     "late_penalty": null
@@ -32,13 +32,13 @@
     "type": "court",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": "Attorney fees to a prevailing requester."
+    "rule_text": "No administrative appeal; enforcement by civil suit (ch. 119), with optional voluntary mediation through the Attorney General's office, Fla. Stat. § 16.60. No statutory limit on suit; general 4-year statute applies."
   },
   "exemptions_citation": "Fla. Stat. 119.071 and statute-specific exemptions",
   "format_rule": null,
   "covers": {
-    "governor": null,
-    "legislature": null,
+    "governor": true,
+    "legislature": true,
     "universities_public": true,
     "school_districts": true
   },
@@ -47,5 +47,5 @@
   ],
   "verified": true,
   "verified_at": "2026-10-14",
-  "notes": null
+  "notes": "Governor/Cabinet covered when sitting as board prescribed by Legislature; Legislature covered unless it provides contrary legislative rule. Silence-is-denial, universities and school districts not extracted. Fee waiver not found."
 }

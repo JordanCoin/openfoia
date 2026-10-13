@@ -4,13 +4,13 @@
   "level": "state",
   "statute": {
     "name": "Michigan Freedom of Information Act",
-    "citation": "MCL 15.231 to 15.246",
+    "citation": "Mich. Comp. Laws §§ 15.231-15.246 (response § 15.235; appeals § 15.240)",
     "url": "https://www.legislature.mi.gov/Laws/MCL?objectName=mcl-Act-442-of-1976"
   },
   "response": {
     "days": 5,
     "unit": "business",
-    "rule_text": "5 business days to respond, with one written extension of up to 10 business days. A non-response counts as a final denial only when the request cited FOIA in its first 250 words or on the envelope or subject line (MCL 15.235).",
+    "rule_text": "5 business days to respond, with one written extension of up to 10 business days. A non-response is a final denial when (a) the failure to respond was willful and intentional, or (b) the request said FOIA or freedom of information in its first 250 words, on the envelope, or in the subject line (MCL 15.235).",
     "extension_days": 10,
     "extension_unit": "business",
     "silence_is_denial": null
@@ -18,7 +18,7 @@
   "fees": {
     "search_allowed": true,
     "labor_rule": "Labor at the hourly wage of the lowest-paid employee capable of the work, in 15-minute increments; an itemized estimate is required.",
-    "copy_rule": "Actual cost of copies; a deposit may be required when the estimate exceeds $50.",
+    "copy_rule": "Actual mailing and incremental duplication or publication cost (Mich. Comp. Laws § 15.234).",
     "waiver_rule": "First $20 waived for indigent requesters and certain nonprofits.",
     "estimate_required": true,
     "late_penalty": "Fees are reduced 50% when the body misses its deadline."
@@ -28,7 +28,7 @@
     "rule_text": "Any person except incarcerated persons."
   },
   "appeal": {
-    "body": "Head of the public body, or circuit court",
+    "body": "Head of the public body (optional), then circuit court",
     "type": "court",
     "deadline_days": 180,
     "deadline_unit": "calendar",
@@ -40,12 +40,12 @@
     "governor": false,
     "legislature": false,
     "universities_public": null,
-    "school_districts": null
+    "school_districts": true
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/michigan/"
   ],
   "verified": true,
   "verified_at": "2026-10-14",
-  "notes": "Governor and Legislature remain outside the act; reform bills passed the Senate in 2025 and stalled in the House. Whether public universities and school districts are 'public bodies' under MCL 15.232 was not confirmed from the fetched source; the statute's definition is the place to check."
+  "notes": "Governor and Legislature remain outside the act; reform bills passed the Senate in 2025 and stalled in the House. Executive Office of the Governor and lieutenant governor are excluded from 'public body' (§ 15.232). School districts: true, from the 'public body' definition in MCL 15.232; public universities left null because the fetched source did not state a rule. Residency: any person except incarcerated persons (MCL 15.231(2), 15.232). 180 days is the court deadline; no separate deadline for the internal appeal found. AG plays no enforcement role."
 }

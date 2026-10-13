@@ -12,14 +12,36 @@ exhaustive lists.
 
 ### Added
 
+- All 50 states and DC now carry sourced statute, clock, fee, residency and
+  appeal data for their public-records law, read from the Reporters Committee
+  for Freedom of the Press Open Government Guide
+  (https://www.rcfp.org/open-government-guide/); Tennessee is partial (its
+  response clock was not in the fetched text). `openfoia jurisdiction list`
+  ends with a verified/unverified count. `scripts/rcfp_jurisdictions.py`
+  drafts a jurisdiction file from a saved guide page, so the data can be
+  rebuilt without retyping it; it fetches nothing itself.
+
+- Request clocks come from the agency's jurisdiction: `openfoia request mark
+  <id> acknowledged|extended|tolled --until <date>|received|denied|appealed|
+  still-interested --due <date>|replied|closed [--on <date>]` records the
+  event in the timeline and recomputes every clock from the law each time it
+  is shown: the response deadline (business days skip federal holidays),
+  the extension, tolls paused in the clock's own unit, the appeal window
+  (federal 90 calendar days, Michigan 180) and the "still interested" reply
+  date. An appeal retires the response clock; only federal FOIA has an
+  appeal-decision clock (20 business days). `request status`, `deadlines
+  list` and `deadlines check` cover all of them, overdue first, and a law
+  with no statutory clock is reported as "no statutory deadline" instead of
+  an invented date, even for requests sent before this release. The agent's
+  send tool uses the same code path as the CLI. Agencies with no
+  jurisdiction fall back to federal FOIA and say so. Database migration
+  `007`.
 - Jurisdictions: federal FOIA is no longer the only law openfoia knows. One
   JSON file per public-records law lives in `openfoia/jurisdictions/`
   (`us` plus all 50 states and DC) with the statute, response clock, fee,
   residency and appeal rules; a null field means unknown, never "none", and
   stubs say `verified: false`. `openfoia jurisdiction list|show <id>|search
-  <text>` reads them. Verified today: us, us-mi, us-il, us-tx, us-ny, us-wa,
-  us-fl, each with its sources; the other 44 are stubs to be filled from the
-  statute.
+  <text>` reads them, each with its sources.
 - Local public bodies: `openfoia agency add --name ... --jurisdiction us-mi
   --level school_district [--email --address --portal --custodian-title
   --response-days]` adds a school district, city, county or university with
@@ -43,6 +65,27 @@ exhaustive lists.
   contracts, evaluations, grant files) and aggregate counts, and states that
   individual student records under FERPA (20 U.S.C. 1232g) are not requested
   and give no ground to deny the request as a whole.
+- National Archives Catalog source (`--source nara`): `records search`
+  queries catalog.archives.gov's API v2 and `records fetch <NAID> -s nara`
+  stores the record's OCR text page by page (or its description when the
+  catalog has no text) in the active case. Needs a free key in
+  `OPENFOIA_NARA_API_KEY` (email Catalog_API@nara.gov); queries are counted
+  locally against the 10,000/month quota with a warning at 80 percent and a
+  refusal at 100 percent, and sent one per second. `--all-sources` reports
+  `skipped (no OPENFOIA_NARA_API_KEY)` instead of an error without a key.
+- `OPENFOIA_GOVINFO_API_KEY` supplies a GovInfo (api.data.gov) key; a 403 or
+  429 from GovInfo now names it.
+
+- `docs/RECORDS_LADDER.md`: which rung of the US public-records system holds
+  a record (the public body, the state law, state agencies and archives,
+  federal FOIA, non-FOIA paths such as NARA and CREST), how to ask at each,
+  what goes wrong, a worked Detroit example, and what openfoia covers today.
+
+### Internal
+
+- Text-pulling adapters share one storage path (`openfoia/records/store.py`),
+  so DocumentCloud and NARA documents are stored, re-fetched and attached to
+  cases the same way.
 
 ## [4.4.0] - 2026-10-14
 

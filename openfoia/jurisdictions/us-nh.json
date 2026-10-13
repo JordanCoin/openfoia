@@ -3,14 +3,14 @@
   "name": "New Hampshire",
   "level": "state",
   "statute": {
-    "name": "Right-to-Know Law",
-    "citation": null,
+    "name": "Right-to-Know Law (Access to Government Records and Meetings)",
+    "citation": "RSA ch. 91-A",
     "url": null
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
+    "days": 5,
+    "unit": "business",
+    "rule_text": "Within 5 business days agency must make the record available, deny in writing with reasons, or acknowledge in writing and state the time reasonably necessary (RSA 91-A:4, IV).",
     "extension_days": null,
     "extension_unit": null,
     "silence_is_denial": null
@@ -18,34 +18,34 @@
   "fees": {
     "search_allowed": null,
     "labor_rule": null,
-    "copy_rule": null,
+    "copy_rule": "Actual cost of providing the copy when a public device is used (RSA 91-A:4, IV).",
     "waiver_rule": null,
     "estimate_required": null,
-    "late_penalty": null
+    "late_penalty": "Attorney fees if body knew or should have known of violation (RSA 91-A:8, I)."
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "Statute refers to every citizen (91-A:4), all persons (91-A:2), any person (91-A:7); RCFP reads this as no residency limit."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Right-to-Know Ombudsman (RSA 91-A:7-a) or Superior Court (RSA 91-A:7)",
+    "type": "court",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "No agency appeal; requester may complain to the Ombudsman or petition Superior Court (91-A:7); filing in court bars later ombudsman complaint. No deadline stated by RCFP."
   },
-  "exemptions_citation": null,
-  "format_rule": null,
+  "exemptions_citation": "RSA 91-A:5; RSA 91-A:4, I",
+  "format_rule": "Electronic copies in standard or common file formats or printouts (RSA 91-A:4, V); no customized searches or new records required (91-A:4, VII).",
   "covers": {
     "governor": null,
-    "legislature": null,
-    "universities_public": null,
-    "school_districts": null
+    "legislature": true,
+    "universities_public": true,
+    "school_districts": true
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/new-hampshire/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Governor covered only when acting with Executive Council. Legislature covered by definition (91-A:1-a, VI(a)) but conference committee held not subject (Hughes 2005). Universities: USNH trustees covered. Appeal type chosen court though ombudsman option exists. RCFP summary partially updated Sept 2023. First 100k chars read."
 }

@@ -130,6 +130,7 @@ that disclosure.
 | Guide | What |
 |-------|------|
 | **[Journalist Guide](docs/GUIDE.md)** | Full walkthrough — start here if you're new |
+| [The Records Ladder](docs/RECORDS_LADDER.md) | Which rung of the US public-records system holds your record, from the school district to NARA, and how to ask |
 | [Tails OS](docs/TAILS.md) | Running from Tails for maximum privacy |
 | [USB Install](docs/USB.md) | Encrypted USB portable setup |
 | [Air-Gapped](docs/AIRGAP.md) | Offline deployment overview |

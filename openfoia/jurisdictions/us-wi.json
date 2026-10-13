@@ -3,49 +3,49 @@
   "name": "Wisconsin",
   "level": "state",
   "statute": {
-    "name": "Wisconsin Public Records Law",
-    "citation": null,
+    "name": "Open Records Law",
+    "citation": "Wis. Stat. §§ 19.31-19.39",
     "url": null
   },
   "response": {
     "days": null,
-    "unit": null,
-    "rule_text": null,
+    "unit": "none",
+    "rule_text": "Records must be produced as soon as practicable and without delay (Wis. Stat. § 19.35(4)(a)); the RCFP text states no fixed day count.",
     "extension_days": null,
     "extension_unit": null,
-    "silence_is_denial": null
+    "silence_is_denial": false
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "search_allowed": true,
+    "labor_rule": "Locating fee only if actual, necessary and direct cost of locating exceeds $50 (§ 19.35(3)(c)); redaction cannot be charged (Milwaukee Journal Sentinel 2012).",
+    "copy_rule": "Actual, necessary and direct cost of reproduction and transcription (§ 19.35(3)(a)-(b)); mailing at actual cost.",
+    "waiver_rule": "Authority may waive or reduce fees in the public interest (§ 19.35(3)(e)).",
     "estimate_required": null,
-    "late_penalty": null
+    "late_penalty": "Prevailing requester gets damages of at least $100 plus attorney fees and costs (§ 19.37(2)); prepayment allowed only if total exceeds $5 (§ 19.35(3)(f))."
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "No residency rule in the RCFP text; only committed or incarcerated persons face limits (§ 19.32(3))."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Circuit court (mandamus); AG advice informal",
+    "type": "court",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "No administrative appeal; mandamus under § 19.37(1) by requester, district attorney or AG in circuit court of county where custodian has an office; no limit in the law, three years under § 893.93(1m) may apply. AG advice available under § 19.39."
   },
-  "exemptions_citation": null,
-  "format_rule": null,
+  "exemptions_citation": "Wis. Stat. § 19.36 (esp. (1)); common-law balancing",
+  "format_rule": "Records covered regardless of physical form (§ 19.32(2)); no duty to create new records (§ 19.35(1)(L)); emails available electronically (Lueders v. Krug 2019).",
   "covers": {
     "governor": null,
-    "legislature": null,
+    "legislature": true,
     "universities_public": null,
-    "school_districts": null
+    "school_districts": true
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/wisconsin/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Read chars 0-195k. No fixed deadline located in RCFP (B.1 subsection empty); a 10-working-day figure did not appear and was not filled. Delay is not automatically a denial (§ 19.37(1)) but an uncertain-future-date response is (WTMJ v. Sullivan 1996). Executive branch not exempt; governor not named. RCFP chapter updated Sept 2020."
 }

@@ -4,48 +4,51 @@
   "level": "state",
   "statute": {
     "name": "Arizona Public Records Law",
-    "citation": null,
-    "url": null
+    "citation": "A.R.S. § 39-121 et seq. (§§ 39-121.01, 39-121.02, 39-121.03)",
+    "url": "https://www.azleg.gov/ars/39/00121-01.htm"
   },
   "response": {
     "days": null,
-    "unit": null,
-    "rule_text": null,
+    "unit": "none",
+    "rule_text": "Records must be furnished 'promptly' (immediate access presumed); no day count in statute, A.R.S. § 39-121.01(D)(1). Courts read 'promptly' as 'at once or without delay' (West Valley View).",
     "extension_days": null,
     "extension_unit": null,
-    "silence_is_denial": null
+    "silence_is_denial": true
   },
   "fees": {
     "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "labor_rule": "Commercial-purpose requests may be charged for time, materials, equipment and personnel, A.R.S. § 39-121.03(A).",
+    "copy_rule": "Custodian 'may charge a fee if the facilities are available' (§ 39-121.01(D)(1)); may require advance payment for copies/postage when mailing. RCFP fee sections for Arizona are blank.",
+    "waiver_rule": "Records for purposes listed in A.R.S. §§ 39-122 or 39-127 furnished without charge (§ 39-121.01(D)(1)).",
     "estimate_required": null,
     "late_penalty": null
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "'Any person' may request, A.R.S. § 39-121 and § 39-121.01(D)(1)."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Superior court (special action)",
+    "type": "court",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "No administrative appeal is required before suit; denial is challenged by special action in superior court under A.R.S. § 39-121.02. Access is 'deemed denied' if the custodian fails to promptly respond, § 39-121.01(E). Ombudsman-Citizens Aide may take complaints (A.R.S. §§ 41-1371 to -1378) but this is not a records appeal."
   },
-  "exemptions_citation": null,
+  "exemptions_citation": "No specific exemptions codified in the Public Records Law (common-law balancing)",
   "format_rule": null,
   "covers": {
     "governor": null,
     "legislature": null,
     "universities_public": null,
-    "school_districts": null
+    "school_districts": true
   },
   "sources": [
-    "https://www.rcfp.org/open-government-guide/arizona/"
+    "https://www.rcfp.org/open-government-guide/arizona/",
+    "https://www.azleg.gov/ars/39/00121-01.htm",
+    "https://www.azleg.gov/ars/39/00121-03.htm",
+    "https://www.azleg.gov/ars/39/00121.htm"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "RCFP Arizona fee/exemption sections are blank; fee info from azleg.gov § 39-121.01 and .03 fetched. § 39-121.02 cited from RCFP text only. Statute URL fetched: azleg § 39-121.01. Governor/legislature/universities not confirmed."
 }

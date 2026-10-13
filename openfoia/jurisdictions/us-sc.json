@@ -4,48 +4,48 @@
   "level": "state",
   "statute": {
     "name": "South Carolina Freedom of Information Act",
-    "citation": null,
+    "citation": "S.C. Code Ann. §§ 30-4-10 et seq. (RCFP cites §§ 30-4-20, -30, -40, -100, -110; full chapter range not stated)",
     "url": null
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
+    "days": 10,
+    "unit": "business",
+    "rule_text": "For records under 24 months old, notify requester of determination within 10 days excluding weekends and holidays; 20 days for older records; records then furnished within 30 days (35 for older) (§ 30-4-30(c)). Missed deadline means the request is considered approved (§ 30-4-30, 30-4-15).",
     "extension_days": null,
     "extension_unit": null,
-    "silence_is_denial": null
+    "silence_is_denial": false
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "search_allowed": true,
+    "labor_rule": "Search, retrieval and redaction capped at prorated hourly salary of lowest-paid employee with necessary skill; no fee for review to determine disclosability.",
+    "copy_rule": "Actual cost of copies; no copy charge for electronic transmission.",
+    "waiver_rule": "Body may waive or reduce fees if furnishing primarily benefits the general public.",
     "estimate_required": null,
-    "late_penalty": null
+    "late_penalty": "Court may award damages or injunction and fine the body $500 for arbitrary and capricious refusal or delay (§ 30-4-110)."
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "Any person has a right to inspect or copy public records (§ 30-4-30); but suit under § 30-4-100 is for 'any citizen of the State' and RCFP says it is open whether a non-resident U.S. citizen may sue."
   },
   "appeal": {
-    "body": null,
-    "type": null,
-    "deadline_days": null,
-    "deadline_unit": null,
-    "rule_text": null
+    "body": "Court of Common Pleas",
+    "type": "court",
+    "deadline_days": 365,
+    "deadline_unit": "calendar",
+    "rule_text": "No administrative appeal; sue in Court of Common Pleas within one year of the violation (§ 30-4-100), initial hearing within ten days of service, attorney fees to prevailing requester."
   },
-  "exemptions_citation": null,
-  "format_rule": null,
+  "exemptions_citation": "S.C. Code Ann. § 30-4-40(a)(1)-(18); § 30-4-20(c)",
+  "format_rule": "Right to inspect, copy, or receive electronic transmission (§ 30-4-30(A)(1)); no duty to create an electronic version (§ 30-4-30(A)(2)); form convenient and practical for requester.",
   "covers": {
-    "governor": null,
-    "legislature": null,
+    "governor": true,
+    "legislature": true,
     "universities_public": null,
-    "school_districts": null
+    "school_districts": true
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/south-carolina/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Read chars 0-200k. Silence leads to deemed APPROVAL, though exemptions can still be asserted (Litchfield Plantation 1994); RCFP also says delay is treated as denial for appeal. Deadlines extendable by written agreement. 365 days for suit is 'one year' converted. Legislature covered except members' memoranda/correspondence (§ 30-4-40(a)(8)). Universities: only research/endowment exemptions mentioned. Wait for deposit (max 25%) delays clock."
 }

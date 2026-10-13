@@ -55,7 +55,7 @@ openfoia records search "Anthropic" -s sec -t 10-K
 - `--json` prints one compact object per line (id, title, source, pages, url, snippet). Save it to a file when there are more than a screenful of hits; it is the input to `records fetch --from`.
 - `--rank a,b,c` scores each hit by keyword presence in title and snippet so you can triage 200 hits without reading them all.
 - `--all-sources` fans out and prints a status line per source: `ok N`, `error: ...`, `skipped`. Exit 2 means some sources errored; say which.
-- DocumentCloud mirrors the CIA CREST archive, so it is the primary source for declassified records. MuckRock holds completed FOIA responses but needs `OPENFOIA_MUCKROCK_TOKEN`. `-s cia` queries cia.gov's reading room directly, which today reports "blocked" because of its bot filter; the workaround is to open the printed URL in a browser, download the PDF, and `openfoia docs ingest` it.
+- DocumentCloud mirrors the CIA CREST archive, so it is the primary source for declassified records. MuckRock holds completed FOIA responses but needs `OPENFOIA_MUCKROCK_TOKEN`. `-s cia` queries cia.gov's reading room directly, which today reports "blocked" because of its bot filter; the workaround is to open the printed URL in a browser, download the PDF, and `openfoia docs ingest` it. `-s nara` searches the National Archives Catalog (records already transferred to NARA, with OCR text for many) and `records fetch <NAID> -s nara` stores that text by page; it needs a free key in `OPENFOIA_NARA_API_KEY` (email Catalog_API@nara.gov) and each query counts against a 10,000/month quota that the CLI tracks.
 - Search phrase variants and the names that turn up in hits. Follow-up searches are logged to the case, so the trail is reproducible.
 
 ### 2. Fetch
@@ -128,7 +128,7 @@ The export has a Findings section (tier, note, quote, document, page, CREST numb
 
 ### 6b. Which law applies
 
-Federal FOIA reaches only federal executive agencies. A school district, city, county, police department or public university answers under its state's public-records act, with that state's clock, fees and appeal path. Check before drafting:
+The jurisdiction table was read from the Reporters Committee Open Government Guide (https://www.rcfp.org/open-government-guide/). `verified: true` means only that the statute citation, response rule and appeal path were read from a fetched source; other fields may carry caveats in notes, so read notes before quoting a fee or coverage value. `jurisdiction show` prints UNVERIFIED on the one file that is still partial; check that line before quoting a clock in a letter. Federal FOIA reaches only federal executive agencies. A school district, city, county, police department or public university answers under its state's public-records act, with that state's clock, fees and appeal path. Check before drafting:
 
 ```bash
 openfoia jurisdiction list
@@ -153,6 +153,23 @@ openfoia request new -a <agency-id> -s "subject" -f draft.txt -n "Full Name" -e 
 ```
 
 A letter to a state or local body cites that state's law, not FOIA: pass `--jurisdiction us-mi`, or add the body with `agency add` and the letter picks its law up. The state letter asks for an itemized fee estimate first, an exemption citation per withheld record, and the retention schedule plus destruction log for anything reported destroyed. It leaves `[CITE STATUTE]` and `[FEE CAP]` placeholders rather than guessing; fill them before sending. `school-program` asks a district for program records and aggregate counts and says in the letter that individual student records under FERPA are not requested. File when the open record has a specific gap you can name by document number, date range and office (a MORI or CREST number from a document index that is not online is the ideal request). `template exemptions` explains the b(1) to b(9) codes when a denial comes back. `deadlines list` tracks the statutory clock.
+
+## Clocks
+
+Every sent request runs on its agency's jurisdiction rule, not a fixed 20 days. Record what the agency does and the tool recomputes what is due:
+
+```bash
+openfoia request mark REQ-2026-001 acknowledged --on 2026-10-20
+openfoia request mark REQ-2026-001 extended                       # pushes the due date by the statute's extension
+openfoia request mark REQ-2026-001 denied                         # starts the appeal clock
+openfoia request mark REQ-2026-001 tolled --until 2026-11-01      # pauses the clock in its own unit
+openfoia request mark REQ-2026-001 still-interested --due 2026-11-15
+openfoia request mark REQ-2026-001 replied                        # clears the still-interested clock
+openfoia request status REQ-2026-001                              # every clock, days left, and the rule behind it
+openfoia deadlines list                                           # overdue first, across response, appeal and still-interested clocks
+```
+
+When a jurisdiction sets no clock the status says "no statutory deadline" and never invents one. An agency without a jurisdiction is treated as federal and the output says so.
 
 ## Reading the output
 

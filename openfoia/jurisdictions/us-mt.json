@@ -3,49 +3,49 @@
   "name": "Montana",
   "level": "state",
   "statute": {
-    "name": null,
-    "citation": null,
+    "name": "Montana Public Records Act",
+    "citation": "Mont. Code Ann. § 2-6-1001 et seq.; Mont. Const. art. II, § 9",
     "url": null
   },
   "response": {
     "days": null,
-    "unit": null,
-    "rule_text": null,
+    "unit": "none",
+    "rule_text": "No statutory, regulatory or court-set deadline; copies must be made available in a timely manner (§ 2-6-1006(2)).",
     "extension_days": null,
     "extension_unit": null,
-    "silence_is_denial": null
+    "silence_is_denial": false
   },
   "fees": {
     "search_allowed": null,
     "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "copy_rule": "Fees may not exceed actual costs incident to fulfilling the request (§ 2-6-1006(3)); agency may charge customization costs if it agrees to customize (§ 2-6-1006(4),(5)).",
+    "waiver_rule": "No code sections on fee waivers.",
     "estimate_required": null,
     "late_penalty": null
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "Any person may request under § 2-6-1006 without regard to residence (Krakauer, 2016, per RCFP)."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "District court",
+    "type": "court",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "No administrative appeal; petition district court directly, no time limit; written denial explanation required (§ 2-6-1009)."
   },
-  "exemptions_citation": null,
-  "format_rule": null,
+  "exemptions_citation": "Mont. Code Ann. § 2-6-1002(1); Mont. Const. art. II, § 9 balancing test",
+  "format_rule": "Electronic records treated like printed; requester may choose format; oral requests allowed though AG says writing may be required (37 A.G. Op. 107).",
   "covers": {
     "governor": null,
     "legislature": null,
     "universities_public": null,
-    "school_districts": null
+    "school_districts": true
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/montana/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "RCFP: executive branch covered except exempt; no court has addressed legislative records; universities not directly addressed (Krakauer involved Commissioner of Higher Education). Statute URL not fetched. Page truncated at 100k chars."
 }

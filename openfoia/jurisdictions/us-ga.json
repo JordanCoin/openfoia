@@ -4,48 +4,48 @@
   "level": "state",
   "statute": {
     "name": "Georgia Open Records Act",
-    "citation": null,
-    "url": null
+    "citation": "O.C.G.A. § 50-18-70 et seq. (response § 50-18-71; enforcement § 50-18-73)",
+    "url": "https://www.rcfp.org/open-government-guide/georgia/"
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
+    "days": 3,
+    "unit": "business",
+    "rule_text": "Agency must respond within a reasonable time not to exceed three business days; if records cannot be produced in that time it must give a description and timeline, O.C.G.A. § 50-18-71(b)(1)(A).",
     "extension_days": null,
     "extension_unit": null,
     "silence_is_denial": null
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "search_allowed": true,
+    "labor_rule": "Reasonable charge for search, retrieval, redaction and production not exceeding the prorated hourly salary of the lowest-paid full-time employee able to do the task, no charge for the first quarter hour, O.C.G.A. § 50-18-71(d).",
+    "copy_rule": "Reasonable copying cost; Act sets parameters for reasonableness.",
+    "waiver_rule": "Act neither requires nor prohibits fee waivers.",
     "estimate_required": null,
     "late_penalty": null
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "Identity of the requester is irrelevant; the right is a public right of the People as a whole (Deal v. Coleman)."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Superior court; AG may enforce; AG mediation program",
+    "type": "court",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "The Act provides no administrative appeal; enforcement is by civil action, and the AG may bring actions and run an Open Government Mediation Program, O.C.G.A. § 50-18-73. No specific limitations period."
   },
   "exemptions_citation": null,
   "format_rule": null,
   "covers": {
     "governor": null,
     "legislature": null,
-    "universities_public": null,
-    "school_districts": null
+    "universities_public": true,
+    "school_districts": true
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/georgia/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Governor's office: RCFP says some governors take position they're not subject but comply; legislature coverage not confirmed. Universities: public university records held public in case law. Fee subsection cite § 50-18-71(c) taken from RCFP fee discussion; confirm exact paragraph against statute."
 }
