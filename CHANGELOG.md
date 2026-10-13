@@ -14,15 +14,19 @@ exhaustive lists.
 
 - Request clocks come from the agency's jurisdiction: `openfoia request mark
   <id> acknowledged|extended|tolled --until <date>|received|denied|appealed|
-  still-interested --due <date>|closed [--on <date>]` records the event in
-  the timeline and recomputes the response deadline (business days skip
-  federal holidays), the appeal window (federal 90 calendar days, Michigan
-  180) and the "still interested" reply date. `request status` shows every
-  clock with days left and the rule behind it, `deadlines list` and
-  `deadlines check` cover appeal and still-interested clocks too, and a
-  jurisdiction with no statutory clock is reported as "no statutory
-  deadline" instead of an invented date. Agencies with no jurisdiction fall
-  back to federal FOIA and say so. Database migration `007`.
+  still-interested --due <date>|replied|closed [--on <date>]` records the
+  event in the timeline and recomputes every clock from the law each time it
+  is shown: the response deadline (business days skip federal holidays),
+  the extension, tolls paused in the clock's own unit, the appeal window
+  (federal 90 calendar days, Michigan 180) and the "still interested" reply
+  date. An appeal retires the response clock; only federal FOIA has an
+  appeal-decision clock (20 business days). `request status`, `deadlines
+  list` and `deadlines check` cover all of them, overdue first, and a law
+  with no statutory clock is reported as "no statutory deadline" instead of
+  an invented date, even for requests sent before this release. The agent's
+  send tool uses the same code path as the CLI. Agencies with no
+  jurisdiction fall back to federal FOIA and say so. Database migration
+  `007`.
 - Jurisdictions: federal FOIA is no longer the only law openfoia knows. One
   JSON file per public-records law lives in `openfoia/jurisdictions/`
   (`us` plus all 50 states and DC) with the statute, response clock, fee,

@@ -928,48 +928,52 @@ def request_status(
             info_table.add_row("Sent", request.sent_at.strftime("%Y-%m-%d %H:%M"))
         if request.acknowledged_at:
             info_table.add_row("Acknowledged", request.acknowledged_at.strftime("%Y-%m-%d %H:%M"))
-        from .clocks import rule_text
+        from .clocks import request_clocks, rule_text, tolls_of
 
-        law, fallback = _jurisdiction_for(request)
+        clocks = request_clocks(request)
+        law = clocks.law
+        request.due_date = clocks.response_due  # cache of the recomputed clock
         info_table.add_row(
             "Law",
             f"{law['id']}: {law['statute']['name'] or 'unknown statute'}"
             + (
-                " [dim](agency has no jurisdiction; federal FOIA assumed)[/dim]" if fallback else ""
+                " [dim](agency has no jurisdiction; federal FOIA assumed)[/dim]"
+                if clocks.fallback
+                else ""
             ),
         )
-        if request.sent_at and request.due_date is None:
-            request.due_date = _request_due_date(request, extended=request.extended_at is not None)
-        if request.due_date:
+        if clocks.response_due:
             info_table.add_row(
-                "Response due",
-                f"{request.due_date:%Y-%m-%d} {_days_left(request.due_date)}  [dim]{rule_text(law)}[/dim]",
+                clocks.response_kind.capitalize() + " due",
+                f"{clocks.response_due:%Y-%m-%d} {_days_left(clocks.response_due)}  "
+                f"[dim]{clocks.response_reason or rule_text(law)}[/dim]",
             )
-        elif request.sent_at:
+        elif request.sent_at and clocks.response_reason:
             info_table.add_row(
-                "Response due", f"no statutory deadline  [dim]{rule_text(law)}[/dim]"
+                "Appeal decision" if request.appealed_at else "Response due",
+                f"no statutory deadline  [dim]{clocks.response_reason}[/dim]",
             )
         if request.extended_at:
             info_table.add_row("Extension taken", f"{request.extended_at:%Y-%m-%d}")
-        if request.tolled_until:
-            info_table.add_row("Clock tolled until", f"{request.tolled_until:%Y-%m-%d}")
+        for start, until in tolls_of(request):
+            info_table.add_row("Clock tolled", f"{start:%Y-%m-%d} to {until:%Y-%m-%d}")
         if request.denied_at:
             info_table.add_row("Denied", f"{request.denied_at:%Y-%m-%d}")
-            if request.appeal_due_at:
-                info_table.add_row(
-                    "Appeal due",
-                    f"{request.appeal_due_at:%Y-%m-%d} {_days_left(request.appeal_due_at)}  "
-                    f"[dim]{law['appeal']['rule_text'] or ''}[/dim]",
-                )
-            else:
-                info_table.add_row("Appeal due", "unknown for this jurisdiction")
+        if clocks.appeal_due:
+            info_table.add_row(
+                "Appeal due",
+                f"{clocks.appeal_due:%Y-%m-%d} {_days_left(clocks.appeal_due)}  "
+                f"[dim]{law['appeal']['rule_text'] or ''}[/dim]",
+            )
+        elif clocks.appeal_reason:
+            info_table.add_row("Appeal due", clocks.appeal_reason)
         if request.appealed_at:
             info_table.add_row("Appealed", f"{request.appealed_at:%Y-%m-%d}")
-        if request.still_interested_due_at:
+        if clocks.still_interested_due:
             info_table.add_row(
                 "Still interested",
-                f"reply due {request.still_interested_due_at:%Y-%m-%d} "
-                f"{_days_left(request.still_interested_due_at)}",
+                f"reply due {clocks.still_interested_due:%Y-%m-%d} "
+                f"{_days_left(clocks.still_interested_due)}",
             )
         if request.agency_tracking_number:
             info_table.add_row("Tracking #", request.agency_tracking_number)
@@ -1016,6 +1020,7 @@ MARK_EVENTS = (
     "denied",
     "appealed",
     "still-interested",
+    "replied",
     "closed",
 )
 
@@ -1029,6 +1034,7 @@ def request_mark(
     ),
     until: str | None = typer.Option(None, "--until", help="tolled: date the clock resumes"),
     due: str | None = typer.Option(None, "--due", help="still-interested: date your reply is due"),
+    force: bool = typer.Option(False, "--force", help="appealed: allow without a recorded denial"),
 ):
     """Record a lifecycle event and recompute the clocks from the jurisdiction's rule.
 
@@ -1038,8 +1044,9 @@ def request_mark(
         openfoia request mark REQ-1 tolled --until 2026-11-01
         openfoia request mark REQ-1 denied
         openfoia request mark REQ-1 still-interested --due 2026-11-15
+        openfoia request mark REQ-1 replied
     """
-    from .clocks import FEDERAL_APPEAL_DECISION_BUSINESS_DAYS, appeal_deadline, business_days_after
+    from .clocks import request_clocks
     from .db import get_session
     from .models import Request as RequestModel
     from .models import RequestStatus, TimelineEvent
@@ -1052,6 +1059,9 @@ def request_mark(
     due_at = _parse_day(due, "--due")
     if event == "tolled" and not until_at:
         rprint("[red]tolled needs --until <date>.[/red]")
+        raise typer.Exit(2)
+    if event == "tolled" and until_at <= when:
+        rprint("[red]--until must be after the toll start (--on, default today).[/red]")
         raise typer.Exit(2)
     if event == "still-interested" and not due_at:
         rprint("[red]still-interested needs --due <date>.[/red]")
@@ -1070,7 +1080,12 @@ def request_mark(
         if event != "closed" and not req.sent_at:
             rprint("[red]Request has not been sent; no clock is running.[/red]")
             raise typer.Exit(1)
-        law, fallback = _jurisdiction_for(req)
+        if req.status == RequestStatus.CLOSED and event in ("denied", "appealed", "received"):
+            rprint("[red]Request is closed; reopen it before recording that.[/red]")
+            raise typer.Exit(1)
+        if event == "appealed" and req.status != RequestStatus.DENIED and not force:
+            rprint("[red]No denial recorded; mark it denied first, or pass --force.[/red]")
+            raise typer.Exit(1)
         detail = ""
         if event == "acknowledged":
             req.acknowledged_at = when
@@ -1078,17 +1093,13 @@ def request_mark(
                 req.status = RequestStatus.ACKNOWLEDGED
         elif event == "extended":
             req.extended_at = when
-            req.due_date = _request_due_date(req, extended=True)
-            detail = (
-                f"response due {req.due_date:%Y-%m-%d}" if req.due_date else "no statutory deadline"
-            )
         elif event == "tolled":
-            from datetime import timedelta
-
+            extra = dict(req.extra_data or {})
+            tolls = [t for t in extra.get("tolls", []) if t[0] != when.isoformat()]
+            tolls.append([when.isoformat(), until_at.isoformat()])
+            extra["tolls"] = tolls
+            req.extra_data = extra
             req.tolled_until = until_at
-            if req.due_date and until_at > when:
-                req.due_date += timedelta(days=(until_at - when).days)
-                detail = f"response due {req.due_date:%Y-%m-%d}"
         elif event == "received":
             req.completed_at = when
             if req.status not in (RequestStatus.DENIED, RequestStatus.APPEALED):
@@ -1096,35 +1107,59 @@ def request_mark(
         elif event == "denied":
             req.denied_at = when
             req.status = RequestStatus.DENIED
-            req.appeal_due_at = appeal_deadline(law, when)
-            detail = (
-                f"appeal due {req.appeal_due_at:%Y-%m-%d}"
-                if req.appeal_due_at
-                else "appeal deadline unknown for this jurisdiction"
-            )
         elif event == "appealed":
             req.appealed_at = when
             req.status = RequestStatus.APPEALED
-            if law["id"] == "us":
-                req.due_date = business_days_after(when, FEDERAL_APPEAL_DECISION_BUSINESS_DAYS)
-                detail = f"appeal decision due {req.due_date:%Y-%m-%d}"
         elif event == "still-interested":
             req.still_interested_due_at = due_at
             detail = f"reply by {due_at:%Y-%m-%d} or the request closes"
+        elif event == "replied":
+            req.still_interested_due_at = None
         elif event == "closed":
             req.status = RequestStatus.CLOSED
             req.completed_at = req.completed_at or when
-        session.add(
-            TimelineEvent(
-                request_id=req.id,
-                event_type=event,
-                description=detail or event,
-                occurred_at=when,
-                extra_data={"jurisdiction": law["id"]},
+
+        clocks = request_clocks(req)
+        req.due_date = clocks.response_due
+        if event in ("extended", "tolled"):
+            detail = (
+                f"response due {clocks.response_due:%Y-%m-%d}"
+                if clocks.response_due
+                else clocks.response_reason
             )
+        elif event == "denied":
+            detail = (
+                f"appeal due {clocks.appeal_due:%Y-%m-%d}"
+                if clocks.appeal_due
+                else clocks.appeal_reason
+            )
+        elif event == "appealed":
+            detail = (
+                f"appeal decision due {clocks.response_due:%Y-%m-%d}"
+                if clocks.response_due
+                else clocks.response_reason
+            )
+
+        existing = (
+            session.query(TimelineEvent)
+            .filter(TimelineEvent.request_id == req.id, TimelineEvent.event_type == event)
+            .first()
         )
+        if existing and event != "tolled":
+            existing.occurred_at = when
+            existing.description = detail or event
+        else:
+            session.add(
+                TimelineEvent(
+                    request_id=req.id,
+                    event_type=event,
+                    description=detail or event,
+                    occurred_at=when,
+                    extra_data={"jurisdiction": clocks.law["id"]},
+                )
+            )
         rprint(f"[green]{req.request_number}[/green] {event}" + (f": {detail}" if detail else ""))
-        if fallback:
+        if clocks.fallback:
             rprint("[dim]Agency has no jurisdiction set; federal FOIA clocks assumed.[/dim]")
 
 
@@ -1431,7 +1466,9 @@ def request_send(
                     req.status = RequestStatus.SENT
                     req.sent_at = _utcnow()
                     req.delivery_reference = result.reference_id
-                    req.due_date = _request_due_date(req)
+                    from .clocks import request_clocks
+
+                    req.due_date = request_clocks(req).response_due
                     if req.due_date is None:
                         rprint(f"  [yellow]{NO_CLOCK}; no due date set.[/yellow]")
 
@@ -4260,34 +4297,16 @@ def entities_test(
 # === Deadline Commands ===
 
 
-def _jurisdiction_for(req) -> tuple[dict, bool]:
-    """The jurisdiction whose clocks govern a request, and whether it was a fallback to 'us'."""
-    from .jurisdictions import get
-
-    jid = req.agency.jurisdiction_id if req.agency else None
-    j = get(jid) if jid else None
-    if j is None:
-        return get("us"), True
-    return j, False
-
-
-def _request_due_date(req, extended: bool = False) -> datetime | None:
-    """Statutory response deadline from the agency's jurisdiction; None when the law sets none."""
-    from .clocks import due_date
-
-    if not req.sent_at:
-        return None
-    j, _ = _jurisdiction_for(req)
-    return due_date(j, req.sent_at, extended=extended)
-
-
 def _days_left(when: datetime) -> str:
-    n = (when - _utcnow()).days
-    return (
-        f"[red]{-n} days over[/red]"
-        if n < 0
-        else f"[{'yellow' if n <= 5 else 'green'}]{n} days left[/{'yellow' if n <= 5 else 'green'}]"
-    )
+    from .clocks import is_overdue
+
+    now = _utcnow()
+    if is_overdue(when, now):
+        n = (now.date() - when.date()).days
+        return f"[red]{n} day{'s' if n != 1 else ''} over[/red]"
+    n = (when.date() - now.date()).days
+    color = "yellow" if n <= 5 else "green"
+    return f"[{color}]{n} day{'s' if n != 1 else ''} left[/{color}]"
 
 
 def _parse_day(text: str | None, flag: str) -> datetime | None:
@@ -4323,8 +4342,10 @@ def deadline_list(
         if not rows and not no_clock and not unsent:
             rprint("[dim]No active requests with deadlines.[/dim]")
             return
-        overdue = [r for r in rows if r[2] < _utcnow()]
-        upcoming = [r for r in rows if r[2] >= _utcnow()]
+        from .clocks import is_overdue
+
+        overdue = [r for r in rows if is_overdue(r[2], _utcnow())]
+        upcoming = [r for r in rows if not is_overdue(r[2], _utcnow())]
         for title, style, group in (("OVERDUE", "red", overdue), ("UPCOMING", "yellow", upcoming)):
             if not group:
                 continue
@@ -4360,8 +4381,11 @@ def deadline_list(
 
 
 def _collect_clocks(session, show_all: bool = False):
-    """(kind, request, due, law) rows for every running clock, plus no-deadline and unsent lists."""
-    from .clocks import rule_text
+    """(kind, request, due, law) rows for every running clock, plus no-deadline and unsent lists.
+
+    Clocks are recomputed from the jurisdiction every time; the stored due_date is a cache.
+    """
+    from .clocks import request_clocks
     from .models import Request as RequestModel
     from .models import RequestStatus
 
@@ -4381,23 +4405,19 @@ def _collect_clocks(session, show_all: bool = False):
         if not r.sent_at:
             unsent.append(r)
             continue
-        law, fallback = _jurisdiction_for(r)
-        label = law["id"] + (" (assumed)" if fallback else "")
-        if r.status == RequestStatus.DENIED:
-            if r.appeal_due_at and not r.appealed_at:
-                rows.append(("appeal", r, r.appeal_due_at, label))
-            elif not r.appealed_at:
-                no_clock.append((r, "appeal deadline unknown for this jurisdiction"))
-        else:
-            if r.due_date is None:
-                r.due_date = _request_due_date(r, extended=r.extended_at is not None)
-            if r.due_date:
-                kind = "appeal decision" if r.status == RequestStatus.APPEALED else "response"
-                rows.append((kind, r, r.due_date, label))
-            else:
-                no_clock.append((r, f"{label}: {rule_text(law)}"))
-        if r.still_interested_due_at and r.status != RequestStatus.CLOSED:
-            rows.append(("still interested", r, r.still_interested_due_at, label))
+        c = request_clocks(r)
+        r.due_date = c.response_due
+        label = c.law["id"] + (" (assumed)" if c.fallback else "")
+        if c.response_due:
+            rows.append((c.response_kind, r, c.response_due, label))
+        elif c.response_reason:
+            no_clock.append((r, f"{label}: {c.response_reason}"))
+        if c.appeal_due:
+            rows.append(("appeal", r, c.appeal_due, label))
+        elif c.appeal_reason:
+            no_clock.append((r, f"{label}: {c.appeal_reason}"))
+        if c.still_interested_due:
+            rows.append(("still interested", r, c.still_interested_due, label))
     rows.sort(key=lambda x: x[2])
     return rows, no_clock, unsent
 
@@ -4415,11 +4435,13 @@ def deadline_check():
         return
     with get_session() as session:
         rows, _, _ = _collect_clocks(session)
-        overdue = [x for x in rows if x[2] < _utcnow()]
+        from .clocks import is_overdue
+
+        overdue = [x for x in rows if is_overdue(x[2], _utcnow())]
         for kind, r, when, _law in overdue:
-            days_over = (_utcnow() - when).days
+            days_over = (_utcnow().date() - when.date()).days
             rprint(
-                f"[red]OVERDUE {kind}:[/red] {r.request_number}: {r.subject} (+{days_over} days)"
+                f"[red]OVERDUE {kind}:[/red] {r.request_number}: {r.subject} (+{days_over} day{'s' if days_over != 1 else ''})"
             )
         if overdue:
             rprint(

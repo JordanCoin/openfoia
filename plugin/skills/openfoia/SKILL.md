@@ -159,7 +159,9 @@ Every sent request runs on its agency's jurisdiction rule, not a fixed 20 days. 
 openfoia request mark REQ-2026-001 acknowledged --on 2026-10-20
 openfoia request mark REQ-2026-001 extended                       # pushes the due date by the statute's extension
 openfoia request mark REQ-2026-001 denied                         # starts the appeal clock
+openfoia request mark REQ-2026-001 tolled --until 2026-11-01      # pauses the clock in its own unit
 openfoia request mark REQ-2026-001 still-interested --due 2026-11-15
+openfoia request mark REQ-2026-001 replied                        # clears the still-interested clock
 openfoia request status REQ-2026-001                              # every clock, days left, and the rule behind it
 openfoia deadlines list                                           # overdue first, across response, appeal and still-interested clocks
 ```
