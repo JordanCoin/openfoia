@@ -122,6 +122,46 @@ error and the command exits non-zero; "No results found" means the source
 answered and had nothing. MuckRock's API now needs a token: set
 `OPENFOIA_MUCKROCK_TOKEN`.
 
+### From hits to citations
+
+A search is only the start. The loop below turns a pile of hits into findings
+you can paste into a report, with every page cited.
+
+```bash
+openfoia case new "CIA PAS"
+
+# 1. Search, rank by the words that matter, keep the result list
+openfoia records search "PAS" -s documentcloud -n 300 --json --rank child,school,gifted > hits.json
+
+# 2. Fetch every hit into the case (already-stored ids are skipped)
+openfoia records fetch --from hits.json
+
+# 3. Read offline: grep every stored page, save the hits you care about
+openfoia docs grep '"Hocking Technical College"' --save
+openfoia docs grep 'WISC OR WAIS' --note "IQ tests named, no ages given"
+
+# 4. Write findings by hand, pinned to a document and page
+openfoia case note "SRI tested the PAS on college volunteers" \
+    --doc 3f2a --page 51 --quote "students at Hocking Technical College" --tier says
+openfoia case note "The 1952 Denver volunteers may have been minors" --tier speculation
+
+# 5. Which documents mention both names, and how are they linked?
+openfoia analyze graph --name pas
+openfoia analyze graph --mentions "Gittinger" "Zimbardo" --name pas
+
+# 6. Export: Findings with citations, then Sources, then the query log
+openfoia case notes
+openfoia case export -o pas.md
+```
+
+Tiers keep you honest: `says` means the document states it, `infer` means it
+follows from the document, `speculation` is a lead. A page marked `*` comes
+from a document with fewer stored pages than the source has, so the number is
+not the source's page number; re-fetch it with `records fetch <id> --refresh`
+to get per-page text. CREST numbers (`CIA-RDP...`) are picked out of the
+document title or text when present. The export is plaintext outside the
+encrypted database.
+
 ---
 
 ## Extracting entities
