@@ -10,6 +10,12 @@ exhaustive lists.
 
 ## [Unreleased]
 
+## [4.4.0] - 2026-10-14
+
+Cases get update and delete: rename, re-describe, remove, and move documents
+and findings between cases as an investigation changes shape. No schema
+change; the `pdf-extract` 0.7.0 binaries on the 4.3.0 release still apply.
+
 ### Added
 
 - Cases are now fully editable: `openfoia case edit [--name <new>] [--desc
@@ -415,6 +421,7 @@ security/OPSEC pass; the notes below describe what it changed, factually.
 Baseline for this changelog. Earlier tags (`v0.0.1` through `v2.0.0`,
 2026-02-19 to 2026-03-22) predate it; see the git history for details.
 
+[4.4.0]: https://github.com/JordanCoin/openfoia/compare/v4.3.1...v4.4.0
 [4.3.1]: https://github.com/JordanCoin/openfoia/compare/v4.3.0...v4.3.1
 [4.3.0]: https://github.com/JordanCoin/openfoia/compare/v4.2.0...v4.3.0
 [4.2.0]: https://github.com/JordanCoin/openfoia/compare/v4.1.0...v4.2.0
