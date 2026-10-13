@@ -96,8 +96,9 @@ def test_loader_get_and_search():
 
 
 def test_verified_entries_are_the_researched_ones():
-    verified = {j["id"] for j in load_all().values() if j["verified"]}
-    assert verified == {"us", "us-mi", "us-il", "us-tx", "us-ny", "us-wa", "us-fl"}
+    unverified = {j["id"] for j in load_all().values() if not j["verified"]}
+    assert unverified == {"us-tn"}  # Tennessee: response clock not in the fetched text
+    assert len(load_all()) == 52
     assert get("us")["response"] == {
         "days": 20,
         "unit": "business",
@@ -112,11 +113,12 @@ def test_verified_entries_are_the_researched_ones():
 def test_jurisdiction_cli(data_dir):
     out = _ok(runner.invoke(app, ["jurisdiction", "list"]))
     assert "us-mi" in out and "Michigan" in out
+    assert "51 verified, 1 unverified" in out
     out = _ok(runner.invoke(app, ["jurisdiction", "list", "--unverified"]))
-    assert "us-mi" not in out and "us-ca" in out
+    assert "us-mi" not in out and "us-tn" in out
     out = _ok(runner.invoke(app, ["jurisdiction", "show", "us-mi"]))
     assert "Verified 2026-10-14" in out and "MCL 15.243" in out and "rcfp.org" in out
-    out = _ok(runner.invoke(app, ["jurisdiction", "show", "us-ca"]))
+    out = _ok(runner.invoke(app, ["jurisdiction", "show", "us-tn"]))
     assert "UNVERIFIED" in out and "unknown" in out
     assert (
         json.loads(_ok(runner.invoke(app, ["jurisdiction", "show", "us", "--json"])))["id"] == "us"
@@ -157,7 +159,7 @@ def test_agency_add_list_info_and_migration_head(data_dir):
     # Stub jurisdiction warns, unknown ones and bad levels are refused.
     out = _ok(
         runner.invoke(
-            app, ["agency", "add", "--name", "Oakland USD", "-j", "us-ca", "-l", "school_district"]
+            app, ["agency", "add", "--name", "Memphis ISD", "-j", "us-tn", "-l", "school_district"]
         )
     )
     assert "unverified stub" in out
@@ -177,7 +179,7 @@ def test_agency_add_list_info_and_migration_head(data_dir):
     )
     assert (
         runner.invoke(
-            app, ["agency", "add", "--name", "Oakland USD", "-j", "us-ca", "-l", "city"]
+            app, ["agency", "add", "--name", "Memphis ISD", "-j", "us-tn", "-l", "city"]
         ).exit_code
         == 1
     )
@@ -233,15 +235,21 @@ def _leaves(obj, prefix=()):
         yield prefix, obj
 
 
-def test_stubs_are_null_everywhere_except_identity():
-    """A stub may not carry a value nobody sourced."""
+def test_unverified_files_source_every_value():
+    """An unverified file may carry values only if it cites where they came from."""
     for j in load_all().values():
         if j["verified"]:
             continue
-        for path, value in _leaves(j):
-            if path in STUB_ALLOWED:
-                continue
-            assert value is None, (j["id"], path, value)
+        filled = [p for p, v in _leaves(j) if p not in STUB_ALLOWED and v is not None]
+        if filled:
+            assert j["sources"] and j["notes"], (j["id"], filled)
+
+
+def test_every_verified_file_cites_rcfp_or_a_statute():
+    for j in load_all().values():
+        if j["id"] == "us":
+            continue
+        assert any("rcfp.org" in u or ".gov" in u for u in j["sources"]), j["id"]
 
 
 def test_verified_entries_never_store_a_clock_without_a_day_count():

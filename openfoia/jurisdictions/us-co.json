@@ -3,49 +3,49 @@
   "name": "Colorado",
   "level": "state",
   "statute": {
-    "name": "Colorado Open Records Act",
-    "citation": null,
-    "url": null
+    "name": "Colorado Open Records Act (CORA)",
+    "citation": "Colo. Rev. Stat. § 24-72-201 et seq. (access § 24-72-203; fees § 24-72-205)",
+    "url": "https://www.rcfp.org/open-government-guide/colorado/"
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
-    "extension_days": null,
-    "extension_unit": null,
+    "days": 3,
+    "unit": "business",
+    "rule_text": "Records must be produced within a 'reasonable time' presumed to be three working days or less, extendable to seven working days for extenuating circumstances found in writing, Colo. Rev. Stat. § 24-72-203(3)(b).",
+    "extension_days": 7,
+    "extension_unit": "business",
     "silence_is_denial": null
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "search_allowed": true,
+    "labor_rule": "Research and retrieval may be charged at $30/hour after the first free hour (RCFP, § 24-72-205(6)); only 'nominal' fees for search and retrieval otherwise.",
+    "copy_rule": "No more than $0.25 per standard page; actual cost for other sizes, § 24-72-205(1), (5)(a).",
+    "waiver_rule": "Custodians may reduce or waive fees for computer-output records used for a public purpose (journalism, nonprofit, academic research).",
     "estimate_required": null,
     "late_penalty": null
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "'Any person' may inspect public records, Colo. Rev. Stat. §§ 24-72-201, 24-72-203(1)(a)."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "District court (applicant files application after 3 business days' written notice to custodian)",
+    "type": "court",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "No administrative appeal and no AG or ombudsman role; an applicant must give the custodian at least three business days' written notice before filing for court relief."
   },
   "exemptions_citation": null,
   "format_rule": null,
   "covers": {
     "governor": null,
-    "legislature": null,
+    "legislature": true,
     "universities_public": null,
-    "school_districts": null
+    "school_districts": true
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/colorado/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Silence-is-denial not confirmed. Appeal deadline null (RCFP: suit time limit 'None'). Legislature: 'records of the General Assembly are covered by the Act'. School districts listed as political subdivisions covered by CORA. Governor: only a case on personal phone bills, not coverage rule. Fee waiver detail applies to computer-output records."
 }

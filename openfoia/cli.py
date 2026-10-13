@@ -2119,8 +2119,9 @@ def jurisdiction_list(
         )
     console.print(table)
     stubs = sum(1 for j in rows if not j["verified"])
+    rprint(f"[dim]{len(rows) - stubs} verified, {stubs} unverified.[/dim]")
     if stubs:
-        rprint(f"[dim]{stubs} unverified: fields are null until someone reads the statute.[/dim]")
+        rprint("[dim]Unverified: a value is only as good as the source listed in `show`.[/dim]")
 
 
 @jurisdiction_app.command("show")

@@ -4,9 +4,14 @@ One JSON file per public-records law, named by id: `us.json` (federal FOIA),
 `us-mi.json` (Michigan), `us-dc.json`. A field set to `null` means the value
 is not known. It never means "none" or "no rule". `verified` is true only when
 every non-null value in the file was checked against the listed `sources` on
-`verified_at`. Stubs ship with `verified: false` and the state's Reporters
-Committee for Freedom of the Press Open Government Guide page as their only
-source; the loader accepts them, the CLI warns on them.
+`verified_at`. A file with `verified: false` may still carry values, but
+only with the page they came from in `sources` and a `notes` line saying what
+is missing (Tennessee: the response clock). The loader accepts such files,
+the CLI warns on them. The state files were read from the Reporters Committee
+for Freedom of the Press Open Government Guide
+(https://www.rcfp.org/open-government-guide/) on 2026-10-14;
+`scripts/rcfp_jurisdictions.py` drafts a file from a saved page so the pass
+can be repeated when a chapter is updated.
 
 | Field | Type | Meaning |
 |---|---|---|

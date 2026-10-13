@@ -4,40 +4,40 @@
   "level": "state",
   "statute": {
     "name": "Louisiana Public Records Act",
-    "citation": null,
-    "url": null
+    "citation": "La. Rev. Stat. Ann. § 44:1 et seq. (requesters § 44:31; response § 44:32(D); suit § 44:35)",
+    "url": "https://www.rcfp.org/open-government-guide/louisiana/"
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
+    "days": 3,
+    "unit": "business",
+    "rule_text": "Custodian must respond within three days, exclusive of Saturdays, Sundays and legal public holidays, even if still deciding what may be withheld, La. Rev. Stat. Ann. § 44:32(D).",
     "extension_days": null,
     "extension_unit": null,
-    "silence_is_denial": null
+    "silence_is_denial": true
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "search_allowed": false,
+    "labor_rule": "No fee to examine or review records except for after-hours examination; no examination fees otherwise.",
+    "copy_rule": "Reasonable copy fees (schedule not extracted).",
+    "waiver_rule": "Copies may be furnished free or at reduced charge to indigent persons of the state.",
     "estimate_required": null,
     "late_penalty": null
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "'Any person of the age of majority' may request, La. Rev. Stat. Ann. § 44:31 (age limit, not residency); only the actual requester has standing to sue (Vourvoulais)."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "District court for the parish where the custodian sits",
+    "type": "court",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "No administrative appeal and no AG/ombudsman enforcement; requester may sue for injunction or mandamus, La. Rev. Stat. Ann. § 44:35(B), and may file five days after the request if no response (passage of time treated as denial)."
   },
   "exemptions_citation": null,
   "format_rule": null,
   "covers": {
-    "governor": null,
+    "governor": true,
     "legislature": null,
     "universities_public": null,
     "school_districts": null
@@ -45,7 +45,7 @@
   "sources": [
     "https://www.rcfp.org/open-government-guide/louisiana/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Governor's records covered but intraoffice communications of governor and staff may be privileged (§ 44:5). Silence treated as denial after passage of five days per RCFP text (truncated sentence). Appeal deadline null. Legislature/universities/school districts not confirmed. Search fee 'false' is inferred from no-examination-fee language, not an explicit ban on search labor."
 }

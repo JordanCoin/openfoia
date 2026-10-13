@@ -3,49 +3,49 @@
   "name": "Iowa",
   "level": "state",
   "statute": {
-    "name": "Iowa Open Records Law",
-    "citation": null,
-    "url": null
+    "name": "Iowa Open Records Law (Chapter 22)",
+    "citation": "Iowa Code ch. 22 (§ 22.2 right to examine; § 22.3 copies; § 22.8(4)(d) delay)",
+    "url": "https://www.rcfp.org/open-government-guide/iowa/"
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
-    "extension_days": null,
-    "extension_unit": null,
+    "days": 10,
+    "unit": "business",
+    "rule_text": "A reasonable delay to decide whether a confidential record can be released 'should not exceed twenty calendar days and ordinarily should not exceed ten business days', Iowa Code § 22.8(4)(d); the limit is not absolute (Horsfield Materials).",
+    "extension_days": 20,
+    "extension_unit": "calendar",
     "silence_is_denial": null
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "search_allowed": true,
+    "labor_rule": "Custodian may charge a reasonable fee for supervision of records examined, Iowa Code § 22.3.",
+    "copy_rule": "Copy fee may not exceed actual cost of providing the service and excludes ordinary overhead such as benefits and depreciation, § 22.3(2).",
+    "waiver_rule": "No provisions for fee waivers when disclosure serves the public interest.",
     "estimate_required": null,
     "late_penalty": null
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "'Every person' has the right to examine and copy public records, Iowa Code § 22.2(1)."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Iowa Public Information Board (complaint) or district court",
+    "type": "commission",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "The Iowa Public Information Board (Iowa Code ch. 23) investigates complaints under chapters 21 and 22 and issues advice or declaratory orders; suit in district court is also available. IPIB has no jurisdiction over the governor's office or the legislative branch."
   },
   "exemptions_citation": null,
   "format_rule": null,
   "covers": {
     "governor": null,
-    "legislature": null,
+    "legislature": false,
     "universities_public": null,
     "school_districts": null
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/iowa/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Response numbers are an outer limit, not a hard deadline; 10/20 pair mapped to days/extension_days. IPIB complaint deadline not found. Rehearing text in RCFP (17A.16, 20 days) concerns agency final decisions, not IPIB records complaints. Governor: act treats governor as covered but IPIB lacks jurisdiction; executive privilege claimed 2025. Universities (ISU Foundation) held subject in case law; school districts not confirmed."
 }

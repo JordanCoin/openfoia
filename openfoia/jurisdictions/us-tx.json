@@ -4,41 +4,41 @@
   "level": "state",
   "statute": {
     "name": "Texas Public Information Act",
-    "citation": "Tex. Gov't Code ch. 552",
+    "citation": "Tex. Gov't Code § 552.001 et seq.",
     "url": null
   },
   "response": {
     "days": null,
     "unit": null,
-    "rule_text": "Records must be produced 'promptly'. If that takes more than 10 business days the officer must certify so in writing and set a date (Gov't Code 552.221(d)). There is no fixed day count to compute a due date from.",
+    "rule_text": "Officer must promptly produce information (§ 552.221); if it cannot be produced within 10 business days the officer must certify that in writing and set a reasonable date (§ 552.221(d)); a body wanting to withhold must request an AG decision within 10 business days.",
     "extension_days": null,
     "extension_unit": null,
     "silence_is_denial": null
   },
   "fees": {
     "search_allowed": true,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
-    "estimate_required": null,
-    "late_penalty": null
+    "labor_rule": "For requests of 50 or fewer pages charge excludes materials, labor and overhead (§ 552.261); otherwise charges reasonably include costs of reproducing, not exceeding actual cost (§ 552.262).",
+    "copy_rule": "Charge reasonably includes all costs related to reproducing, not excessive and not above actual cost (§§ 552.261-.262).",
+    "waiver_rule": "May be waived or reduced if it primarily benefits the general public (§ 552.267).",
+    "estimate_required": "Written itemized statement required when charge exceeds $40; requester has 10 business days to respond (§ 552.2615).",
+    "late_penalty": "Treble damages for bad-faith overcharging (§ 552.269(b)); misdemeanor for criminally negligent refusal (§ 552.353)."
   },
   "residency": {
     "restricted": false,
     "rule_text": "Anyone, citizens and non-citizens alike."
   },
   "appeal": {
-    "body": "Attorney General open records decisions",
-    "type": "attorney_general",
+    "body": "District court (mandamus); Attorney General decides when a body seeks to withhold",
+    "type": "court",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": "A body that wants to withhold must ask the Attorney General for a ruling within 10 business days; the AG rules within 45 business days (552.008(b-2))."
+    "rule_text": "No administrative appeal; requester or AG may sue for mandamus in district court of the county where the body's main offices are, no special limit (four-year residual period applied by one court). Body must seek AG decision in 10 business days; AG decides within 45 working days, extendable 10; body has 30 calendar days to sue over the decision."
   },
-  "exemptions_citation": "Tex. Gov't Code 552.101 et seq.",
-  "format_rule": null,
+  "exemptions_citation": "Tex. Gov't Code §§ 552.101 et seq. (e.g. §§ 552.106, .109, .111, .137, .139, .146)",
+  "format_rule": "Requester may choose paper or electronic if the body can produce it without new software/hardware (§ 552.228); no obligation to create new information.",
   "covers": {
-    "governor": null,
-    "legislature": null,
+    "governor": true,
+    "legislature": true,
     "universities_public": true,
     "school_districts": true
   },
@@ -47,5 +47,5 @@
   ],
   "verified": true,
   "verified_at": "2026-10-14",
-  "notes": null
+  "notes": "Read chars 0-200k and 225-325k (page 436k). Failure to timely request AG decision means information is presumed public, not deemed denial; delay as denial 'not specifically addressed'. Statute citation, response and appeal path confirmed. Residency from first-chunk summary only. Universities not stated as a category; board of trustees are governmental bodies (§ 552.003). Response days kept null: the statute says 'promptly'; the 10-business-day certification rule is in rule_text."
 }

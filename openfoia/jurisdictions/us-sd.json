@@ -3,49 +3,49 @@
   "name": "South Dakota",
   "level": "state",
   "statute": {
-    "name": null,
-    "citation": null,
+    "name": "Open Records Law",
+    "citation": "SDCL ch. 1-27, §§ 1-27-1 to 1-27-48",
     "url": null
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
+    "days": 10,
+    "unit": "business",
+    "rule_text": "Officer must respond no later than ten business days after receipt (SDCL 1-27-37(1)); failure to respond or meet the stated time estimate is a deemed denial (1-27-37(5)).",
     "extension_days": null,
     "extension_unit": null,
-    "silence_is_denial": null
+    "silence_is_denial": true
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
-    "estimate_required": null,
-    "late_penalty": null
+    "search_allowed": true,
+    "labor_rule": "Staff time chargeable in excess of one hour (SDCL 1-27-35).",
+    "copy_rule": "Actual cost of mailing/transmittal and reproduction, or fees set by statute (1-27-35).",
+    "waiver_rule": "Fee may be waived or reduced if in the public interest (1-27-36).",
+    "estimate_required": "Required for informal requests likely to exceed $50; requester must confirm in writing (1-27-36).",
+    "late_penalty": "Civil penalty up to $50 per day for unreasonable bad-faith denials (1-27-40.2)."
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "Access extends to all citizens of this state and all other persons interested (SDCL 1-27-1)."
   },
   "appeal": {
-    "body": null,
-    "type": null,
-    "deadline_days": null,
-    "deadline_unit": null,
-    "rule_text": null
+    "body": "Circuit court, or Office of Hearing Examiners",
+    "type": "court",
+    "deadline_days": 90,
+    "deadline_unit": "calendar",
+    "rule_text": "File civil action in circuit court within ninety days of the denial, or request review by the Office of Hearing Examiners by certified mail (SDCL 1-27-38); entity responds in ten business days (1-27-39); 30 days to comply or appeal after an order (1-27-40.1)."
   },
-  "exemptions_citation": null,
-  "format_rule": null,
+  "exemptions_citation": "SDCL 1-27-1.5 (27 categories), 1-27-1.6 to 1-27-1.10, 1-27-3",
+  "format_rule": "Records kept in original or searchable reproducible format (1-27-4); requester cannot choose a format per RCFP.",
   "covers": {
-    "governor": null,
-    "legislature": null,
+    "governor": true,
+    "legislature": true,
     "universities_public": null,
-    "school_districts": null
+    "school_districts": true
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/south-dakota/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Read chars 0-100k only; all fields from that chunk. Governor records have special handling (1-27-1.19 to 1-27-1.21); Unified Judicial System excluded (1-27-1.12). Universities only mentioned for student/research exemptions. Clarification not answered in 10 business days is deemed withdrawn. 90 days unit assumed calendar."
 }

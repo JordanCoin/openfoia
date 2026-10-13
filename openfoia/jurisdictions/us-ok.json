@@ -4,48 +4,48 @@
   "level": "state",
   "statute": {
     "name": "Oklahoma Open Records Act",
-    "citation": null,
+    "citation": "51 O.S. §§ 24A.1 to 24A.33",
     "url": null
   },
   "response": {
     "days": null,
-    "unit": null,
-    "rule_text": null,
+    "unit": "none",
+    "rule_text": "Act requires prompt, reasonable access (51 O.S. § 24A.5(6)) and sets no specific time limit.",
     "extension_days": null,
     "extension_unit": null,
     "silence_is_denial": null
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "search_allowed": true,
+    "labor_rule": "Search fee (direct cost) only if request is solely commercial or would cause excessive disruption; none for public-interest release incl. news media, scholars, authors, taxpayers (§ 24A.5(4)).",
+    "copy_rule": "Reasonable direct cost, never more than $0.25 per page for standard documents; certified copies capped at $1 (§ 24A.5(4)).",
+    "waiver_rule": "No search fee for release in the public interest (not absolute if request substantially disrupts operations).",
     "estimate_required": null,
-    "late_penalty": null
+    "late_penalty": "Setting fees to discourage requests violates the Act with civil or criminal liability (§§ 24A.5(4), 24A.17(A))."
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "Any person has the right to access and review government records (51 O.S. § 24A.2)."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "District court",
+    "type": "court",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "No administrative appeal; sue for declaratory or injunctive relief (51 O.S. § 24A.17(B)(1)); two-year statute of limitations (12 O.S. § 95). AG issues opinions only."
   },
-  "exemptions_citation": null,
-  "format_rule": null,
+  "exemptions_citation": "51 O.S. §§ 24A.7 to 24A.33 (segregation required, § 24A.5(3))",
+  "format_rule": "Electronic records in native file format per Brooke v. Reed (2024, unpublished); no requirement to deliver by email (Wagner 2021).",
   "covers": {
-    "governor": null,
-    "legislature": null,
+    "governor": true,
+    "legislature": false,
     "universities_public": null,
     "school_districts": null
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/oklahoma/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Read chars 0-100k and 110-210k. Delay as denial: only a trial-court ruling (Branstetter v. Fallin 2018). Legislature covered only for receipts and expenditures of public funds (§ 24A.3(2)). Governor has qualified deliberative process privilege (Vandelay 2014). Universities and school districts not explicitly addressed."
 }

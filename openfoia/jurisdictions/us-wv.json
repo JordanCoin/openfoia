@@ -3,49 +3,49 @@
   "name": "West Virginia",
   "level": "state",
   "statute": {
-    "name": "West Virginia Freedom of Information Act",
-    "citation": null,
+    "name": "Freedom of Information Act",
+    "citation": "W. Va. Code § 29B-1-1 et seq.",
     "url": null
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
+    "days": 5,
+    "unit": "business",
+    "rule_text": "Custodian must act as soon as practicable, within a maximum of five days excluding weekends and legal holidays, by furnishing records, setting a time for inspection, or denying in writing (W. Va. Code § 29B-1-3).",
     "extension_days": null,
     "extension_unit": null,
-    "silence_is_denial": null
+    "silence_is_denial": true
   },
   "fees": {
     "search_allowed": null,
     "labor_rule": null,
-    "copy_rule": null,
+    "copy_rule": "Charges capped at actual cost of reproduction (§ 29B-1-3(5)).",
     "waiver_rule": null,
     "estimate_required": null,
-    "late_penalty": null
+    "late_penalty": "Attorney fees and costs to successful litigants (§ 29B-1-7)."
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "'Person' includes any natural person, corporation, partnership, firm or association (§ 29B-1-2); court rejected a non-resident exclusion in Hurlbert v. Matkovich; inmates seeking habeas records restricted."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Circuit court (county where record is kept; Kanawha County for state agencies)",
+    "type": "court",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "No administrative appeal; sue in circuit court, no time limit in the Act. Appeal to the Supreme Court of Appeals within four months."
   },
-  "exemptions_citation": null,
-  "format_rule": null,
+  "exemptions_citation": "W. Va. Code § 29B-1-4",
+  "format_rule": "Copies on magnetic or electronic media if requested (§ 29B-1-3(3)); 'writing' includes email regardless of form (§ 29B-1-2(5)).",
   "covers": {
-    "governor": null,
-    "legislature": null,
+    "governor": true,
+    "legislature": true,
     "universities_public": null,
-    "school_districts": null
+    "school_districts": true
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/west-virginia/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Read chars 0-100k and 235-335k. Courts routinely treat non-response as denial. Fee search/labor/waiver/estimate not stated in text read. Universities: not named; WVU Hospitals public body, WVU Foundation not. Legislature covered per Common Cause v. Tomblin."
 }

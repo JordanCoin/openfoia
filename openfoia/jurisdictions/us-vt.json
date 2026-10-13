@@ -3,49 +3,49 @@
   "name": "Vermont",
   "level": "state",
   "statute": {
-    "name": "Vermont Public Records Act",
-    "citation": null,
+    "name": "Public Records Act",
+    "citation": "1 V.S.A. §§ 315-320",
     "url": null
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
-    "extension_days": null,
-    "extension_unit": null,
-    "silence_is_denial": null
+    "days": 3,
+    "unit": "business",
+    "rule_text": "Custodian has three business days to search and respond if the request cannot be filled on the spot (1 V.S.A. § 318(a)(1)); missing the deadline is a deemed denial (§ 318(a)(2)).",
+    "extension_days": 10,
+    "extension_unit": "business",
+    "silence_is_denial": true
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
-    "estimate_required": null,
-    "late_penalty": null
+    "search_allowed": true,
+    "labor_rule": "Staff time chargeable when time directly involved exceeds 30 minutes, if agency agrees to create a record, or for nonstandard format (§ 316(c)); Secretary of State schedule $0.33-$0.57 per minute.",
+    "copy_rule": "Actual cost of copies incl. mailing (§ 316(b)); schedule $0.05 single-sided, $0.09 double-sided.",
+    "waiver_rule": "Not addressed.",
+    "estimate_required": "Agency shall provide an estimate on request.",
+    "late_penalty": "Court may award attorney fees to a substantially prevailing complainant (§ 319(d))."
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "Any person may inspect or copy any public record (§ 316(a)); 'person' is not limited."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Agency head, then Superior Court",
+    "type": "agency_head",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "Appeal to the agency head, who decides in five business days (§ 318(c)(1)), no time limit to file; then de novo superior court action (§ 319), no time limit stated, agency bears burden."
   },
-  "exemptions_citation": null,
-  "format_rule": null,
+  "exemptions_citation": "1 V.S.A. § 317(c)",
+  "format_rule": "Records covered regardless of physical form (§ 317(b)); if kept electronically requester may choose electronic or paper (§ 316(i)).",
   "covers": {
-    "governor": null,
-    "legislature": null,
-    "universities_public": null,
-    "school_districts": null
+    "governor": true,
+    "legislature": true,
+    "universities_public": true,
+    "school_districts": true
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/vermont/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Read chars 0-100k and 135-235k. Extension up to ten working days by written certification of unusual circumstances (1 V.S.A. § 318(b)(5), RCFP typo says 12 V.S.A.). Governor covered with qualified executive privilege. RCFP chapter dates to 2019."
 }

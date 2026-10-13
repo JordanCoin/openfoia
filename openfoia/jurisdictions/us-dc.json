@@ -3,49 +3,49 @@
   "name": "District of Columbia",
   "level": "state",
   "statute": {
-    "name": "DC Freedom of Information Act",
-    "citation": null,
-    "url": null
+    "name": "District of Columbia Freedom of Information Act",
+    "citation": "D.C. Code § 2-531 et seq. (access § 2-532; appeal § 2-537)",
+    "url": "https://www.rcfp.org/open-government-guide/district-of-columbia/"
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
-    "extension_days": null,
-    "extension_unit": null,
-    "silence_is_denial": null
+    "days": 15,
+    "unit": "business",
+    "rule_text": "Disclosure or denial is due within 15 days excluding weekends and legal holidays (25 days for body-worn camera recordings), D.C. Code § 2-532(c); unusual circumstances allow up to 10 more such days, § 2-532(d)(1).",
+    "extension_days": 10,
+    "extension_unit": "business",
+    "silence_is_denial": true
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "search_allowed": true,
+    "labor_rule": "Search, review and copying fees cannot exceed actual costs; tiered by requester type (commercial: search, duplication and review; news media/educational: duplication only; others: search and duplication).",
+    "copy_rule": "Actual cost of copying, D.C. Code § 2-532(b).",
+    "waiver_rule": "All search and copying fees may be waived or reduced if disclosure primarily benefits the general public, § 2-532(b).",
     "estimate_required": null,
     "late_penalty": null
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "Any 'person' may inspect or copy public records, D.C. Code § 2-532(a)."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Mayor (for most agencies); Superior Court",
+    "type": "agency_head",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "Appeal to the Mayor under D.C. Code § 2-537(a); agency has 5 days to respond and the Mayor 10 days (excl. weekends/holidays) to decide; if the Mayor denies or fails to act within 10 working days, court review is available. Denials by the Council may go directly to court, § 2-537(a-1)."
   },
   "exemptions_citation": null,
   "format_rule": null,
   "covers": {
     "governor": null,
-    "legislature": null,
+    "legislature": true,
     "universities_public": null,
     "school_districts": null
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/district-of-columbia/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Appeal filing deadline to the Mayor not found in fetched text. 'Silence_is_denial' based on RCFP referencing constructive denial appeals and Mayor inaction rule; initial-request constructive denial text only partially seen. Council records are covered (court action allowed). Universities/schools not extracted."
 }

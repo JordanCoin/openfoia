@@ -3,49 +3,49 @@
   "name": "Wyoming",
   "level": "state",
   "statute": {
-    "name": "Wyoming Public Records Act",
-    "citation": null,
+    "name": "Public Records Act",
+    "citation": "Wyo. Stat. §§ 16-4-201 to 16-4-205",
     "url": null
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
+    "days": 30,
+    "unit": "calendar",
+    "rule_text": "Readily available records are released immediately; otherwise release not later than thirty calendar days from receipt unless good cause and a mutually agreed date (Wyo. Stat. § 16-4-202(c)); records in storage/active use need notice to the requester within seven business days.",
     "extension_days": null,
     "extension_unit": null,
     "silence_is_denial": null
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "search_allowed": true,
+    "labor_rule": "Search and retrieval fees may be charged for electronic records and for creating a new record (Cheyenne Newspapers 2016); reasonable supervision fee when requester copies.",
+    "copy_rule": "Reasonable fee under a schedule set by rule, regulation, ordinance or law (§ 16-4-204(b)); no charge for inspecting printed records.",
+    "waiver_rule": "No statutory waiver; custodians may waive under written policy; ombudsman may waive fees (§ 16-4-203(f)(ii)).",
     "estimate_required": null,
-    "late_penalty": null
+    "late_penalty": "Knowing and intentional violation: civil penalty up to $750 (§ 16-4-205)."
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "Any person has the right to request inspection of public records; identity and purpose irrelevant."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Public Records Ombudsman (2019), then district court",
+    "type": "court",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "Requester may ask for written reasons for denial (§ 16-4-203(e)), seek ombudsman mediation, or petition the district court where the records are located for a show-cause order (§ 16-4-203(f)); no specific deadline (civil-procedure rules apply). Supreme Court appeal within 30 days of order."
   },
-  "exemptions_citation": null,
-  "format_rule": null,
+  "exemptions_citation": "Wyo. Stat. § 16-4-203(a)-(g)",
+  "format_rule": "Electronic records provided in alternative formats unless impractical or impossible (§ 16-4-202(d)(ii)); customized compilation not required if it impairs agency duties (§ 16-4-202(d)(iii)).",
   "covers": {
     "governor": null,
-    "legislature": null,
-    "universities_public": null,
-    "school_districts": null
+    "legislature": false,
+    "universities_public": true,
+    "school_districts": true
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/wyoming/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Read chars 0-160k. Deemed denial not stated; AG role not stated for records. Legislature partly exempt (W.S. 28-8-116), so false is partial. Executive records 'should be subject to the Act' (§ 16-4-202(a)); governor not specifically named. University of Wyoming covered (Sheaffer 2006). Ombudsman created 2019."
 }

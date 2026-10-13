@@ -4,40 +4,40 @@
   "level": "state",
   "statute": {
     "name": "Delaware Freedom of Information Act",
-    "citation": null,
-    "url": null
+    "citation": "29 Del. C. § 10001 et seq. (response § 10003(h); enforcement § 10005)",
+    "url": "https://www.rcfp.org/open-government-guide/delaware/"
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
+    "days": 15,
+    "unit": "business",
+    "rule_text": "Public body must respond as soon as possible and no later than 15 business days by granting, denying, or advising that more time is needed for voluminous, legal-advice, or archived records, 29 Del. C. § 10003(h).",
     "extension_days": null,
     "extension_unit": null,
     "silence_is_denial": null
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "search_allowed": true,
+    "labor_rule": "Administrative fees may be charged for staff time beyond one hour (identifying records, monitoring file review, etc.), 29 Del. C. § 10003(m).",
+    "copy_rule": "Statutory fee schedule for photocopying and microfilm printouts, § 10003(m).",
+    "waiver_rule": "Agency may waive duplication fees in special circumstances, e.g. public interest.",
     "estimate_required": null,
     "late_penalty": null
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": true,
+    "rule_text": "Only Delaware citizens (including corporate citizens) may request, 29 Del. C. § 10001; non-citizens may not (Del. AG Op. 96-ib01)."
   },
   "appeal": {
-    "body": null,
-    "type": null,
-    "deadline_days": null,
-    "deadline_unit": null,
-    "rule_text": null
+    "body": "Attorney General (petition) or Superior Court suit",
+    "type": "attorney_general",
+    "deadline_days": 60,
+    "deadline_unit": "calendar",
+    "rule_text": "No administrative appeal; a denied citizen may petition the AG, who determines within 20 days if a violation occurred, 29 Del. C. § 10005(e), or sue within 60 days of denial, § 10005(b)."
   },
   "exemptions_citation": null,
   "format_rule": null,
   "covers": {
-    "governor": null,
+    "governor": true,
     "legislature": null,
     "universities_public": null,
     "school_districts": null
@@ -45,7 +45,7 @@
   "sources": [
     "https://www.rcfp.org/open-government-guide/delaware/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "60-day deadline is for suit (§10005(b)); AG petition deadline not found. Days read as calendar days. Governor's records subject to Act unless privileged. Legislature/universities/schools not confirmed. Silence-is-denial not confirmed."
 }

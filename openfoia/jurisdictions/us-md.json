@@ -3,36 +3,36 @@
   "name": "Maryland",
   "level": "state",
   "statute": {
-    "name": "Maryland Public Information Act",
-    "citation": null,
-    "url": null
+    "name": "Maryland Public Information Act (PIA)",
+    "citation": "Md. Code Ann., Gen. Prov. §§ 4-101 to 4-601 (response § 4-203)",
+    "url": "https://www.rcfp.org/open-government-guide/maryland/"
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
-    "extension_days": null,
-    "extension_unit": null,
+    "days": 30,
+    "unit": "calendar",
+    "rule_text": "Custodian must grant or deny within 30 days of the application (act immediately when access is clear); a denial notice with reasons is due within 10 working days; the period may be extended up to 30 more days only with applicant consent, Gen. Prov. § 4-203.",
+    "extension_days": 30,
+    "extension_unit": "calendar",
     "silence_is_denial": null
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "search_allowed": true,
+    "labor_rule": "Reasonable fee for actual costs of search, preparation and production, but no charge for the first two hours, Gen. Prov. § 4-206.",
+    "copy_rule": "Reasonable fee for reproduction (actual cost), § 4-206.",
+    "waiver_rule": "Custodian may waive fees if applicant is indigent (affidavit) or on request after considering ability to pay and public benefit, § 4-206(e).",
     "estimate_required": null,
     "late_penalty": null
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "There are no citizenship restrictions."
   },
   "appeal": {
-    "body": null,
-    "type": null,
-    "deadline_days": null,
-    "deadline_unit": null,
-    "rule_text": null
+    "body": "Public Access Ombudsman (mediation), then PIA Compliance Board; or circuit court",
+    "type": "commission",
+    "deadline_days": 30,
+    "deadline_unit": "calendar",
+    "rule_text": "Since July 2022 requesters must first mediate with the Public Access Ombudsman (GP § 4-1B-04), then may complain to the PIA Compliance Board (binding orders, § 4-1A-04) within 30 days of the Ombudsman's final determination (§ 4-1A-05(b)(5)); judicial review (§ 4-362) needs no prior administrative step."
   },
   "exemptions_citation": null,
   "format_rule": null,
@@ -40,12 +40,12 @@
     "governor": null,
     "legislature": null,
     "universities_public": null,
-    "school_districts": null
+    "school_districts": true
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/maryland/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Deadline to request Ombudsman mediation is not set by statute. Compliance Board fee jurisdiction limited to fees over $350. School districts included in 'political subdivision' (§ 4-101). Governor case (Office of Governor v. Washington Post) cited but coverage rule not extracted. Silence-is-denial not found."
 }

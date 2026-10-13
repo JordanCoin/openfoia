@@ -4,41 +4,41 @@
   "level": "state",
   "statute": {
     "name": "New York Freedom of Information Law",
-    "citation": "N.Y. Pub. Off. Law art. 6 (sections 84-90)",
+    "citation": "N.Y. Pub. Off. Law §§ 84-90",
     "url": null
   },
   "response": {
     "days": null,
     "unit": null,
-    "rule_text": "The fetched source did not state the acknowledgment or response clocks; check Public Officers Law 89(3) before quoting one.",
-    "extension_days": null,
-    "extension_unit": null,
-    "silence_is_denial": null
+    "rule_text": "Agency must within five business days grant, deny in writing, or acknowledge and give an approximate date; if granting, access within 20 business days of acknowledgment unless it gives written reasons and a specific date (Pub. Off. Law § 89(4)(a)).",
+    "extension_days": 20,
+    "extension_unit": "business",
+    "silence_is_denial": true
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": "25 cents per photocopy up to 9 by 14 inches.",
-    "waiver_rule": null,
-    "estimate_required": null,
-    "late_penalty": null
+    "search_allowed": false,
+    "labor_rule": "FOIL provides no search fees; for electronic records, lowest-paid qualified employee's hourly salary after two hours of staff time (§ 87(1)(c)).",
+    "copy_rule": "$0.25 per photocopy up to 9x14; actual reproduction cost for other records (§ 87(1)(b)(iii)).",
+    "waiver_rule": "No waiver provision identified.",
+    "estimate_required": "Advance notice required only if electronic records need over 2 hours staff time or outside service.",
+    "late_penalty": "Attorney fees under § 89(4)(c); mandatory where agency had no reasonable basis for denial (2017 amendment)."
   },
   "residency": {
     "restricted": false,
-    "rule_text": null
+    "rule_text": "Records available to the public, individually and collectively; no residency limit stated."
   },
   "appeal": {
-    "body": "Committee on Open Government (advisory only); Article 78 in state Supreme Court",
-    "type": "ombudsman_advisory",
-    "deadline_days": null,
-    "deadline_unit": null,
-    "rule_text": "Administrative appeal to the body's appeals officer, then an Article 78 proceeding in state Supreme Court. Committee on Open Government opinions are advisory, not binding. Appeal clocks were not confirmed from the fetched source."
+    "body": "Agency records appeals officer, then Article 78 proceeding in NY Supreme Court",
+    "type": "agency_head",
+    "deadline_days": 30,
+    "deadline_unit": "calendar",
+    "rule_text": "Appeal denial to the agency within 30 days (unit not labeled; calendar inferred); appeals officer decides in 10 business days (§ 89(4)(b)); then Article 78 within 4 months (CPLR 217). Committee on Open Government gives advisory opinions only."
   },
-  "exemptions_citation": "N.Y. Pub. Off. Law 87(2)",
-  "format_rule": null,
+  "exemptions_citation": "N.Y. Pub. Off. Law § 87(2)",
+  "format_rule": "Agencies must provide records on the medium requested if they can reasonably make the copy (§ 87(5)); no obligation to create new records (§ 89(3)).",
   "covers": {
-    "governor": null,
-    "legislature": null,
+    "governor": true,
+    "legislature": true,
     "universities_public": null,
     "school_districts": null
   },
@@ -47,5 +47,5 @@
   ],
   "verified": true,
   "verified_at": "2026-10-14",
-  "notes": null
+  "notes": "Page is 487k chars; read chars 0-100k and 300-400k. Governor covered per case law (RCFP). Legislature handled under separate § 88. A community college held an agency; school boards ordered to disclose. extension_days reflects the 20-business-day grant window, not a separate extension. Response days kept null: the 5-business-day acknowledgment and 20-day production clocks are in rule_text, not modelled. Appeal deadline unit not labeled in RCFP; 30 days likely calendar."
 }

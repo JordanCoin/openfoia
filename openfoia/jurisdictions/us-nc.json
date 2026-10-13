@@ -3,49 +3,49 @@
   "name": "North Carolina",
   "level": "state",
   "statute": {
-    "name": "North Carolina Public Records Act",
-    "citation": null,
+    "name": "Public Records Law",
+    "citation": "N.C. Gen. Stat. §§ 132-1 to 132-10",
     "url": null
   },
   "response": {
     "days": null,
-    "unit": null,
-    "rule_text": null,
+    "unit": "none",
+    "rule_text": "No specific time limit; records must be furnished 'as promptly as possible' (G.S. § 132-6); courts have not interpreted the standard.",
     "extension_days": null,
     "extension_unit": null,
-    "silence_is_denial": null
+    "silence_is_denial": false
   },
   "fees": {
     "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
+    "labor_rule": "Special service charge allowed for extensive IT resources or extensive clerical/supervisory assistance (§ 132-6.2(b)); agency bears cost of separating confidential material (§ 132-6(c)).",
+    "copy_rule": "Agency may charge only actual cost of making a copy (§ 132-6.2(b)).",
+    "waiver_rule": "No fee-waiver provisions; no statutory requirement to collect a fee.",
     "estimate_required": null,
     "late_penalty": null
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "Any person may request; purpose is irrelevant and may not be asked (§ 132-6)."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Superior court civil action",
+    "type": "court",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "No administrative appeal; enforcement by civil suit, no specific statute of limitations (G.S. 1-52(2) three years may be argued). Fee disputes may go to State CIO mediation (§ 132-6.2(b)); court mediation starts within 30 days of responsive pleadings (G.S. 7A-38.3E(b)). Prevailing requester gets fees (§ 132-9(c))."
   },
-  "exemptions_citation": null,
-  "format_rule": null,
+  "exemptions_citation": "G.S. §§ 132-1.1 through 132-1.12; § 132-6(d)",
+  "format_rule": "Copies in any medium the agency can provide; request may not be denied because agency prefers another medium (§ 132-6.2(a)); no duty to create records (§ 132-6.2(e)).",
   "covers": {
-    "governor": null,
-    "legislature": null,
-    "universities_public": null,
+    "governor": true,
+    "legislature": false,
+    "universities_public": true,
     "school_districts": null
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/north-carolina/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Read chars 0-100k and 150-250k. Legislature: 2023 amendment to G.S. 120-135 shields legislators' documents and requests (RCFP), so false is partial. Delay as denial: no appellate court so held (2021 trial ruling did). School districts only via unpublished trial ruling. RCFP updated Oct 1 2025."
 }

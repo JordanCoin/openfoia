@@ -4,48 +4,48 @@
   "level": "state",
   "statute": {
     "name": "Oregon Public Records Law",
-    "citation": null,
+    "citation": "ORS 192.311 et seq. (right to inspect: ORS 192.314(1))",
     "url": null
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
+    "days": 5,
+    "unit": "business",
+    "rule_text": "Custodian must acknowledge or complete response to a written request within five business days (ORS 192.324) and generally complete within 15 business days (ORS 192.329(5)); failure to respond in time is treated as denial (ORS 192.407(1)).",
     "extension_days": null,
     "extension_unit": null,
-    "silence_is_denial": null
+    "silence_is_denial": true
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
-    "waiver_rule": null,
-    "estimate_required": null,
-    "late_penalty": null
+    "search_allowed": true,
+    "labor_rule": "Fee reasonably calculated to reimburse actual cost, may include search and segregation; attorney time for redaction but not exemption determinations (ORS 192.324(4)).",
+    "copy_rule": "Per-page fee reasonably calculated to reimburse actual cost; custodian bears burden of showing reasonableness.",
+    "waiver_rule": "Waiver or reduction where disclosure primarily benefits the general public (ORS 192.324(5)); denial appealable (192.324(6)).",
+    "estimate_required": "Estimate and confirmation required if fee will exceed $25 (ORS 192.324(4)(c)).",
+    "late_penalty": "Prevailing requester awarded attorney fees and costs (ORS 192.431(3))."
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "Every person, regardless of nationality or residency, has a right to inspect any public record not expressly exempt (ORS 192.314(1))."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "Attorney General (state bodies) or district attorney (local bodies); circuit court for elected officials",
+    "type": "attorney_general",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "Petition AG (ORS 192.411) or DA (ORS 192.415), who must rule within seven days or petition deemed denied (ORS 192.418); elected officials go straight to circuit court (192.427). Requester has no specific time limit; Public Records Advocate offers mediation (ORS 192.461-192.475)."
   },
-  "exemptions_citation": null,
-  "format_rule": null,
+  "exemptions_citation": "ORS 192.345 (conditional), ORS 192.355 (unconditional)",
+  "format_rule": "Copy in the form requested if available, otherwise in the form maintained (ORS 192.324(3)).",
   "covers": {
-    "governor": null,
-    "legislature": null,
+    "governor": true,
+    "legislature": false,
     "universities_public": null,
-    "school_districts": null
+    "school_districts": true
   },
   "sources": [
     "https://www.rcfp.org/open-government-guide/oregon/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Read chars 0-200k. Legislative Assembly not subject; other legislative bodies are. OHSU-type public corporations covered; other public universities not explicitly addressed. Appeal filing deadline heading empty in RCFP. response.days uses the 5-business-day acknowledgment; completion is 15 business days."
 }

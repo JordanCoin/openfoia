@@ -3,41 +3,41 @@
   "name": "Kansas",
   "level": "state",
   "statute": {
-    "name": "Kansas Open Records Act",
-    "citation": null,
-    "url": null
+    "name": "Kansas Open Records Act (KORA)",
+    "citation": "K.S.A. 45-215 et seq. (time § 45-218(d); fees § 45-219)",
+    "url": "https://www.rcfp.org/open-government-guide/kansas/"
   },
   "response": {
-    "days": null,
-    "unit": null,
-    "rule_text": null,
+    "days": 3,
+    "unit": "business",
+    "rule_text": "A request must be acted on as soon as possible but not later than the third business day after receipt, K.S.A. 45-218(d); if access is not immediate the custodian must give a detailed explanation (45-218(c)).",
     "extension_days": null,
     "extension_unit": null,
     "silence_is_denial": null
   },
   "fees": {
-    "search_allowed": null,
-    "labor_rule": null,
-    "copy_rule": null,
+    "search_allowed": true,
+    "labor_rule": "Copy fees may not exceed actual cost of furnishing copies, including staff time; state-agency memo gives free service for under one hour of staff time or fewer than 25 pages.",
+    "copy_rule": "Actual cost of furnishing copies; $0.25 per page deemed reasonable; AG reports 20 cents per page also reasonable.",
     "waiver_rule": null,
     "estimate_required": null,
     "late_penalty": null
   },
   "residency": {
-    "restricted": null,
-    "rule_text": null
+    "restricted": false,
+    "rule_text": "'Any person' may request records, K.S.A. 45-218."
   },
   "appeal": {
-    "body": null,
-    "type": null,
+    "body": "District court; Attorney General may investigate and issue findings/consent orders",
+    "type": "court",
     "deadline_days": null,
     "deadline_unit": null,
-    "rule_text": null
+    "rule_text": "No administrative appeal on the merits; requester may go directly to district court. The AG (or county/district attorney) may investigate and, after 2023-era enforcement changes described by RCFP, find a violation and enter a consent order before suit. Fee disputes with state agencies may be appealed to the Secretary of Administration, whose decision is final."
   },
   "exemptions_citation": null,
   "format_rule": null,
   "covers": {
-    "governor": null,
+    "governor": true,
     "legislature": null,
     "universities_public": null,
     "school_districts": null
@@ -45,7 +45,7 @@
   "sources": [
     "https://www.rcfp.org/open-government-guide/kansas/"
   ],
-  "verified": false,
-  "verified_at": null,
-  "notes": null
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Governor and other executive offices are 'public agencies' under KORA. Legislature: records kept by individual legislators are not public records (partial); universities: a university athletic association was held not a public agency (partial). Silence-is-denial and appeal deadline not found. K.S.A. 45-219 fee citation inferred from fee topic, not seen."
 }
