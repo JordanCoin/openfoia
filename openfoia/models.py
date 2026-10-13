@@ -240,6 +240,13 @@ class Request(Base):
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     due_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Lifecycle clocks (migration 007), computed from the agency's jurisdiction rule.
+    extended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    tolled_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    denied_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    appeal_due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    appealed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    still_interested_due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Fees
     fee_estimate: Mapped[float | None] = mapped_column(Float, nullable=True)

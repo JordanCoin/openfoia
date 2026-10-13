@@ -151,6 +151,21 @@ openfoia request new -a <agency-id> -s "subject" -f draft.txt -n "Full Name" -e 
 
 File when the open record has a specific gap you can name by document number, date range and office (a MORI or CREST number from a document index that is not online is the ideal request). `template exemptions` explains the b(1) to b(9) codes when a denial comes back. `deadlines list` tracks the statutory clock.
 
+## Clocks
+
+Every sent request runs on its agency's jurisdiction rule, not a fixed 20 days. Record what the agency does and the tool recomputes what is due:
+
+```bash
+openfoia request mark REQ-2026-001 acknowledged --on 2026-10-20
+openfoia request mark REQ-2026-001 extended                       # pushes the due date by the statute's extension
+openfoia request mark REQ-2026-001 denied                         # starts the appeal clock
+openfoia request mark REQ-2026-001 still-interested --due 2026-11-15
+openfoia request status REQ-2026-001                              # every clock, days left, and the rule behind it
+openfoia deadlines list                                           # overdue first, across response, appeal and still-interested clocks
+```
+
+When a jurisdiction sets no clock the status says "no statutory deadline" and never invents one. An agency without a jurisdiction is treated as federal and the output says so.
+
 ## Reading the output
 
 - `fetched N, skipped M already stored, failed K`: K non-zero means some ids are missing; say which and why.
