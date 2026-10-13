@@ -30,6 +30,7 @@ from openfoia.records.documentcloud import DocumentCloudAdapter
 from openfoia.records.fec import FECAdapter
 from openfoia.records.govinfo import GovInfoAdapter
 from openfoia.records.muckrock import MuckRockAdapter
+from openfoia.records.nara import NARAAdapter
 from openfoia.records.opencorporates import OpenCorporatesAdapter
 from openfoia.records.propublica_nonprofit import ProPublicaNonprofitAdapter
 from openfoia.records.regulations import RegulationsGovAdapter
@@ -124,6 +125,7 @@ def test_no_bare_httpx_asyncclient_in_records_adapters():
         USASpendingAdapter,
         DocumentCloudAdapter,
         CIAReadingRoomAdapter,
+        NARAAdapter,
     ],
 )
 def test_adapter_accepts_egress_policy_kwarg(adapter_cls):
@@ -145,6 +147,7 @@ def test_adapter_accepts_egress_policy_kwarg(adapter_cls):
         USASpendingAdapter,
         DocumentCloudAdapter,
         CIAReadingRoomAdapter,
+        NARAAdapter,
     ],
 )
 def test_adapter_defaults_to_direct_policy_when_unspecified(adapter_cls):

@@ -61,12 +61,14 @@ class GovInfoAdapter(RecordAdapter):
     source_name = "govinfo"
 
     def __init__(self, api_key: str | None = None, *, egress: EgressPolicy | None = None):
-        """Initialize. Uses DEMO_KEY if no key provided.
+        """Initialize. Without *api_key*, OPENFOIA_GOVINFO_API_KEY is used, else DEMO_KEY.
 
-        For higher rate limits, get a free key at https://api.data.gov/signup/
+        DEMO_KEY is shared and rate-limited; get a free key at https://api.data.gov/signup/
         """
+        import os
+
         super().__init__(egress=egress)
-        self._api_key = api_key or "DEMO_KEY"
+        self._api_key = api_key or os.environ.get("OPENFOIA_GOVINFO_API_KEY") or "DEMO_KEY"
 
     async def search(
         self,
@@ -98,8 +100,12 @@ class GovInfoAdapter(RecordAdapter):
                     params={"api_key": self._api_key},
                     json=payload,
                 )
-                if resp.status_code == 429:
-                    msg = "GovInfo rate limit hit. Get a free key at https://api.data.gov/signup/"
+                if resp.status_code in (403, 429):
+                    msg = (
+                        f"GovInfo refused the request (HTTP {resp.status_code}): rate limit or "
+                        "bad key. Get a free key at https://api.data.gov/signup/ and set "
+                        "OPENFOIA_GOVINFO_API_KEY."
+                    )
                     logger.warning(msg)
                     return SearchResult(
                         source="govinfo",

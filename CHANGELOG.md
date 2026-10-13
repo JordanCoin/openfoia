@@ -10,6 +10,25 @@ exhaustive lists.
 
 ## [Unreleased]
 
+### Added
+
+- National Archives Catalog source (`--source nara`): `records search`
+  queries catalog.archives.gov's API v2 and `records fetch <NAID> -s nara`
+  stores the record's OCR text page by page (or its description when the
+  catalog has no text) in the active case. Needs a free key in
+  `OPENFOIA_NARA_API_KEY` (email Catalog_API@nara.gov); queries are counted
+  locally against the 10,000/month quota with a warning at 80 percent and a
+  refusal at 100 percent, and sent one per second. `--all-sources` reports
+  `skipped (no OPENFOIA_NARA_API_KEY)` instead of an error without a key.
+- `OPENFOIA_GOVINFO_API_KEY` supplies a GovInfo (api.data.gov) key; a 403 or
+  429 from GovInfo now names it.
+
+### Internal
+
+- Text-pulling adapters share one storage path (`openfoia/records/store.py`),
+  so DocumentCloud and NARA documents are stored, re-fetched and attached to
+  cases the same way.
+
 ## [4.4.0] - 2026-10-14
 
 Cases get update and delete: rename, re-describe, remove, and move documents
