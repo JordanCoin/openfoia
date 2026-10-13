@@ -463,6 +463,8 @@ def seed_agencies(engine: Engine) -> int:
             name=data["name"],
             abbreviation=data.get("abbreviation"),
             level=AgencyLevel.FEDERAL,
+            jurisdiction_id="us",
+            body_type="federal",
             foia_email=data.get("foia_email"),
             foia_fax=data.get("foia_fax"),
             foia_address=data.get("foia_address"),

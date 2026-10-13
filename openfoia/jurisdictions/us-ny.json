@@ -1,0 +1,51 @@
+{
+  "id": "us-ny",
+  "name": "New York",
+  "level": "state",
+  "statute": {
+    "name": "New York Freedom of Information Law",
+    "citation": "N.Y. Pub. Off. Law art. 6 (sections 84-90)",
+    "url": null
+  },
+  "response": {
+    "days": null,
+    "unit": null,
+    "rule_text": "The fetched source did not state the acknowledgment or response clocks; check Public Officers Law 89(3) before quoting one.",
+    "extension_days": null,
+    "extension_unit": null,
+    "silence_is_denial": null
+  },
+  "fees": {
+    "search_allowed": null,
+    "labor_rule": null,
+    "copy_rule": "25 cents per photocopy up to 9 by 14 inches.",
+    "waiver_rule": null,
+    "estimate_required": null,
+    "late_penalty": null
+  },
+  "residency": {
+    "restricted": false,
+    "rule_text": null
+  },
+  "appeal": {
+    "body": "Committee on Open Government (advisory only); Article 78 in state Supreme Court",
+    "type": "ombudsman_advisory",
+    "deadline_days": null,
+    "deadline_unit": null,
+    "rule_text": "Administrative appeal to the body's appeals officer, then an Article 78 proceeding in state Supreme Court. Committee on Open Government opinions are advisory, not binding. Appeal clocks were not confirmed from the fetched source."
+  },
+  "exemptions_citation": "N.Y. Pub. Off. Law 87(2)",
+  "format_rule": null,
+  "covers": {
+    "governor": null,
+    "legislature": null,
+    "universities_public": null,
+    "school_districts": null
+  },
+  "sources": [
+    "https://www.rcfp.org/open-government-guide/new-york/"
+  ],
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": null
+}

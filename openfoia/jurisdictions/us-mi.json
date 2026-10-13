@@ -1,0 +1,51 @@
+{
+  "id": "us-mi",
+  "name": "Michigan",
+  "level": "state",
+  "statute": {
+    "name": "Michigan Freedom of Information Act",
+    "citation": "MCL 15.231 to 15.246",
+    "url": "https://www.legislature.mi.gov/Laws/MCL?objectName=mcl-Act-442-of-1976"
+  },
+  "response": {
+    "days": 5,
+    "unit": "business",
+    "rule_text": "5 business days to respond, with one written extension of up to 10 business days. A non-response counts as a final denial only when the request cited FOIA in its first 250 words or on the envelope or subject line (MCL 15.235).",
+    "extension_days": 10,
+    "extension_unit": "business",
+    "silence_is_denial": null
+  },
+  "fees": {
+    "search_allowed": true,
+    "labor_rule": "Labor at the hourly wage of the lowest-paid employee capable of the work, in 15-minute increments; an itemized estimate is required.",
+    "copy_rule": "Actual cost of copies; a deposit may be required when the estimate exceeds $50.",
+    "waiver_rule": "First $20 waived for indigent requesters and certain nonprofits.",
+    "estimate_required": true,
+    "late_penalty": "Fees are reduced 50% when the body misses its deadline."
+  },
+  "residency": {
+    "restricted": false,
+    "rule_text": "Any person except incarcerated persons."
+  },
+  "appeal": {
+    "body": "Head of the public body, or circuit court",
+    "type": "court",
+    "deadline_days": 180,
+    "deadline_unit": "calendar",
+    "rule_text": "Denials: appeal to the head of the public body or sue in circuit court within 180 days. Fee disputes: head of the body (10 days) or the Court of Claims within 45 days. No commission or ombudsman."
+  },
+  "exemptions_citation": "MCL 15.243",
+  "format_rule": "Electronic copies on request when the body keeps the record electronically.",
+  "covers": {
+    "governor": false,
+    "legislature": false,
+    "universities_public": null,
+    "school_districts": null
+  },
+  "sources": [
+    "https://www.rcfp.org/open-government-guide/michigan/"
+  ],
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": "Governor and Legislature remain outside the act; reform bills passed the Senate in 2025 and stalled in the House. Whether public universities and school districts are 'public bodies' under MCL 15.232 was not confirmed from the fetched source; the statute's definition is the place to check."
+}

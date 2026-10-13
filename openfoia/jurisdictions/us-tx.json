@@ -1,0 +1,51 @@
+{
+  "id": "us-tx",
+  "name": "Texas",
+  "level": "state",
+  "statute": {
+    "name": "Texas Public Information Act",
+    "citation": "Tex. Gov't Code ch. 552",
+    "url": null
+  },
+  "response": {
+    "days": null,
+    "unit": null,
+    "rule_text": "Records must be produced 'promptly'. If that takes more than 10 business days the officer must certify so in writing and set a date (Gov't Code 552.221(d)). There is no fixed day count to compute a due date from.",
+    "extension_days": null,
+    "extension_unit": null,
+    "silence_is_denial": null
+  },
+  "fees": {
+    "search_allowed": true,
+    "labor_rule": null,
+    "copy_rule": null,
+    "waiver_rule": null,
+    "estimate_required": null,
+    "late_penalty": null
+  },
+  "residency": {
+    "restricted": false,
+    "rule_text": "Anyone, citizens and non-citizens alike."
+  },
+  "appeal": {
+    "body": "Attorney General open records decisions",
+    "type": "attorney_general",
+    "deadline_days": null,
+    "deadline_unit": null,
+    "rule_text": "A body that wants to withhold must ask the Attorney General for a ruling within 10 business days; the AG rules within 45 business days (552.008(b-2))."
+  },
+  "exemptions_citation": "Tex. Gov't Code 552.101 et seq.",
+  "format_rule": null,
+  "covers": {
+    "governor": null,
+    "legislature": null,
+    "universities_public": true,
+    "school_districts": true
+  },
+  "sources": [
+    "https://www.rcfp.org/open-government-guide/texas/"
+  ],
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": null
+}

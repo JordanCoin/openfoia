@@ -12,6 +12,21 @@ exhaustive lists.
 
 ### Added
 
+- Jurisdictions: federal FOIA is no longer the only law openfoia knows. One
+  JSON file per public-records law lives in `openfoia/jurisdictions/`
+  (`us` plus all 50 states and DC) with the statute, response clock, fee,
+  residency and appeal rules; a null field means unknown, never "none", and
+  stubs say `verified: false`. `openfoia jurisdiction list|show <id>|search
+  <text>` reads them. Verified today: us, us-mi, us-il, us-tx, us-ny, us-wa,
+  us-fl, each with its sources; the other 44 are stubs to be filled from the
+  statute.
+- Local public bodies: `openfoia agency add --name ... --jurisdiction us-mi
+  --level school_district [--email --address --portal --custodian-title
+  --response-days]` adds a school district, city, county or university with
+  its state's law and clock. `agency list --jurisdiction us-mi --level
+  school_district` filters; `agency info` shows the law and the custodian.
+  Database migration `006` (nullable columns only; existing agencies are
+  marked federal).
 - National Archives Catalog source (`--source nara`): `records search`
   queries catalog.archives.gov's API v2 and `records fetch <NAID> -s nara`
   stores the record's OCR text page by page (or its description when the

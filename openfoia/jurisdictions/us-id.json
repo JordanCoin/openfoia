@@ -1,0 +1,51 @@
+{
+  "id": "us-id",
+  "name": "Idaho",
+  "level": "state",
+  "statute": {
+    "name": "Idaho Public Records Act",
+    "citation": null,
+    "url": null
+  },
+  "response": {
+    "days": null,
+    "unit": null,
+    "rule_text": null,
+    "extension_days": null,
+    "extension_unit": null,
+    "silence_is_denial": null
+  },
+  "fees": {
+    "search_allowed": null,
+    "labor_rule": null,
+    "copy_rule": null,
+    "waiver_rule": null,
+    "estimate_required": null,
+    "late_penalty": null
+  },
+  "residency": {
+    "restricted": null,
+    "rule_text": null
+  },
+  "appeal": {
+    "body": null,
+    "type": null,
+    "deadline_days": null,
+    "deadline_unit": null,
+    "rule_text": null
+  },
+  "exemptions_citation": null,
+  "format_rule": null,
+  "covers": {
+    "governor": null,
+    "legislature": null,
+    "universities_public": null,
+    "school_districts": null
+  },
+  "sources": [
+    "https://www.rcfp.org/open-government-guide/idaho/"
+  ],
+  "verified": false,
+  "verified_at": null,
+  "notes": null
+}

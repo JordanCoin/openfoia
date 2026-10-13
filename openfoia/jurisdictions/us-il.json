@@ -1,0 +1,51 @@
+{
+  "id": "us-il",
+  "name": "Illinois",
+  "level": "state",
+  "statute": {
+    "name": "Illinois Freedom of Information Act",
+    "citation": "5 ILCS 140",
+    "url": null
+  },
+  "response": {
+    "days": 5,
+    "unit": "business",
+    "rule_text": "5 business days to respond.",
+    "extension_days": null,
+    "extension_unit": null,
+    "silence_is_denial": null
+  },
+  "fees": {
+    "search_allowed": false,
+    "labor_rule": "Search and review time generally cannot be charged.",
+    "copy_rule": "First 50 pages free, then up to 15 cents per page.",
+    "waiver_rule": null,
+    "estimate_required": null,
+    "late_penalty": "A late response forfeits copy fees."
+  },
+  "residency": {
+    "restricted": false,
+    "rule_text": null
+  },
+  "appeal": {
+    "body": "Public Access Counselor (Attorney General), or circuit court",
+    "type": "ombudsman_advisory",
+    "deadline_days": null,
+    "deadline_unit": null,
+    "rule_text": "Request for review to the Public Access Counselor, or suit in circuit court. The review deadline was not confirmed from the fetched source."
+  },
+  "exemptions_citation": "5 ILCS 140/7",
+  "format_rule": null,
+  "covers": {
+    "governor": null,
+    "legislature": null,
+    "universities_public": true,
+    "school_districts": true
+  },
+  "sources": [
+    "https://www.rcfp.org/open-government-guide/illinois/"
+  ],
+  "verified": true,
+  "verified_at": "2026-10-14",
+  "notes": null
+}
