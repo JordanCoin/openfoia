@@ -157,7 +157,8 @@ answered and had nothing. MuckRock's API now needs a token: set
 The National Archives Catalog holds descriptions of records that agencies have
 transferred to NARA, and OCR text for many digitised ones (record groups such
 as RG 263, CIA). It needs a free API key: there is no signup form, you email
-`Catalog_API@nara.gov` and set `OPENFOIA_NARA_API_KEY`. The default key allows
+`Catalog_API@nara.gov` and set `OPENFOIA_NARA_API_KEY` (`CATALOG_API_KEY`, the
+name NARA's own scripts use, works too). The default key allows
 10,000 queries a month. openfoia counts your queries locally in
 `nara_quota.json` under the data directory, warns at 80 percent and refuses at
 100 percent (`OPENFOIA_NARA_IGNORE_QUOTA=1` overrides if NARA raised your
@@ -168,7 +169,22 @@ localhost server, so the key is never sent anywhere else.
 ```bash
 openfoia records search "Gittinger" -s nara -n 50 --json
 openfoia records fetch 7283224 -s nara     # NAID from the search or the catalog URL
+openfoia records search -s nara --ancestor 7283224 --all --max 500 --json   # every child record
+openfoia records fetch 7283224 -s nara --list-objects   # preview scans/PDFs, download nothing
+openfoia records fetch 7283224 -s nara --objects        # download + OCR them into the case
 ```
+
+These follow NARA's own bulk-download scripts. `--ancestor` limits a search to
+records under a series or file unit; `--all` walks every page (100 hits per
+query, each counted against the quota, capped by `--max`, default 1000) and
+says how many queries it may take first. `--objects` saves each digital object
+to `<data dir>/nara/<NAID>/<original filename>`, skips files already there (so
+re-running resumes), and ingests the rest (PDFs through text extraction and
+OCR, images through OCR) under the same record as the text fetch. Objects come
+from NARA's storage on Amazon S3 (`nara-media-001.s3.amazonaws.com`), a second
+host the command names before downloading; they are not catalog queries and do
+not count against the quota. Objects hosted anywhere else are listed but not
+downloaded.
 
 Fetch stores the record's OCR text page by page when the catalog has it, so
 `docs grep` cites real pages; when it has none, the catalog description is

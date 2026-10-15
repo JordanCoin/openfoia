@@ -10,6 +10,19 @@ exhaustive lists.
 
 ## [Unreleased]
 
+### Added
+
+- NARA Catalog works the way NARA's own bulk-download scripts do.
+  `records search -s nara --ancestor <NAID>` finds every record under a series
+  or file unit (the search term is optional), and `--all` walks every page up
+  to `--max` hits (default 1000), saying first how many quota-counted queries
+  it may take. `records fetch <NAID> -s nara --list-objects` previews a
+  record's scans and PDFs without downloading; `--objects` downloads them from
+  NARA's storage on Amazon S3 into `<data dir>/nara/<NAID>/`, skips files
+  already there so a re-run resumes, and OCRs them into the active case next
+  to the record's text. The key can also be set as `CATALOG_API_KEY`, the name
+  NARA's scripts use.
+
 ## [4.5.0] - 2026-10-14
 
 ### Added

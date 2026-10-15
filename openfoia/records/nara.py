@@ -1,7 +1,7 @@
 """NARA National Archives Catalog adapter (catalog.archives.gov API v2).
 
 Needs a free key: email Catalog_API@nara.gov (there is no signup form) and set
-OPENFOIA_NARA_API_KEY. The default key allows 10,000 queries a month; this
+OPENFOIA_NARA_API_KEY (or CATALOG_API_KEY, NARA's own name for it). The default key allows 10,000 queries a month; this
 adapter counts them locally and warns at 80 percent. Requests are throttled
 to one per second. API help: https://www.archives.gov/research/catalog/help/api
 
@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 API_BASE_DEFAULT = "https://catalog.archives.gov/api/v2"
 KEY_ENV = "OPENFOIA_NARA_API_KEY"
+KEY_ENV_ALIAS = "CATALOG_API_KEY"  # the name NARA's own bulk-download scripts read
 QUOTA_ENV = "OPENFOIA_NARA_IGNORE_QUOTA"
 MONTHLY_QUOTA = 10_000
 QUOTA_FILE = "nara_quota.json"
@@ -35,8 +36,13 @@ ATTRIBUTION = (
 DESCRIPTION_MARKER = "NARA catalog description (no OCR text)"
 NO_KEY_MESSAGE = (
     f"NARA Catalog API requires a key. Email Catalog_API@nara.gov for a free one "
-    f"(there is no signup form) and set {KEY_ENV}."
+    f"(there is no signup form) and set {KEY_ENV} (or {KEY_ENV_ALIAS})."
 )
+PAGE_MAX = 100
+# Digital objects (scans, PDFs) are served from NARA's S3 buckets, not the API host.
+OBJECT_HOST = "nara-media-001.s3.amazonaws.com"
+OBJECT_PATH_STYLE = ("s3.amazonaws.com", "/NARAprodstorage/")
+MAX_OBJECT_BYTES = 500 * 1024 * 1024
 
 _last_call = 0.0
 _quota_warned = False
@@ -59,6 +65,27 @@ def api_base() -> str:
             f"test server; refusing to send the API key to {base!r}."
         )
     return base.rstrip("/")
+
+
+def object_url_allowed(url: str) -> bool:
+    """True only for https URLs on NARA's object storage; anything else is not downloaded."""
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(url)
+    if parts.scheme != "https":
+        return False
+    host, prefix = OBJECT_PATH_STYLE
+    return parts.hostname == OBJECT_HOST or (
+        parts.hostname == host and parts.path.startswith(prefix)
+    )
+
+
+async def _throttle() -> None:
+    global _last_call
+    wait = 1.0 - (time.monotonic() - _last_call)  # ponytail: 1 req/s, process-wide
+    if wait > 0:
+        await asyncio.sleep(wait)
+    _last_call = time.monotonic()
 
 
 def quota_path():
@@ -110,22 +137,18 @@ class NARAAdapter(RecordAdapter):
 
     def __init__(self, api_key: str | None = None, *, egress=None):
         super().__init__(egress=egress)
-        self._api_key = api_key or os.environ.get(KEY_ENV)
+        self._api_key = api_key or os.environ.get(KEY_ENV) or os.environ.get(KEY_ENV_ALIAS)
 
     @property
     def has_key(self) -> bool:
         return bool(self._api_key)
 
     async def _get(self, params: dict[str, Any]) -> dict[str, Any]:
-        global _last_call
         if not self._api_key:
             raise AdapterRequestError(NO_KEY_MESSAGE)
         base = api_base()  # refuses to send the key anywhere but NARA or localhost
         _check_quota()
-        wait = 1.0 - (time.monotonic() - _last_call)  # ponytail: 1 req/s, process-wide
-        if wait > 0:
-            await asyncio.sleep(wait)
-        _last_call = time.monotonic()
+        await _throttle()
         _record_request()
         return await self._request(
             f"{base}/records/search",
@@ -135,13 +158,19 @@ class NARAAdapter(RecordAdapter):
         )
 
     async def search(self, query: str, **kwargs: Any) -> SearchResult:
+        """One page of results; ``all_pages=True`` walks every page with searchAfter
+        up to ``max_hits``, one quota-counted request per page (NARA's AllChildRecords)."""
         page = int(kwargs.get("page") or 1)
-        per_page = min(int(kwargs.get("page_size") or 25), 100)
-        params: dict[str, Any] = {"q": query, "limit": per_page, "page": page}
+        per_page = min(int(kwargs.get("page_size") or 25), PAGE_MAX)
+        params: dict[str, Any] = {"q": query or "*", "limit": per_page, "page": page}
+        if kwargs.get("ancestor"):
+            params["ancestorNaId"] = str(kwargs["ancestor"])
         if kwargs.get("available_online"):
             params["availableOnline"] = "true"
         if kwargs.get("type_of_materials"):
             params["typeOfMaterials"] = kwargs["type_of_materials"]
+        if kwargs.get("all_pages"):
+            return await self._walk(query, params, int(kwargs.get("max_hits") or 1000))
         try:
             data = await self._get(params)
         except AdapterRequestError as exc:
@@ -159,6 +188,76 @@ class NARAAdapter(RecordAdapter):
             raw_response=data,
         )
 
+    async def _walk(self, query: str, params: dict[str, Any], max_hits: int) -> SearchResult:
+        # searchAfter is incompatible with page: first value "*", then the last hit's sort[0].
+        params = {k: v for k, v in params.items() if k != "page"}
+        params["limit"] = PAGE_MAX
+        params["searchAfter"] = "*"
+        entities: list[RecordEntity] = []
+        total = 0
+        while len(entities) < max_hits:
+            try:
+                data = await self._get(params)
+            except AdapterRequestError as exc:
+                failed = self._failed(query, str(exc), per_page=PAGE_MAX)
+                failed.entities = entities  # keep what arrived before the failure
+                return failed
+            hits = (data.get("body") or {}).get("hits") or {}
+            total = int((hits.get("total") or {}).get("value") or total)
+            page_hits = hits.get("hits") or []
+            entities += [e for e in (_entity(h.get("_source") or {}) for h in page_hits) if e]
+            sort = page_hits[-1].get("sort") if page_hits else None
+            if len(page_hits) < PAGE_MAX or not sort:
+                break
+            params["searchAfter"] = sort[0]
+        return SearchResult(
+            source=self.source_name,
+            query=query,
+            total_results=total,
+            entities=entities[:max_hits],
+            page=1,
+            per_page=PAGE_MAX,
+        )
+
+    async def download_objects(
+        self, entity: RecordEntity, dest_dir
+    ) -> list[tuple[dict[str, Any], Any, str]]:
+        """Download *entity*'s digital objects into *dest_dir* (NARA's DownloadObjects).
+
+        Returns ``(object, path, status)`` per object, status one of downloaded,
+        present (already on disk at the expected size), refused (not NARA's object
+        host) or ``failed: ...``. Object downloads are not catalog queries, so they
+        are not counted against the quota, but they keep the 1 req/s throttle.
+        """
+        from pathlib import Path
+
+        from ..net import egress_client
+        from .base import download_to_file, safe_download_filename
+
+        dest_dir = Path(dest_dir)
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        out = []
+        for i, obj in enumerate(entity.extra_data.get("objects") or [], 1):
+            url = obj.get("url") or ""
+            name = safe_download_filename(obj.get("filename") or url, default=f"object-{i}")
+            dest = dest_dir / name
+            size = obj.get("size")
+            if dest.exists() and (not size or dest.stat().st_size == size):
+                out.append((obj, dest, "present"))
+                continue
+            if not object_url_allowed(url):
+                out.append((obj, dest, "refused"))
+                continue
+            await _throttle()
+            try:
+                async with egress_client(self._egress, timeout=120) as client:
+                    await download_to_file(client, url, dest, max_bytes=MAX_OBJECT_BYTES)
+            except Exception as exc:
+                out.append((obj, dest, f"failed: {type(exc).__name__}: {exc}"))
+                continue
+            out.append((obj, dest, "downloaded"))
+        return out
+
     async def fetch(self, identifier: str, **kwargs: Any) -> RecordEntity | None:
         naid = str(identifier).strip().removeprefix("NARA-")
         data = await self._get({"naId": naid, "includeExtractedText": "true"})
@@ -169,6 +268,15 @@ class NARAAdapter(RecordAdapter):
         if entity is None:
             return None
         record = (hits[0].get("_source") or {}).get("record") or {}
+        entity.extra_data["objects"] = [
+            {
+                "type": obj.get("objectType"),
+                "url": obj.get("objectUrl"),
+                "filename": obj.get("objectFilename"),
+                "size": obj.get("objectFileSize"),
+            }
+            for obj in record.get("digitalObjects") or []
+        ]
         # Keep blank pages as "" so positions hold: page 3 of the scan stays p.3.
         page_texts = [
             (obj.get("extractedText") or "").strip() for obj in record.get("digitalObjects") or []
@@ -192,11 +300,16 @@ class NARAAdapter(RecordAdapter):
         self, identifier: str, case_id: str | None = None
     ) -> tuple[str | None, str | None]:
         """Fetch a NAID and store its text as a local Document (see store.py)."""
-        from .store import store_text_document
-
         entity = await self.fetch(identifier)
         if not entity:
             return None, None
+        return self.store(entity, identifier, case_id)
+
+    def store(
+        self, entity: RecordEntity, identifier: str, case_id: str | None = None
+    ) -> tuple[str | None, str | None]:
+        from .store import store_text_document
+
         naid = entity.identifiers.get("naid", identifier)
         described = entity.extra_data.get("text_kind") == "description"
         return store_text_document(

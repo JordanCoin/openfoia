@@ -54,7 +54,10 @@ def store_text_document(
             if case_id and existing_req.case_id is None:
                 existing_req.case_id = case_id
             existing_doc = (
-                session.query(Document).filter(Document.request_id == existing_req.id).first()
+                session.query(Document)
+                # Ingested files (NARA --objects) share the request; the text doc has no file.
+                .filter(Document.request_id == existing_req.id, Document.file_path == "")
+                .first()
             )
             if existing_doc:
                 existing_doc.extracted_text = full_text
