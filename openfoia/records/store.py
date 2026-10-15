@@ -77,26 +77,29 @@ def store_text_document(
                     replace_pages(session, existing_doc.id, pages)
                 return existing_doc.id, full_text
 
-        user = session.query(User).first()
-        if not user:
-            user = User(id=str(uuid4()), email="local@openfoia.local", name="Local User")
-            session.add(user)
-            session.flush()
+        # A request with only ingested files (NARA --objects ran first) takes the text doc.
+        req = existing_req
+        if req is None:
+            user = session.query(User).first()
+            if not user:
+                user = User(id=str(uuid4()), email="local@openfoia.local", name="Local User")
+                session.add(user)
+                session.flush()
 
-        agency = session.query(Agency).first()
-        req = Request(
-            id=str(uuid4()),
-            request_number=request_number,
-            requester_id=user.id,
-            agency_id=agency.id if agency else user.id,
-            subject=entity.name,
-            body=body,
-            delivery_method=DeliveryMethod.EMAIL,
-            status=RequestStatus.COMPLETE,
-            case_id=case_id,
-        )
-        session.add(req)
-        session.flush()
+            agency = session.query(Agency).first()
+            req = Request(
+                id=str(uuid4()),
+                request_number=request_number,
+                requester_id=user.id,
+                agency_id=agency.id if agency else user.id,
+                subject=entity.name,
+                body=body,
+                delivery_method=DeliveryMethod.EMAIL,
+                status=RequestStatus.COMPLETE,
+                case_id=case_id,
+            )
+            session.add(req)
+            session.flush()
 
         doc_id = str(uuid4())
         session.add(

@@ -5672,6 +5672,9 @@ def records_fetch(
     if list_objects and objects:
         rprint("[red]--list-objects previews; --objects downloads. Pick one.[/red]")
         raise typer.Exit(2)
+    if as_json and not list_objects:
+        rprint("[red]--json only applies to --list-objects.[/red]")
+        raise typer.Exit(2)
     ids = list(doc_ids or [])
     if from_file:
         ids += _ids_from_results(from_file, source)
@@ -5710,7 +5713,13 @@ def records_fetch(
             err=True,
         )
         if list_objects or objects:
-            _records_nara_objects(adapter, ids, download=objects, as_json=as_json)
+            from .records.nara import NARAAdapter
+
+            policy = _cia_policy_or_exit()  # fails closed when Tor is configured but down
+            adapter = NARAAdapter(egress=policy)
+            _records_nara_objects(
+                adapter, ids, download=objects, as_json=as_json, route=_route_note(policy)
+            )
             return
     case_id = active_case_id_in_db()
 
@@ -5759,7 +5768,9 @@ def records_fetch(
         raise typer.Exit(1 if not fetched and not skipped else 2)
 
 
-def _records_nara_objects(adapter, ids: list[str], *, download: bool, as_json: bool) -> None:
+def _records_nara_objects(
+    adapter, ids: list[str], *, download: bool, as_json: bool, route: str
+) -> None:
     """List (or download and ingest) each NAID's digital objects, like NARA's own scripts."""
     import asyncio
 
@@ -5767,7 +5778,7 @@ def _records_nara_objects(adapter, ids: list[str], *, download: bool, as_json: b
     from .db import ensure_db, get_data_dir
     from .records.nara import OBJECT_HOST
 
-    listing, failed, notified = [], 0, False
+    listing, failed, ok, notified = [], 0, 0, False
     for raw in ids:
         naid = raw.strip().removeprefix("NARA-")
         try:
@@ -5781,6 +5792,7 @@ def _records_nara_objects(adapter, ids: list[str], *, download: bool, as_json: b
             rprint(f"  {naid}  [red]no such NAID[/red]")
             continue
         objs = entity.extra_data.get("objects") or []
+        ok += 1
         if not download:
             if as_json:
                 listing += [{"naid": naid, "index": i, **o} for i, o in enumerate(objs, 1)]
@@ -5795,7 +5807,7 @@ def _records_nara_objects(adapter, ids: list[str], *, download: bool, as_json: b
             notified = True
             rprint(
                 f"[yellow]Downloading digital objects from {OBJECT_HOST} (NARA's object "
-                "storage on Amazon S3, a new host; not counted against the API quota).[/yellow]"
+                f"storage on Amazon S3, a new host; {route}; not counted against the API quota).[/yellow]"
             )
         ensure_db()
         case_id = active_case_id_in_db()
@@ -5811,36 +5823,57 @@ def _records_nara_objects(adapter, ids: list[str], *, download: bool, as_json: b
     if as_json and not download:
         typer.echo(json.dumps(listing, ensure_ascii=False))
     if failed:
-        raise typer.Exit(2)
+        raise typer.Exit(2 if ok else 1)
 
 
 def _ingest_nara_objects(entity, naid: str, results) -> int:
+    """Ingest and persist each file as it goes, so an interrupted run keeps what it saved.
+
+    A file already on disk with no Document row (a run died between download and
+    ingest) is ingested too; one that has a row is left alone.
+    """
     import asyncio
 
-    from .db import get_data_dir
+    from sqlalchemy import or_
+
+    from .db import get_data_dir, get_session
+    from .models import Document, Request
     from .pipeline.ingest import DocumentIngester
 
+    number = f"NARA-{naid}"
+    with get_session() as session:
+        have = {
+            name
+            for (name,) in session.query(Document.filename)
+            .join(Request, Document.request_id == Request.id)
+            .filter(
+                or_(Request.request_number == number, Request.request_number.like(f"{number}@%"))
+            )
+        }
     ingester = DocumentIngester(storage_path=get_data_dir() / "docs")
-    done = []
+    done = 0
     for obj, path, status in results:
         if status == "refused":
             rprint(f"    [yellow]skipped {obj.get('url')}: not NARA's object storage[/yellow]")
-        elif status.startswith("failed"):
+            continue
+        if status.startswith("failed"):
             rprint(f"    [red]{path.name}: {status}[/red]")
-        elif status == "downloaded":
-            try:
-                done.append(asyncio.run(ingester.ingest_file(path)))
-            except Exception as e:
-                path.unlink(missing_ok=True)  # so a re-run retries instead of skipping it
-                rprint(f"    [red]{path.name}: ingest failed: {e}[/red]")
-    if done:
+            continue
+        if path.name in have:
+            continue
+        try:
+            result = asyncio.run(ingester.ingest_file(path))
+        except Exception as e:
+            rprint(f"    [red]{path.name}: ingest failed: {e} (re-run to retry)[/red]")
+            continue
         _persist_ingested(
-            done,
-            request_number=f"NARA-{naid}",
+            [result],
+            request_number=number,
             subject=entity.name,
             body=f"Digital objects from the National Archives Catalog: {entity.source_url}",
         )
-    return len(done)
+        done += 1
+    return done
 
 
 def _cia_policy_or_exit() -> EgressPolicy:

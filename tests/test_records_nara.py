@@ -418,12 +418,18 @@ def test_objects_skip_present_file_and_ingest_the_rest(monkeypatch):
     assert r.exit_code == 0, r.output
     assert "nara-media-001.s3.amazonaws.com" in r.output
     assert [u.rsplit("/", 1)[-1] for u in downloaded] == ["2.pdf", "3.pdf"]
-    assert ingested == ["2.pdf", "3.pdf"]
+    # 1.pdf was on disk with no Document row (a run died before ingest): ingested now.
+    assert ingested == ["1.pdf", "2.pdf", "3.pdf"]
     assert nara_mod.quota_count() == before + 1  # the record query only, not the downloads
     names = {
         d["filename"] for d in json.loads(runner.invoke(app, ["docs", "list", "--json"]).output)
     }
-    assert {"2.pdf", "3.pdf", "nara-7283224-description.txt"} <= names
+    assert {"1.pdf", "2.pdf", "3.pdf", "nara-7283224-description.txt"} <= names
+
+    ingested.clear()
+    r = runner.invoke(app, ["records", "fetch", "7283224", "-s", "nara", "--objects"])
+    assert r.exit_code == 0, r.output
+    assert ingested == []  # every file present and already has a row
 
 
 def test_object_host_allowlist():
@@ -432,3 +438,101 @@ def test_object_host_allowlist():
     assert not nara_mod.object_url_allowed("http://nara-media-001.s3.amazonaws.com/a.jpg")
     assert not nara_mod.object_url_allowed("https://s3.amazonaws.com/other-bucket/a.pdf")
     assert not nara_mod.object_url_allowed("http://www.reaganlibrary.archives.gov/c.jpg")
+
+
+def test_objects_use_the_configured_tor_policy(monkeypatch):
+    from openfoia import cli
+    from openfoia.net import EgressMode, EgressPolicy
+
+    monkeypatch.setenv("OPENFOIA_NARA_API_KEY", "k")
+    _patch_request(monkeypatch, _response([_hit_with_files()]), [])
+    tor = EgressPolicy(mode=EgressMode.TOR)
+    monkeypatch.setattr(cli, "_cia_policy_or_exit", lambda: tor)
+    seen: list = []
+
+    async def fake_objects(self, entity, dest_dir):
+        seen.append(self._egress)
+        return []
+
+    monkeypatch.setattr(NARAAdapter, "download_objects", fake_objects)
+    r = runner.invoke(app, ["records", "fetch", "7283224", "-s", "nara", "--objects"])
+    assert r.exit_code == 0, r.output
+    assert seen == [tor] and "via Tor" in r.output
+
+
+def test_ingest_persists_each_file_before_a_later_one_dies(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from openfoia import cli
+    from openfoia.db import ensure_db, get_session
+    from openfoia.models import Document
+    from openfoia.pipeline.ingest import DocumentIngester
+
+    ensure_db()
+    files = []
+    for name in ("a.pdf", "b.pdf"):
+        (tmp_path / name).write_bytes(b"%PDF")
+        files.append(({}, tmp_path / name, "downloaded"))
+
+    async def fake_ingest(self, path, **kw):
+        if path.name == "b.pdf":
+            raise KeyboardInterrupt  # the run is killed mid-batch
+        return SimpleNamespace(
+            document_id="doc-a",
+            filename=path.name,
+            file_path=str(path),
+            file_size=4,
+            mime_type="application/pdf",
+            page_count=1,
+            extracted_text="a",
+            pages=None,
+            verdicts=None,
+        )
+
+    monkeypatch.setattr(DocumentIngester, "ingest_file", fake_ingest)
+    entity = SimpleNamespace(name="x", source_url="https://catalog.archives.gov/id/1")
+    with pytest.raises(KeyboardInterrupt):
+        cli._ingest_nara_objects(entity, "1", files)
+    with get_session() as session:
+        assert [d.filename for d in session.query(Document)] == ["a.pdf"]
+
+
+def test_text_fetch_after_objects_reuses_the_request(tmp_path):
+    from types import SimpleNamespace
+
+    from openfoia import cli
+    from openfoia.db import ensure_db, get_session
+    from openfoia.models import Document, Request
+    from openfoia.records.base import RecordEntity
+    from openfoia.records.store import store_text_document
+
+    ensure_db()
+    obj = SimpleNamespace(
+        document_id="doc-obj",
+        filename="1.pdf",
+        file_path=str(tmp_path / "1.pdf"),
+        file_size=4,
+        mime_type="application/pdf",
+        page_count=1,
+        extracted_text="scan",
+        pages=None,
+        verdicts=None,
+    )
+    cli._persist_ingested([obj], request_number="NARA-1", subject="x", body="objects")
+    entity = RecordEntity(
+        entity_type="DOCUMENT", name="x", source="nara", extra_data={"full_text": "ocr"}
+    )
+    doc_id, _ = store_text_document(
+        entity, request_number="NARA-1", filename="nara-1.txt", body="text"
+    )
+    with get_session() as session:
+        assert session.query(Request).count() == 1
+        assert session.get(Document, "doc-obj").extracted_text == "scan"  # not overwritten
+        assert session.get(Document, doc_id).filename == "nara-1.txt"
+
+
+def test_object_filenames_keep_url_special_characters():
+    assert nara_mod._object_filename("a#1.jpg") != nara_mod._object_filename("a#2.jpg")
+    assert nara_mod._object_filename("a?b;c.pdf") == "a_b_c.pdf"
+    assert nara_mod._object_filename("../../etc/passwd") == "passwd"
+    assert nara_mod._object_filename("..") == "" and nara_mod._object_filename(None) == ""

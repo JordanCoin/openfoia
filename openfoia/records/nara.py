@@ -15,6 +15,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -239,8 +240,10 @@ class NARAAdapter(RecordAdapter):
         out = []
         for i, obj in enumerate(entity.extra_data.get("objects") or [], 1):
             url = obj.get("url") or ""
-            name = safe_download_filename(obj.get("filename") or url, default=f"object-{i}")
-            dest = dest_dir / name
+            dest = dest_dir / (
+                _object_filename(obj.get("filename"))
+                or safe_download_filename(url, default=f"object-{i}")
+            )
             size = obj.get("size")
             if dest.exists() and (not size or dest.stat().st_size == size):
                 out.append((obj, dest, "present"))
@@ -323,6 +326,12 @@ class NARAAdapter(RecordAdapter):
             ),
             case_id=case_id,
         )
+
+
+def _object_filename(name: str | None) -> str:
+    """Bare objectFilename made safe without urlparse, so '#', '?' and ';' survive as '_'."""
+    base = (name or "").replace("\\", "/").rsplit("/", 1)[-1].strip()
+    return re.sub(r"[^A-Za-z0-9._-]", "_", base).lstrip(".")[:255]
 
 
 def _description_text(record: dict[str, Any]) -> str:
