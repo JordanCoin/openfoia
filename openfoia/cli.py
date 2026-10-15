@@ -5081,7 +5081,9 @@ def _records_search_all(
 
 @records_app.command("search")
 def records_search(
-    query: str = typer.Argument(..., help="Search term (company name, keyword, etc.)"),
+    query: str = typer.Argument(
+        "", help="Search term (company name, keyword, etc.); optional with --ancestor"
+    ),
     source: str = typer.Option(
         "opencorporates",
         "--source",
@@ -5115,6 +5117,13 @@ def records_search(
         "--rank",
         help="Comma-separated keywords; adds a score (hits in title and snippet) and sorts by it",
     ),
+    ancestor: int | None = typer.Option(
+        None, "--ancestor", help="nara: only records under this NAID (series, file unit)"
+    ),
+    all_pages: bool = typer.Option(
+        False, "--all", help="nara: walk every page (one quota-counted query per 100 hits)"
+    ),
+    max_hits: int = typer.Option(1000, "--max", help="nara: stop --all after this many hits"),
 ):
     """Search public records databases.
 
@@ -5135,12 +5144,25 @@ def records_search(
         openfoia records search "PAS" -s documentcloud -n 300 --json
         openfoia records search "PAS" --all-sources
         openfoia records search "PAS" -s documentcloud --rank child,school,gifted
+        openfoia records search -s nara --ancestor 7283224 --all --max 500 --json
     """
     import asyncio
+    import math
 
     from .records import get_adapter, list_sources
 
+    if (ancestor or all_pages) and source != "nara":
+        rprint("[red]--ancestor and --all are only supported with --source nara.[/red]")
+        raise typer.Exit(1)
+    if not query and not ancestor:
+        rprint("[red]Give a search term (or --ancestor <NAID> with -s nara).[/red]")
+        raise typer.Exit(1)
     kwargs: dict[str, Any] = {}
+    if ancestor:
+        kwargs["ancestor"] = ancestor
+    if all_pages:
+        kwargs.update(all_pages=True, max_hits=max_hits)
+        limit = max(limit, max_hits)
     if jurisdiction:
         kwargs["jurisdiction"] = jurisdiction
     if filing_type:
@@ -5178,10 +5200,19 @@ def records_search(
             rprint(f"[red]{NO_KEY_MESSAGE}[/red]")
             raise typer.Exit(1)
         typer.echo(
-            f"Note: sending {query!r} to catalog.archives.gov with your API key "
+            f"Note: sending {query or '*'!r} to catalog.archives.gov with your API key "
             f"(counted against the 10,000/month quota). {ATTRIBUTION}",
             err=True,
         )
+        from .records.nara import PAGE_MAX
+
+        planned = math.ceil(max_hits / PAGE_MAX)
+        if all_pages and planned > 5:
+            typer.echo(
+                f"--all: up to {planned} queries ({max_hits} hits max, {PAGE_MAX} per query), "
+                "one per second, each counted against the monthly quota.",
+                err=True,
+            )
 
     try:
         if quiet:
@@ -5608,6 +5639,15 @@ def records_fetch(
         help="Also fetch every id in this 'records search --json' or '--raw' output file",
     ),
     refresh: bool = typer.Option(False, "--refresh", help="Re-fetch documents already stored"),
+    list_objects: bool = typer.Option(
+        False, "--list-objects", help="nara: list each record's digital objects, download nothing"
+    ),
+    objects: bool = typer.Option(
+        False,
+        "--objects",
+        help="nara: download every digital object to <data>/nara/<NAID>/ and ingest it",
+    ),
+    as_json: bool = typer.Option(False, "--json", help="With --list-objects: print JSON"),
 ):
     """Fetch documents' full text and save them to the local database.
 
@@ -5621,9 +5661,20 @@ def records_fetch(
         openfoia records fetch 2090186 2090187 --source documentcloud
         openfoia records search "PAS" -s documentcloud -n 300 --json > hits.json
         openfoia records fetch --from hits.json
+        openfoia records fetch 7283224 -s nara --list-objects
+        openfoia records fetch 7283224 -s nara --objects
     """
     import asyncio
 
+    if (list_objects or objects) and source != "nara":
+        rprint("[red]--list-objects and --objects are only supported with --source nara.[/red]")
+        raise typer.Exit(1)
+    if list_objects and objects:
+        rprint("[red]--list-objects previews; --objects downloads. Pick one.[/red]")
+        raise typer.Exit(2)
+    if as_json and not list_objects:
+        rprint("[red]--json only applies to --list-objects.[/red]")
+        raise typer.Exit(2)
     ids = list(doc_ids or [])
     if from_file:
         ids += _ids_from_results(from_file, source)
@@ -5661,6 +5712,15 @@ def records_fetch(
             f"counted against the 10,000/month quota). {ATTRIBUTION}",
             err=True,
         )
+        if list_objects or objects:
+            from .records.nara import NARAAdapter
+
+            policy = _cia_policy_or_exit()  # fails closed when Tor is configured but down
+            adapter = NARAAdapter(egress=policy)
+            _records_nara_objects(
+                adapter, ids, download=objects, as_json=as_json, route=_route_note(policy)
+            )
+            return
     case_id = active_case_id_in_db()
 
     stored: dict[str, str | None] = {}  # id -> name of another case holding it
@@ -5706,6 +5766,114 @@ def records_fetch(
         rprint(f"[dim]Extract entities: openfoia analyze extract {fetched[0]}[/dim]")
     if failed:
         raise typer.Exit(1 if not fetched and not skipped else 2)
+
+
+def _records_nara_objects(
+    adapter, ids: list[str], *, download: bool, as_json: bool, route: str
+) -> None:
+    """List (or download and ingest) each NAID's digital objects, like NARA's own scripts."""
+    import asyncio
+
+    from .cases import active_case_id_in_db
+    from .db import ensure_db, get_data_dir
+    from .records.nara import OBJECT_HOST
+
+    listing, failed, ok, notified = [], 0, 0, False
+    for raw in ids:
+        naid = raw.strip().removeprefix("NARA-")
+        try:
+            entity = asyncio.run(adapter.fetch(naid))
+        except Exception as e:
+            failed += 1
+            rprint(f"  {naid}  [red]failed: {e}[/red]")
+            continue
+        if entity is None:
+            failed += 1
+            rprint(f"  {naid}  [red]no such NAID[/red]")
+            continue
+        objs = entity.extra_data.get("objects") or []
+        ok += 1
+        if not download:
+            if as_json:
+                listing += [{"naid": naid, "index": i, **o} for i, o in enumerate(objs, 1)]
+                continue
+            rprint(f"\n[bold]{naid}[/bold] {entity.name}: {len(objs)} digital objects")
+            for i, o in enumerate(objs, 1):
+                size = f"{o['size']:,} bytes" if o.get("size") else "-"
+                typer.echo(f"  {i:>4}  {o.get('type') or '-'}  {size}  {o.get('url') or '-'}")
+            continue
+
+        if not notified and objs:
+            notified = True
+            rprint(
+                f"[yellow]Downloading digital objects from {OBJECT_HOST} (NARA's object "
+                f"storage on Amazon S3, a new host; {route}; not counted against the API quota).[/yellow]"
+            )
+        ensure_db()
+        case_id = active_case_id_in_db()
+        adapter.store(entity, naid, case_id)  # the text record the objects attach to
+        results = asyncio.run(adapter.download_objects(entity, get_data_dir() / "nara" / naid))
+        ingested = _ingest_nara_objects(entity, naid, results)
+        bad = [r for r in results if r[2] not in ("downloaded", "present")]
+        failed += len(bad)
+        present = sum(r[2] == "present" for r in results)
+        rprint(
+            f"  {naid}  {ingested} ingested, {present} already present, {len(bad)} not downloaded"
+        )
+    if as_json and not download:
+        typer.echo(json.dumps(listing, ensure_ascii=False))
+    if failed:
+        raise typer.Exit(2 if ok else 1)
+
+
+def _ingest_nara_objects(entity, naid: str, results) -> int:
+    """Ingest and persist each file as it goes, so an interrupted run keeps what it saved.
+
+    A file already on disk with no Document row (a run died between download and
+    ingest) is ingested too; one that has a row is left alone.
+    """
+    import asyncio
+
+    from sqlalchemy import or_
+
+    from .db import get_data_dir, get_session
+    from .models import Document, Request
+    from .pipeline.ingest import DocumentIngester
+
+    number = f"NARA-{naid}"
+    with get_session() as session:
+        have = {
+            name
+            for (name,) in session.query(Document.filename)
+            .join(Request, Document.request_id == Request.id)
+            .filter(
+                or_(Request.request_number == number, Request.request_number.like(f"{number}@%"))
+            )
+        }
+    ingester = DocumentIngester(storage_path=get_data_dir() / "docs")
+    done = 0
+    for obj, path, status in results:
+        if status == "refused":
+            rprint(f"    [yellow]skipped {obj.get('url')}: not NARA's object storage[/yellow]")
+            continue
+        if status.startswith("failed"):
+            rprint(f"    [red]{path.name}: {status}[/red]")
+            continue
+        if path.name in have:
+            continue
+        try:
+            result = asyncio.run(ingester.ingest_file(path))
+        except Exception as e:
+            rprint(f"    [red]{path.name}: ingest failed: {e} (re-run to retry)[/red]")
+            continue
+        _persist_ingested(
+            [result],
+            request_number=number,
+            subject=entity.name,
+            body=f"Digital objects from the National Archives Catalog: {entity.source_url}",
+        )
+        done += 1
+    return done
 
 
 def _cia_policy_or_exit() -> EgressPolicy:
