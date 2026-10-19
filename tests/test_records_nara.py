@@ -438,6 +438,13 @@ def test_object_host_allowlist():
     assert not nara_mod.object_url_allowed("http://nara-media-001.s3.amazonaws.com/a.jpg")
     assert not nara_mod.object_url_allowed("https://s3.amazonaws.com/other-bucket/a.pdf")
     assert not nara_mod.object_url_allowed("http://www.reaganlibrary.archives.gov/c.jpg")
+    # Live API (2026-10-19) serves scans from the catalog host itself.
+    live = "https://catalog.archives.gov/medialive/84/4008/17400884/content/x/Page_019.JPG"
+    assert nara_mod.object_url_allowed(live)
+    assert not nara_mod.object_url_allowed(live.replace("https", "http", 1))
+    assert not nara_mod.object_url_allowed("https://catalog.archives.gov/api/v2/records")
+    assert not nara_mod.object_url_allowed("https://catalog.archives.gov/medialive/../api/v2")
+    assert not nara_mod.object_url_allowed("https://catalog.archives.gov.evil.example/medialive/a")
 
 
 def test_objects_use_the_configured_tor_policy(monkeypatch):
