@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import math
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -54,9 +55,16 @@ class PDFExtractConfig:
     # Auto-detected from $PATH if not set. Set to empty string to disable.
     binary_path: str | None = None
 
+    # Environment overrides: OPENFOIA_PDF_EXTRACT_MIN_CHARS,
+    # OPENFOIA_PDF_EXTRACT_MIN_CHARS_PER_PAGE, and
+    # OPENFOIA_PDF_EXTRACT_MIN_ALPHA_RATIO.
     # Minimum character count to consider extraction successful.
     # Below this threshold, the PDF is likely scanned and needs OCR.
     min_chars_threshold: int = 50
+
+    # Minimum average characters per page and alphabetic/non-whitespace ratio.
+    min_chars_per_page_threshold: int = 20
+    min_alpha_ratio_threshold: float = 0.20
 
 
 @dataclass
@@ -258,6 +266,12 @@ def _merge_config(config: OpenFOIAConfig, data: dict[str, Any]) -> OpenFOIAConfi
         config.pdf_extract.min_chars_threshold = pe.get(
             "min_chars_threshold", config.pdf_extract.min_chars_threshold
         )
+        config.pdf_extract.min_chars_per_page_threshold = pe.get(
+            "min_chars_per_page_threshold", config.pdf_extract.min_chars_per_page_threshold
+        )
+        config.pdf_extract.min_alpha_ratio_threshold = pe.get(
+            "min_alpha_ratio_threshold", config.pdf_extract.min_alpha_ratio_threshold
+        )
 
     if "ocr" in data:
         ocr = data["ocr"]
@@ -357,6 +371,20 @@ def _apply_env_overrides(config: OpenFOIAConfig, prefix: str) -> OpenFOIAConfig:
     # PDF text extraction
     if v := os.environ.get(f"{prefix}PDF_EXTRACT_BINARY"):
         config.pdf_extract.binary_path = v
+    if v := os.environ.get(f"{prefix}PDF_EXTRACT_MIN_CHARS"):
+        with contextlib.suppress(ValueError):
+            config.pdf_extract.min_chars_threshold = int(v)
+    if v := os.environ.get(f"{prefix}PDF_EXTRACT_MIN_CHARS_PER_PAGE"):
+        with contextlib.suppress(ValueError):
+            config.pdf_extract.min_chars_per_page_threshold = int(v)
+
+    if v := os.environ.get(f"{prefix}PDF_EXTRACT_MIN_ALPHA_RATIO"):
+        try:
+            ratio = float(v)
+            if math.isfinite(ratio):
+                config.pdf_extract.min_alpha_ratio_threshold = ratio
+        except ValueError:
+            pass
 
     # OCR
     if v := os.environ.get(f"{prefix}OCR_BACKEND"):
@@ -443,6 +471,12 @@ def save_config(config: OpenFOIAConfig, config_path: Path | str | None = None) -
         },
         "ocr": {
             "backend": config.ocr.backend,
+        },
+        "pdf_extract": {
+            "binary_path": config.pdf_extract.binary_path,
+            "min_chars_threshold": config.pdf_extract.min_chars_threshold,
+            "min_chars_per_page_threshold": config.pdf_extract.min_chars_per_page_threshold,
+            "min_alpha_ratio_threshold": config.pdf_extract.min_alpha_ratio_threshold,
         },
         "entities": {
             "custom_types": config.entities.custom_types,
