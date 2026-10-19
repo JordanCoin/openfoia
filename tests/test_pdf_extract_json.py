@@ -654,3 +654,65 @@ def test_docs_ocr_uses_configured_thresholds(tmp_path, pdf, monkeypatch):
     res = CliRunner().invoke(app, ["docs", "ocr", str(pdf), "-o", str(out)])
     assert res.exit_code == 0, res.output
     assert "$4,512.00" in out.read_text()
+
+
+def test_font_pack_env_points_engine_at_pack_when_present(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    monkeypatch.delenv("GLYPH_API_FONTS_DIR", raising=False)
+    monkeypatch.delenv("GLYPH_FONTS_DIR", raising=False)
+    assert "GLYPH_API_FONTS_DIR" not in pdf_extract.font_pack_env()  # no pack yet
+    pack = tmp_path / "glyph-api" / "fonts"
+    pack.mkdir(parents=True)
+    assert "GLYPH_API_FONTS_DIR" not in pdf_extract.font_pack_env()  # empty dir is not a pack
+    (pack / "Lato-Regular.ttf").write_bytes(b"\0")
+    assert pdf_extract.font_pack_env()["GLYPH_API_FONTS_DIR"] == str(pack)
+    monkeypatch.setenv("GLYPH_API_FONTS_DIR", "/elsewhere")
+    assert pdf_extract.font_pack_env()["GLYPH_API_FONTS_DIR"] == "/elsewhere"  # explicit wins
+
+
+def test_font_pack_env_never_overrides_the_older_engine_variable(tmp_path, monkeypatch):
+    # glyph 0.8.0 checks GLYPH_API_FONTS_DIR before GLYPH_FONTS_DIR and fails closed
+    # on either; injecting the first would silently replace the user's choice.
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    monkeypatch.delenv("GLYPH_API_FONTS_DIR", raising=False)
+    pack = tmp_path / "glyph-api" / "fonts"
+    pack.mkdir(parents=True)
+    (pack / "Lato-Regular.ttf").write_bytes(b"\0")
+    monkeypatch.setenv("GLYPH_FONTS_DIR", "/my/custom")
+    env = pdf_extract.font_pack_env()
+    assert "GLYPH_API_FONTS_DIR" not in env and env["GLYPH_FONTS_DIR"] == "/my/custom"
+
+
+def test_font_pack_next_to_the_binary_wins_over_the_host(tmp_path, monkeypatch):
+    # Portable install: the pack sits in bin/fonts on the USB. A host pack in the
+    # user data dir must not be used instead.
+    host = tmp_path / "host"
+    (host / "glyph-api" / "fonts").mkdir(parents=True)
+    (host / "glyph-api" / "fonts" / "Host.ttf").write_bytes(b"\0")
+    monkeypatch.setenv("XDG_DATA_HOME", str(host))
+    monkeypatch.delenv("GLYPH_API_FONTS_DIR", raising=False)
+    monkeypatch.delenv("GLYPH_FONTS_DIR", raising=False)
+    usb_bin = tmp_path / "usb" / "bin"
+    (usb_bin / "fonts").mkdir(parents=True)
+    (usb_bin / "fonts" / "Lato-Regular.ttf").write_bytes(b"\0")
+    engine = usb_bin / "pdf-extract"
+    engine.write_bytes(b"")
+    assert pdf_extract.font_pack_dir(str(engine)) == usb_bin / "fonts"
+    assert pdf_extract.font_pack_env(str(engine))["GLYPH_API_FONTS_DIR"] == str(usb_bin / "fonts")
+
+
+def test_install_scripts_parse_and_know_the_font_pack():
+    root = Path(__file__).resolve().parents[1]
+    for script in ("install.sh", "uninstall.sh"):
+        subprocess.run(["bash", "-n", str(root / script)], check=True)
+        assert (
+            "glyph-api/fonts" in (root / script).read_text()
+            or "fonts" in (root / script).read_text()
+        )
+    text = (root / "install.sh").read_text()
+    assert (
+        "--with-fonts" in text
+        and "--no-fonts" in text
+        and "fonts.tar.gz" in text
+        and "--strip-components=1" in text
+    )

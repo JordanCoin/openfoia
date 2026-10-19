@@ -129,6 +129,54 @@ def _quality_reasons(
     return reasons
 
 
+def _user_fonts_dir() -> Path:
+    if os.name == "nt" and os.environ.get("LOCALAPPDATA"):
+        base = Path(os.environ["LOCALAPPDATA"])
+    elif os.environ.get("XDG_DATA_HOME"):
+        base = Path(os.environ["XDG_DATA_HOME"])
+    else:
+        base = Path.home() / ".local" / "share"
+    return base / "glyph-api" / "fonts"
+
+
+def font_pack_dir(binary: str | None = None) -> Path | None:
+    """The engine's open-source font pack, if one is installed.
+
+    Mirrors the engine's own search order (glyph-api ``find_fonts_dir``):
+    ``fonts/`` next to the binary first (portable installs keep it on the USB),
+    then the per-user data dir (``$XDG_DATA_HOME`` or ``~/.local/share``, or
+    ``%LOCALAPPDATA%`` on Windows) plus ``glyph-api/fonts``. A directory counts
+    only when it holds ``.ttf`` files.
+    """
+    candidates = [Path(binary).parent / "fonts"] if binary else []
+    candidates.append(_user_fonts_dir())
+    for d in candidates:
+        if d.is_dir() and any(d.glob("*.ttf")):
+            return d
+    return None
+
+
+def font_pack_installed(binary: str | None = None) -> bool:
+    return font_pack_dir(binary) is not None
+
+
+def font_pack_env(binary: str | None = None) -> dict[str, str]:
+    """Environment for the extractor: point it at the font pack when we have one.
+
+    Without the pack the engine's Level 5 fingerprint stage is silently off and
+    broken-font PDFs keep their unresolved glyphs. A font dir the user set
+    (``GLYPH_API_FONTS_DIR`` or the older ``GLYPH_FONTS_DIR``) always wins: the
+    engine fails closed on it, and we never override that choice.
+    """
+    env = dict(os.environ)
+    if env.get("GLYPH_API_FONTS_DIR") or env.get("GLYPH_FONTS_DIR"):
+        return env
+    pack = font_pack_dir(binary)
+    if pack is not None:
+        env["GLYPH_API_FONTS_DIR"] = str(pack)
+    return env
+
+
 def find_binary(configured_path: str | None = None) -> str | None:
     """Find the PDF extraction binary.
 
@@ -217,7 +265,9 @@ async def extract_text(
     timeout = timeout_for(pdf_path)
 
     def _run(cmd: list[str]) -> subprocess.CompletedProcess:
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout, env=font_pack_env(cmd[0])
+        )
 
     def _unknown_flag(result: subprocess.CompletedProcess, *names: str) -> bool:
         stderr = (result.stderr or "").lower()

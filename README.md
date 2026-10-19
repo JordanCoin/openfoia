@@ -80,6 +80,8 @@ A compiled 2.6MB binary extracts text directly from PDF structures, so born-digi
 
 Measured with engine 0.8.0 on its test corpus of 176 real PDFs (15,808 pages): 13,456 pages (85 percent) extract as a clean text layer. 1,619 are flagged garbled and 733 image only; only those pages go to OCR (Tesseract), and the rest of the document keeps its exact text. Extraction is deterministic: the same file gives the same text on every run. Zero runtime dependencies.
 
+An optional open-source font pack (12.6MB download, 24MB on disk) feeds the engine's fingerprint stage, which only engages for embedded fonts with no usable character map. On the same corpus with engine 0.8.0 it changes no page verdicts, so the installer skips it unless you run `install.sh --with-fonts`. It lands in `~/.local/share/glyph-api/fonts`, or next to the binary in portable mode, and `openfoia init` reports whether it is present.
+
 OpenFOIA calls the extractor with the large-document runtime profile by default (`--profile large`).
 To control concurrency per process, set:
 - `OPENFOIA_PDF_EXTRACT_MAX_WORKERS` (for example `4` or `8`)
