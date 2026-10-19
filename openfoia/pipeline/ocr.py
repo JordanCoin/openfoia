@@ -58,7 +58,7 @@ class OCREngine:
         google_credentials: str | None = None,
         aws_credentials: dict[str, str] | None = None,
         pdf_extract_binary: str | None = None,
-        pdf_extract_min_chars: int = 50,
+        pdf_extract_min_chars: int | None = None,
     ):
         self.backend = backend
         self.tesseract_cmd = tesseract_cmd
@@ -70,20 +70,28 @@ class OCREngine:
     async def process_pdf(self, pdf_path: Path | str, force_ocr: bool = False) -> OCRResult:
         """Process a PDF: try direct text extraction first, fall back to OCR.
 
-        force_ocr=True skips extraction and OCRs every page.
+        force_ocr=True skips extraction and OCRs every page. Unset pdf_extract_*
+        settings come from the configured ``pdf_extract`` section.
         """
         pdf_path = Path(pdf_path)
 
         # Try direct text extraction (not OCR — reads PDF structures directly)
+        from ..config import load_config
         from .pdf_extract import PDFExtractTimeout, extract_text
 
         extract_result = None
+        direct = None
         try:
             if not force_ocr:
+                cfg = load_config().pdf_extract
                 extract_result = await extract_text(
                     pdf_path,
-                    binary_path=self.pdf_extract_binary,
-                    min_chars=self.pdf_extract_min_chars,
+                    binary_path=self.pdf_extract_binary or cfg.binary_path,
+                    min_chars=cfg.min_chars_threshold
+                    if self.pdf_extract_min_chars is None
+                    else self.pdf_extract_min_chars,
+                    min_chars_per_page=cfg.min_chars_per_page_threshold,
+                    min_alpha_ratio=cfg.min_alpha_ratio_threshold,
                 )
         except PDFExtractTimeout as e:
             print(f"Warning: {e}; falling back to OCR", file=sys.stderr)
@@ -95,7 +103,7 @@ class OCREngine:
                 {"page_number": i + 1, "text": page_text, "confidence": 1.0, "verdict": v}
                 for i, (page_text, v) in enumerate(zip(extract_result.pages, verdicts, strict=True))
             ]
-            return OCRResult(
+            direct = OCRResult(
                 text=join_pages(extract_result.pages),
                 confidence=1.0,  # direct extraction is lossless
                 page_count=extract_result.page_count,
@@ -105,20 +113,30 @@ class OCREngine:
                     "binary": extract_result.backend,
                     "source_file": str(pdf_path),
                     "char_count": extract_result.char_count,
+                    "quality_reasons": list(extract_result.quality_reasons),
                 },
             )
+            if not extract_result.quality_reasons:
+                return direct
 
-        # Scanned PDF or no extraction binary — fall back to OCR
+        # Scanned PDF, no extraction binary, or gated plain text — fall back to OCR
         try:
             if self.backend == "tesseract":
-                return await self._process_tesseract(pdf_path)
+                ocr = await self._process_tesseract(pdf_path)
             elif self.backend == "google":
-                return await self._process_google_vision(pdf_path)
+                ocr = await self._process_google_vision(pdf_path)
             elif self.backend == "aws":
-                return await self._process_aws_textract(pdf_path)
+                ocr = await self._process_aws_textract(pdf_path)
             else:
                 raise ValueError(f"Unknown OCR backend: {self.backend}")
         except ImportError as e:
+            if direct:
+                print(
+                    f"Warning: OCR unavailable ({e}); keeping the extracted text. "
+                    "Run: openfoia install-extras ocr",
+                    file=sys.stderr,
+                )
+                return direct
             raise ImportError(
                 f"OCR dependencies not installed ({e}). "
                 f"Run: openfoia install-extras ocr\n"
@@ -126,6 +144,7 @@ class OCREngine:
                 f"  Linux: apt install tesseract-ocr poppler-utils\n"
                 f"  macOS: brew install tesseract poppler"
             ) from e
+        return direct if direct and not ocr.text.strip() else ocr
 
     async def ocr_pages(
         self, pdf_path: Path | str, page_numbers: list[int]
