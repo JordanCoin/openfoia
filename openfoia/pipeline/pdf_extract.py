@@ -58,6 +58,9 @@ class PDFExtractResult:
     #: per-page verdict (text_layer / garbled / image_only); None when the
     #: binary only produced plain form-feed output
     verdicts: list[str] | None = None
+    #: whole-document gate failures (plain output only); non-empty means
+    #: prefer OCR but keep this text if OCR is unavailable
+    quality_reasons: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -98,14 +101,14 @@ def evaluate_quality(
     return metrics, tuple(reasons)
 
 
-def _passes_quality_gate(
+def _quality_reasons(
     text: str,
     page_count: int,
     *,
     min_chars: int,
     min_chars_per_page: int,
     min_alpha_ratio: float,
-) -> bool:
+) -> tuple[str, ...]:
     metrics, reasons = evaluate_quality(
         text,
         page_count,
@@ -115,7 +118,7 @@ def _passes_quality_gate(
     )
     if reasons:
         logger.warning(
-            "PDF direct extraction rejected: reason_codes=%s total_chars=%d "
+            "PDF direct extraction flagged for OCR: reason_codes=%s total_chars=%d "
             "page_count=%d chars_per_page=%.3f alpha_ratio=%.3f",
             list(reasons),
             metrics.total_chars,
@@ -123,8 +126,7 @@ def _passes_quality_gate(
             metrics.chars_per_page,
             metrics.alpha_ratio,
         )
-        return False
-    return True
+    return reasons
 
 
 def find_binary(configured_path: str | None = None) -> str | None:
@@ -176,8 +178,10 @@ async def extract_text(
     Returns None if:
     - No binary found
     - Binary fails
-    - Extracted text fails the total-character, per-page, or alphabetic-ratio
-      quality gates (probably a scanned PDF, needs OCR)
+    - Extracted text is below min_chars (probably a scanned PDF, needs OCR)
+
+    Plain output (no per-page verdicts) that fails the per-page or
+    alphabetic-ratio gates is returned with ``quality_reasons`` set.
 
     Raises PDFExtractTimeout when the binary exceeds the size-scaled limit.
     """
@@ -228,13 +232,9 @@ async def extract_text(
             if parsed is not None:
                 pages, verdicts = parsed
                 text = "\f".join(pages)
-                if not _passes_quality_gate(
-                    text,
-                    len(pages),
-                    min_chars=min_chars,
-                    min_chars_per_page=min_chars_per_page,
-                    min_alpha_ratio=min_alpha_ratio,
-                ):
+                # Verdicts already route bad pages to OCR one by one, so only the
+                # "nothing here" gate applies; tables legitimately score low alpha.
+                if "LOW_TOTAL_CHARS" in evaluate_quality(text, len(pages), min_chars=min_chars)[1]:
                     return None
                 return PDFExtractResult(
                     text=text,
@@ -268,13 +268,14 @@ async def extract_text(
 
     # Pages are separated by form feed (0x0C)
     pages = split_pages(text)
-    if not _passes_quality_gate(
+    reasons = _quality_reasons(
         text,
         len(pages),
         min_chars=min_chars,
         min_chars_per_page=min_chars_per_page,
         min_alpha_ratio=min_alpha_ratio,
-    ):
+    )
+    if "LOW_TOTAL_CHARS" in reasons:
         return None
 
     return PDFExtractResult(
@@ -283,6 +284,7 @@ async def extract_text(
         char_count=len(text.replace("\f", "")),
         backend=binary,
         pages=pages,
+        quality_reasons=reasons,
     )
 
 

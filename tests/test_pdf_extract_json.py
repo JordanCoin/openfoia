@@ -577,7 +577,7 @@ def test_one_text_page_and_nine_scans_ocrs_only_the_scans(tmp_path, monkeypatch)
         tmp_path, monkeypatch, FIXTURES / "one_text_nine_scans.pdf"
     )
     assert calls == {"pages": list(range(2, 11)), "whole": 0}
-    assert pages[0].startswith("The Department of Public Works")
+    assert pages[0].strip().startswith("The Department of Public Works")
     assert verdicts == ["text_layer"] + ["ocr:image_only"] * 9
 
 

@@ -304,9 +304,11 @@ class DocumentIngester:
 
         The compiled binary goes first. Pages it marks image_only or garbled
         are OCR'd one by one (verdict becomes ``ocr:<original>``); text_layer
-        pages keep the binary's text. If the binary finds nothing the whole
-        file falls back to OCR.
+        pages keep the binary's text. If the binary finds nothing, or its plain
+        (verdict-less) output fails the quality gates, the whole file falls back
+        to OCR; gated text is kept when OCR is unavailable or finds nothing.
         """
+        global _ocr_hint_shown
         import sys
 
         from ..config import load_config
@@ -325,7 +327,7 @@ class DocumentIngester:
         except PDFExtractTimeout as e:
             print(f"Warning: {e}; falling back to OCR", file=sys.stderr)
             result = None
-        if result is not None:
+        if result is not None and not result.quality_reasons:
             pages = list(result.pages)
             verdicts = list(result.verdicts or [None] * len(pages))
             need = [i + 1 for i, v in enumerate(verdicts) if v in NEEDS_OCR]
@@ -333,24 +335,25 @@ class DocumentIngester:
                 await self._ocr_pages_into(pdf_path, need, pages, verdicts)
             return join_pages(pages), pages, verdicts
 
-        # Fall back to OCR for scanned PDFs
-        try:
-            from .ocr import OCREngine
+        from .ocr import OCREngine
 
-            engine = OCREngine()
-            # Direct extraction already applied the configured quality gate;
-            # force the fallback to OCR so it cannot retry direct extraction
-            # with its own defaults.
-            ocr_result = await engine.process_pdf(pdf_path, force_ocr=True)
+        try:
+            ocr_result = await OCREngine().process_pdf(pdf_path, force_ocr=True)
             if ocr_result.text and len(ocr_result.text.strip()) > 50:
                 return (
                     ocr_result.text,
                     [p["text"] for p in ocr_result.pages],
                     [p.get("verdict") for p in ocr_result.pages],
                 )
-        except (ImportError, Exception):
-            pass
+        except ImportError:
+            if not _ocr_hint_shown:
+                _ocr_hint_shown = True
+                print(_OCR_HINT, file=sys.stderr)
+        except Exception as e:
+            print(f"Warning: OCR of {pdf_path.name} failed: {e}", file=sys.stderr)
 
+        if result is not None:
+            return join_pages(result.pages), list(result.pages), [None] * len(result.pages)
         return None, None, None
 
     async def _ocr_pages_into(
