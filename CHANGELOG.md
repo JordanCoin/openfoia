@@ -10,6 +10,8 @@ exhaustive lists.
 
 ## [Unreleased]
 
+## [4.6.1] - 2026-10-19
+
 ### Fixed
 
 - `records fetch <NAID> -s nara --objects` downloaded nothing on real
@@ -553,6 +555,7 @@ security/OPSEC pass; the notes below describe what it changed, factually.
 Baseline for this changelog. Earlier tags (`v0.0.1` through `v2.0.0`,
 2026-02-19 to 2026-03-22) predate it; see the git history for details.
 
+[4.6.1]: https://github.com/JordanCoin/openfoia/compare/v4.6.0...v4.6.1
 [4.6.0]: https://github.com/JordanCoin/openfoia/compare/v4.5.0...v4.6.0
 [4.5.0]: https://github.com/JordanCoin/openfoia/compare/v4.4.0...v4.5.0
 [4.4.0]: https://github.com/JordanCoin/openfoia/compare/v4.3.1...v4.4.0
