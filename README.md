@@ -78,7 +78,7 @@ openfoia request mark REQ-2026-001 denied              # starts the appeal clock
 
 A compiled 2.6MB binary extracts text directly from PDF structures, so born-digital documents need no OCR. A multi-level resolution cascade handles broken fonts, missing encodings, and government form PDFs that other tools cannot read.
 
-On the engine's test corpus of 46 real PDFs (2.9 million characters), 0.0005 percent of glyphs are left unresolved, 45 of 46 documents extract with clean word flow, and 38 of 46 with no detectable character corruption. The remaining documents are the hard ones: subset fonts with no encoding, scans with a bad text layer. Those pages are flagged and sent to OCR (Tesseract) instead. Zero runtime dependencies.
+Measured with engine 0.8.0 on its test corpus of 176 real PDFs (15,808 pages): 13,456 pages (85 percent) extract as a clean text layer. 1,619 are flagged garbled and 733 image only; only those pages go to OCR (Tesseract), and the rest of the document keeps its exact text. Extraction is deterministic: the same file gives the same text on every run. Zero runtime dependencies.
 
 OpenFOIA calls the extractor with the large-document runtime profile by default (`--profile large`).
 To control concurrency per process, set:
