@@ -76,10 +76,10 @@ already has a tag.
 - **Re-tag or overwrite a release.** If `vX.Y.Z` exists, it stops. Bump the
   version instead of moving a published tag.
 - **Release from a fork.** Only branches in this repository trigger it.
-- **Build or attach `pdf-extract` binaries.** Those are built by the separate
-  glyph-api pipeline and uploaded to a release by hand. `install.sh` searches
-  every release, newest first, for them, so a release without binaries still
-  installs correctly using the most recent ones.
+- **Build `pdf-extract` binaries.** The glyph-api pipeline builds them and attaches them to
+  the newest OpenFOIA release when the engine changes. Publishing copies them forward from the
+  newest earlier release that has them, verifies each checksum, and repeats its
+  `pdf-extract X` notes line, so every release ships the engine it was tested with.
 - **Pre-releases.** Only plain `X.Y.Z` versions are supported. SemVer writes
   `4.3.0-rc.1` where Python packaging writes `4.3.0rc1`, and a tag that
   disagrees with the installed version is worse than not having release

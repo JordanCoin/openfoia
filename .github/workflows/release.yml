@@ -143,3 +143,31 @@ jobs:
             --title "OpenFOIA v$VERSION" \
             --notes-file notes.md
           echo "Published https://github.com/$GITHUB_REPOSITORY/releases/tag/v$VERSION" >> "$GITHUB_STEP_SUMMARY"
+
+      # The pdf-extract engine is built by the glyph-api pipeline, which
+      # attaches it to the newest OpenFOIA release only when the engine
+      # changes. Carry the current binaries forward so every release ships
+      # them: copy from the newest earlier release that has them, verify each
+      # checksum, and repeat its "pdf-extract X" notes line.
+      - name: Carry the pdf-extract engine forward
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          src=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=30" --jq \
+            "[.[] | select(.tag_name != \"v$VERSION\") | select([.assets[].name | startswith(\"pdf-extract-\")] | any)][0].tag_name // empty")
+          if [ -z "$src" ]; then
+            echo "::warning::No earlier release carries pdf-extract binaries; v$VERSION ships without them."
+            exit 0
+          fi
+          mkdir engine
+          gh release download "$src" --repo "$GITHUB_REPOSITORY" --pattern 'pdf-extract-*' --dir engine
+          # tr: engine 0.8.0's Windows .sha256 was written with CRLF.
+          (cd engine && for f in *.sha256; do tr -d '\r' < "$f" | sha256sum -c -; done)
+          gh release upload "v$VERSION" engine/pdf-extract-* --repo "$GITHUB_REPOSITORY" --clobber
+          line=$(gh release view "$src" --repo "$GITHUB_REPOSITORY" --json body --jq .body | grep -m1 '^pdf-extract ' || true)
+          if [ -n "$line" ]; then
+            printf '\n%s\n' "$line" >> notes.md
+            gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
+          fi
+          echo "Carried pdf-extract from $src (${line:-version not stated})" >> "$GITHUB_STEP_SUMMARY"
