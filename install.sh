@@ -159,7 +159,7 @@ verify_sha256() {
     elif command -v shasum &>/dev/null; then
         actual=$(shasum -a 256 "$file" | awk '{print $1}')
     elif [ "$SKIP_VERIFY" = true ]; then
-        warn "No sha256sum or shasum found — ${what} verification skipped (--insecure-skip-verify)."
+        warn "No sha256sum or shasum found, so ${what} verification is skipped (--insecure-skip-verify)."
         return 0
     else
         rm -f "$file"
@@ -213,7 +213,7 @@ download_fonts() {
     if [ -n "$expected" ]; then
         verify_sha256 "$tmp" "$expected" "fonts.tar.gz" || { rm -f "$tmp"; return 1; }
     elif [ "$SKIP_VERIFY" = true ]; then
-        warn "No .sha256 for the font pack — verification skipped (--insecure-skip-verify)."
+        warn "No .sha256 for the font pack, so verification is skipped (--insecure-skip-verify)."
     else
         rm -f "$tmp"
         warn "No .sha256 published for the font pack; not installing it unverified."
