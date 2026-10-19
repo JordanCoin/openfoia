@@ -107,15 +107,17 @@ def init(
 
     rprint("\n[bold green]🔒 OpenFOIA Initialization[/bold green]")
     rprint("─" * 50)
-    from .pipeline.pdf_extract import find_binary, font_pack_dir, font_pack_installed
+    from .pipeline.pdf_extract import find_binary, font_pack_dir
 
-    if find_binary():
-        if font_pack_installed():
-            rprint(f"PDF engine font pack: {font_pack_dir()}")
+    engine = find_binary()
+    if engine:
+        pack = font_pack_dir(engine)
+        if pack is not None:
+            rprint(f"PDF engine font pack: {pack}")
         else:
             rprint(
-                "PDF engine font pack: not installed (broken-font PDFs keep more "
-                "unresolved glyphs). Re-run install.sh to fetch it."
+                "PDF engine font pack: not installed (optional; "
+                "install.sh --with-fonts fetches it)."
             )
 
     # Prefer prompting: a passphrase in argv is written to shell history and

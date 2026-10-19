@@ -25,7 +25,7 @@ else
     DATA_DIR="$HOME/.openfoia"
     VENV_DIR="${OPENFOIA_VENV_DIR:-$HOME/.openfoia-venv}"
     BIN_DIR="${OPENFOIA_INSTALL_DIR:-$HOME/.local/bin}"
-    FONTS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/glyph-api"
+    FONTS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/glyph-api/fonts"
 fi
 
 main() {

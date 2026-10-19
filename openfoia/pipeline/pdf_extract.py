@@ -129,14 +129,7 @@ def _quality_reasons(
     return reasons
 
 
-def font_pack_dir() -> Path:
-    """Where install.sh puts the engine's open-source font pack.
-
-    Mirrors the engine's own search order (glyph-api ``find_fonts_dir``): the
-    per-user data dir, ``$XDG_DATA_HOME`` or ``~/.local/share`` on Unix and
-    ``%LOCALAPPDATA%`` on Windows, plus ``glyph-api/fonts``. Portable installs
-    put it next to the binary instead, which the engine also checks.
-    """
+def _user_fonts_dir() -> Path:
     if os.name == "nt" and os.environ.get("LOCALAPPDATA"):
         base = Path(os.environ["LOCALAPPDATA"])
     elif os.environ.get("XDG_DATA_HOME"):
@@ -146,20 +139,41 @@ def font_pack_dir() -> Path:
     return base / "glyph-api" / "fonts"
 
 
-def font_pack_installed() -> bool:
-    return any(font_pack_dir().glob("*.ttf")) if font_pack_dir().is_dir() else False
+def font_pack_dir(binary: str | None = None) -> Path | None:
+    """The engine's open-source font pack, if one is installed.
+
+    Mirrors the engine's own search order (glyph-api ``find_fonts_dir``):
+    ``fonts/`` next to the binary first (portable installs keep it on the USB),
+    then the per-user data dir (``$XDG_DATA_HOME`` or ``~/.local/share``, or
+    ``%LOCALAPPDATA%`` on Windows) plus ``glyph-api/fonts``. A directory counts
+    only when it holds ``.ttf`` files.
+    """
+    candidates = [Path(binary).parent / "fonts"] if binary else []
+    candidates.append(_user_fonts_dir())
+    for d in candidates:
+        if d.is_dir() and any(d.glob("*.ttf")):
+            return d
+    return None
 
 
-def font_pack_env() -> dict[str, str]:
+def font_pack_installed(binary: str | None = None) -> bool:
+    return font_pack_dir(binary) is not None
+
+
+def font_pack_env(binary: str | None = None) -> dict[str, str]:
     """Environment for the extractor: point it at the font pack when we have one.
 
     Without the pack the engine's Level 5 fingerprint stage is silently off and
-    broken-font PDFs keep their unresolved glyphs. An explicit
-    ``GLYPH_API_FONTS_DIR`` always wins.
+    broken-font PDFs keep their unresolved glyphs. A font dir the user set
+    (``GLYPH_API_FONTS_DIR`` or the older ``GLYPH_FONTS_DIR``) always wins: the
+    engine fails closed on it, and we never override that choice.
     """
     env = dict(os.environ)
-    if not env.get("GLYPH_API_FONTS_DIR") and font_pack_installed():
-        env["GLYPH_API_FONTS_DIR"] = str(font_pack_dir())
+    if env.get("GLYPH_API_FONTS_DIR") or env.get("GLYPH_FONTS_DIR"):
+        return env
+    pack = font_pack_dir(binary)
+    if pack is not None:
+        env["GLYPH_API_FONTS_DIR"] = str(pack)
     return env
 
 
@@ -252,7 +266,7 @@ async def extract_text(
 
     def _run(cmd: list[str]) -> subprocess.CompletedProcess:
         return subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout, env=font_pack_env()
+            cmd, capture_output=True, text=True, timeout=timeout, env=font_pack_env(cmd[0])
         )
 
     def _unknown_flag(result: subprocess.CompletedProcess, *names: str) -> bool:

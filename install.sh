@@ -20,12 +20,13 @@ die()   { printf '\033[0;31m%s\033[0m\n' "$*" >&2; exit 1; }
 PORTABLE=false
 MINIMAL=false
 SKIP_VERIFY=false
-NO_FONTS=false
+NO_FONTS=true   # the font pack is opt-in: --with-fonts
 for arg in "$@"; do
     case "$arg" in
         --portable) PORTABLE=true ;;
         --minimal)  MINIMAL=true ;;
         --insecure-skip-verify) SKIP_VERIFY=true ;;
+        --with-fonts) NO_FONTS=false ;;
         --no-fonts) NO_FONTS=true ;;
     esac
 done
@@ -162,22 +163,25 @@ verify_sha256() {
         return 0
     else
         rm -f "$file"
-        die "No sha256sum or shasum available to verify ${what}. Install coreutils, or re-run with --insecure-skip-verify."
+        warn "No sha256sum or shasum available to verify ${what}; skipping it. Install coreutils, or re-run with --insecure-skip-verify."
+        return 1
     fi
     if [ "$actual" != "$expected" ]; then
         rm -f "$file"
-        die "Checksum mismatch for ${what}! Expected ${expected}, got ${actual}. Aborting."
+        warn "Checksum mismatch for ${what}! Expected ${expected}, got ${actual}. Not installing it."
+        return 1
     fi
     ok "Checksum verified (SHA256)."
 }
 
 # --- Download the engine's open-source font pack ---
-# Without it the extractor's Level 5 fingerprint stage is silently off:
-# measured on 175 real PDFs, 426,485 unresolved glyphs without the pack vs
-# 397,433 with it. 12.6MB download, ~24MB on disk. Skip with --no-fonts.
+# Opt-in (--with-fonts). It feeds the engine's Level 5 fingerprint stage, which
+# only engages for embedded fonts with no usable character map. Measured with
+# engine 0.8.0 on 175 real PDFs: identical unresolved glyph totals with and
+# without it (one file differed by 2 glyphs). 12.6MB download, ~24MB on disk.
 download_fonts() {
     if [ "$NO_FONTS" = true ]; then
-        info "Skipping font pack (--no-fonts)."
+        info "Skipping the optional font pack (install.sh --with-fonts to fetch it)."
         return 0
     fi
     if ! command -v tar &>/dev/null; then
@@ -194,13 +198,20 @@ download_fonts() {
         warn "No font pack found in ${FONTS_REPO} releases; skipping. Re-run install.sh later to fetch it."
         return 1
     fi
-    local tmp
-    tmp=$(mktemp -t openfoia-fonts.XXXXXX)
-    curl -fsSL "$url" -o "$tmp"
-    local expected
+    # Temp files live next to the target, so a portable install never writes
+    # to the host's temp dir, and the final swap is a same-filesystem rename.
+    local parent tmp stage expected count
+    parent=$(dirname "$FONTS_DIR")
+    mkdir -p "$parent" || { warn "Cannot create ${parent}; skipping the font pack."; return 1; }
+    tmp=$(mktemp "${parent}/.openfoia-fonts.XXXXXX") || { warn "Cannot write to ${parent}; skipping the font pack."; return 1; }
+    if ! curl -fsSL "$url" -o "$tmp"; then
+        rm -f "$tmp"
+        warn "Font pack download failed; skipping it. Re-run install.sh later to fetch it."
+        return 1
+    fi
     expected=$(curl -fsSL "${url}.sha256" 2>/dev/null | awk '{print $1}') || true
     if [ -n "$expected" ]; then
-        verify_sha256 "$tmp" "$expected" "fonts.tar.gz"
+        verify_sha256 "$tmp" "$expected" "fonts.tar.gz" || { rm -f "$tmp"; return 1; }
     elif [ "$SKIP_VERIFY" = true ]; then
         warn "No .sha256 for the font pack — verification skipped (--insecure-skip-verify)."
     else
@@ -208,11 +219,24 @@ download_fonts() {
         warn "No .sha256 published for the font pack; not installing it unverified."
         return 1
     fi
-    mkdir -p "$FONTS_DIR"
-    # The tarball holds a top-level fonts/ directory; drop it so files land in FONTS_DIR.
-    tar -xzf "$tmp" -C "$FONTS_DIR" --strip-components=1
+    # Extract into a fresh staging dir, then swap it in: a re-run never leaves
+    # stale or half-extracted files. The tarball holds a top-level fonts/ dir.
+    stage=$(mktemp -d "${parent}/.openfoia-fonts-stage.XXXXXX") || { rm -f "$tmp"; warn "Cannot stage the font pack; skipping it."; return 1; }
+    if ! tar -xzf "$tmp" -C "$stage" --strip-components=1; then
+        rm -rf "$stage" "$tmp"
+        warn "Could not unpack the font pack; skipping it."
+        return 1
+    fi
     rm -f "$tmp"
-    ok "Installed font pack to ${FONTS_DIR} ($(ls "$FONTS_DIR" | wc -l | tr -d ' ') files)"
+    count=$(find "$stage" -maxdepth 1 -name '*.ttf' | wc -l | tr -d ' ')
+    if [ "$count" -eq 0 ]; then
+        rm -rf "$stage"
+        warn "Font pack held no fonts; skipping it."
+        return 1
+    fi
+    rm -rf "$FONTS_DIR"
+    mv "$stage" "$FONTS_DIR"
+    ok "Installed font pack to ${FONTS_DIR} (${count} fonts)"
 }
 
 # --- Install Python package ---
