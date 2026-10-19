@@ -62,7 +62,7 @@ def test_json_path_orders_pages_and_keeps_verdicts(tmp_path, pdf):
     (tmp_path / "out.json").write_text(json.dumps(CONTRACT))
     fake = _script(tmp_path, f'case "$*" in *--json*) cat {tmp_path}/out.json;; *) exit 9;; esac\n')
 
-    r = asyncio.run(extract_text(pdf, binary_path=fake, min_chars=1))
+    r = asyncio.run(extract_text(pdf, binary_path=fake, min_chars=1, min_chars_per_page=1))
     assert r.pages == ["clean page one " * 5, "", "g�rbl�d"]
     assert r.verdicts == ["text_layer", "image_only", "garbled"]
     assert (r.page_count, r.char_count) == (3, 82)
@@ -74,7 +74,7 @@ def test_old_binary_without_json_falls_back_to_form_feeds(tmp_path, pdf):
         'case "$*" in *--json*) echo "error: unexpected argument \'--json\' found" >&2; exit 2;; esac\n'
         "printf 'page one text\\fpage two text\\f'\n",
     )
-    r = asyncio.run(extract_text(pdf, binary_path=fake, min_chars=1))
+    r = asyncio.run(extract_text(pdf, binary_path=fake, min_chars=1, min_chars_per_page=1))
     assert r.pages == ["page one text", "page two text"]
     assert r.verdicts is None
 
@@ -90,7 +90,7 @@ def test_timeout_scales_with_size_and_names_the_file(tmp_path, pdf, monkeypatch)
     monkeypatch.setattr(pdf_extract, "timeout_for", lambda p: 1)
     fake = _script(tmp_path, "sleep 5\n")
     with pytest.raises(PDFExtractTimeout, match=r"a\.pdf.*within 1s"):
-        asyncio.run(extract_text(pdf, binary_path=fake, min_chars=1))
+        asyncio.run(extract_text(pdf, binary_path=fake, min_chars=1, min_chars_per_page=1))
 
 
 def test_timeout_cap():
@@ -223,7 +223,7 @@ def test_json_unknown_major_version_falls_back(tmp_path, pdf, capsys):
         tmp_path,
         f"case \"$*\" in *--json*) cat {tmp_path}/out.json;; *) printf 'plain one\\fplain two\\f';; esac\n",
     )
-    r = asyncio.run(extract_text(pdf, binary_path=fake, min_chars=1))
+    r = asyncio.run(extract_text(pdf, binary_path=fake, min_chars=1, min_chars_per_page=1))
     assert r.pages == ["plain one", "plain two"]
     assert r.verdicts is None
     assert "contract version '9.0.0'" in capsys.readouterr().err
@@ -317,3 +317,195 @@ def test_real_glyph_binary_json(tmp_path):
     assert "Alice" in r.text
     plain = subprocess.run([str(GLYPH), str(pdf)], capture_output=True, text=True, timeout=60)
     assert r.pages[0].strip() == plain.stdout.split("\f")[0].strip()
+
+
+def test_sparse_json_output_is_rejected_for_low_chars_per_page(tmp_path, pdf):
+    contract = {
+        **CONTRACT,
+        "pages": [{"n": 1, "text": "one", "verdict": "text_layer"}] * 2,
+    }
+    fake = _script(tmp_path, f"printf '%s' '{json.dumps(contract)}'\n")
+    assert asyncio.run(extract_text(pdf, binary_path=fake, min_chars=1)) is None
+
+
+def test_symbol_heavy_plain_output_is_rejected_for_low_alpha_ratio(tmp_path, pdf):
+    fake = _script(tmp_path, "printf '1234 !@#$ 5678 !@#$\\f1234 !@#$ 5678 !@#$'\n")
+    assert (
+        asyncio.run(extract_text(pdf, binary_path=fake, min_chars=1, min_chars_per_page=1)) is None
+    )
+
+
+def test_whitespace_heavy_sparse_plain_output_is_rejected_by_default_gates(tmp_path, pdf):
+    fake = _script(
+        tmp_path,
+        "printf 'A                                                \\fA                                                '\n",
+    )
+    assert asyncio.run(extract_text(pdf, binary_path=fake)) is None
+
+
+def test_quality_metrics_allow_text_heavy_output(tmp_path, pdf):
+    fake = _script(tmp_path, "printf 'A useful page with enough words.\\fAnother useful page.'\n")
+    result = asyncio.run(extract_text(pdf, binary_path=fake, min_chars=1))
+    assert result is not None
+
+
+def test_quality_rejection_log_contains_reason_codes_and_named_metrics(tmp_path, pdf, caplog):
+    fake = _script(tmp_path, "printf '1234 !@#$ 5678 !@#$\\f1234 !@#$ 5678 !@#$'\n")
+    with caplog.at_level("WARNING", logger="openfoia.pipeline.pdf_extract"):
+        assert (
+            asyncio.run(extract_text(pdf, binary_path=fake, min_chars=1, min_chars_per_page=1))
+            is None
+        )
+    message = caplog.records[-1].message
+    assert "reason_codes=['LOW_ALPHA_RATIO']" in message
+    assert "total_chars=32" in message
+    assert "page_count=2" in message
+    assert "chars_per_page=16.000" in message
+    assert "alpha_ratio=0.000" in message
+
+
+def test_pdf_quality_config_file_and_environment(tmp_path, monkeypatch):
+    from openfoia.config import load_config
+
+    monkeypatch.setenv("OPENFOIA_DATA_DIR", str(tmp_path))
+    (tmp_path / "config.json").write_text(
+        json.dumps(
+            {
+                "pdf_extract": {
+                    "min_chars_threshold": 80,
+                    "min_chars_per_page_threshold": 30,
+                    "min_alpha_ratio_threshold": 0.4,
+                }
+            }
+        )
+    )
+    monkeypatch.setenv("OPENFOIA_PDF_EXTRACT_MIN_CHARS", "90")
+    monkeypatch.setenv("OPENFOIA_PDF_EXTRACT_MIN_CHARS_PER_PAGE", "40")
+    monkeypatch.setenv("OPENFOIA_PDF_EXTRACT_MIN_ALPHA_RATIO", "0.6")
+    config = load_config()
+    assert config.pdf_extract.min_chars_threshold == 90
+    assert config.pdf_extract.min_chars_per_page_threshold == 40
+    assert config.pdf_extract.min_alpha_ratio_threshold == 0.6
+
+    monkeypatch.setenv("OPENFOIA_PDF_EXTRACT_MIN_CHARS", "bad")
+    monkeypatch.setenv("OPENFOIA_PDF_EXTRACT_MIN_CHARS_PER_PAGE", "bad")
+    monkeypatch.setenv("OPENFOIA_PDF_EXTRACT_MIN_ALPHA_RATIO", "bad")
+    config = load_config()
+    assert config.pdf_extract.min_chars_threshold == 80
+    assert config.pdf_extract.min_chars_per_page_threshold == 30
+    assert config.pdf_extract.min_alpha_ratio_threshold == 0.4
+
+
+def test_ingestion_forwards_pdf_quality_config(tmp_path, pdf, monkeypatch):
+    from openfoia.pipeline import ingest as ingest_mod
+
+    monkeypatch.setenv("OPENFOIA_DATA_DIR", str(tmp_path / "data"))
+    config_path = tmp_path / "data" / "config.json"
+    config_path.parent.mkdir()
+    config_path.write_text(
+        json.dumps(
+            {
+                "pdf_extract": {
+                    "binary_path": "/tmp/configured-pdf-extract",
+                    "min_chars_threshold": 61,
+                    "min_chars_per_page_threshold": 31,
+                    "min_alpha_ratio_threshold": 0.7,
+                }
+            }
+        )
+    )
+    seen = {}
+
+    async def fake_extract(path, **kwargs):
+        seen.update(kwargs)
+        return pdf_extract.PDFExtractResult(
+            text="text-heavy page",
+            page_count=1,
+            char_count=16,
+            backend="configured",
+            pages=["text-heavy page"],
+            verdicts=["text_layer"],
+        )
+
+    monkeypatch.setattr(pdf_extract, "extract_text", fake_extract)
+    result = asyncio.run(ingest_mod.DocumentIngester(tmp_path / "store")._extract_text_pdf(pdf))
+    assert result[0] == "text-heavy page"
+    assert seen == {
+        "binary_path": "/tmp/configured-pdf-extract",
+        "min_chars": 61,
+        "min_chars_per_page": 31,
+        "min_alpha_ratio": 0.7,
+    }
+
+
+def test_ingestion_forces_ocr_after_configured_direct_rejection(tmp_path, pdf, monkeypatch):
+    from openfoia.pipeline import ingest as ingest_mod
+    from openfoia.pipeline.ocr import OCREngine, OCRResult
+
+    monkeypatch.setenv("OPENFOIA_DATA_DIR", str(tmp_path / "data"))
+    config_path = tmp_path / "data" / "config.json"
+    config_path.parent.mkdir()
+    config_path.write_text(
+        json.dumps(
+            {
+                "pdf_extract": {
+                    "binary_path": "/tmp/configured-pdf-extract",
+                    "min_chars_threshold": 61,
+                    "min_chars_per_page_threshold": 31,
+                    "min_alpha_ratio_threshold": 0.7,
+                }
+            }
+        )
+    )
+    direct_calls = []
+    ocr_calls = []
+
+    async def reject_direct(path, **kwargs):
+        direct_calls.append((path, kwargs))
+        return None
+
+    async def fake_process(self, path, *, force_ocr=False):
+        ocr_calls.append((path, force_ocr))
+        return OCRResult(
+            text="OCR fallback text " * 4,
+            confidence=0.9,
+            page_count=1,
+            pages=[{"text": "OCR fallback text " * 4, "verdict": "ocr"}],
+            metadata={},
+        )
+
+    monkeypatch.setattr(pdf_extract, "extract_text", reject_direct)
+    monkeypatch.setattr(OCREngine, "process_pdf", fake_process)
+
+    result = asyncio.run(ingest_mod.DocumentIngester(tmp_path / "store")._extract_text_pdf(pdf))
+
+    assert result[0] == "OCR fallback text " * 4
+    assert len(direct_calls) == 1
+    assert ocr_calls == [(pdf, True)]
+
+
+def test_pdf_quality_config_save_load_round_trip(tmp_path, monkeypatch):
+    from openfoia.config import load_config, save_config
+
+    monkeypatch.setenv("OPENFOIA_DATA_DIR", str(tmp_path / "data"))
+    for name in (
+        "OPENFOIA_PDF_EXTRACT_BINARY",
+        "OPENFOIA_PDF_EXTRACT_MIN_CHARS",
+        "OPENFOIA_PDF_EXTRACT_MIN_CHARS_PER_PAGE",
+        "OPENFOIA_PDF_EXTRACT_MIN_ALPHA_RATIO",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    config_path = tmp_path / "config.json"
+    config = load_config(config_path)
+    config.pdf_extract.binary_path = "/custom/pdf-extract"
+    config.pdf_extract.min_chars_threshold = 71
+    config.pdf_extract.min_chars_per_page_threshold = 31
+    config.pdf_extract.min_alpha_ratio_threshold = 0.7
+    save_config(config, config_path)
+
+    loaded = load_config(config_path)
+    assert loaded.pdf_extract.binary_path == "/custom/pdf-extract"
+    assert loaded.pdf_extract.min_chars_threshold == 71
+    assert loaded.pdf_extract.min_chars_per_page_threshold == 31
+    assert loaded.pdf_extract.min_alpha_ratio_threshold == 0.7

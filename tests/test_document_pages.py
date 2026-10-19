@@ -98,7 +98,9 @@ def test_pdf_extract_keeps_pages(tmp_path):
     pdf = tmp_path / "a.pdf"
     pdf.write_bytes(b"%PDF-1.4")
 
-    result = asyncio.run(extract_text(pdf, binary_path=str(fake), min_chars=1))
+    result = asyncio.run(
+        extract_text(pdf, binary_path=str(fake), min_chars=1, min_chars_per_page=1)
+    )
     assert result.pages == ["page one text", "page two text"]
     assert result.page_count == 2
 

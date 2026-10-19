@@ -12,6 +12,9 @@ exhaustive lists.
 
 ### Added
 
+- PDF direct extraction now applies configurable text-quality gates and falls
+  back to OCR for sparse or mostly non-alphabetic output.
+
 - NARA Catalog works the way NARA's own bulk-download scripts do.
   `records search -s nara --ancestor <NAID>` finds every record under a series
   or file unit (the search term is optional), and `--all` walks every page up

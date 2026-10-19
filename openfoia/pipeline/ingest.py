@@ -309,15 +309,23 @@ class DocumentIngester:
         """
         import sys
 
+        from ..config import load_config
         from ..doctext import join_pages
         from .pdf_extract import NEEDS_OCR, PDFExtractTimeout, extract_text
 
+        pdf_config = load_config().pdf_extract
         try:
-            result = await extract_text(pdf_path)
+            result = await extract_text(
+                pdf_path,
+                binary_path=pdf_config.binary_path,
+                min_chars=pdf_config.min_chars_threshold,
+                min_chars_per_page=pdf_config.min_chars_per_page_threshold,
+                min_alpha_ratio=pdf_config.min_alpha_ratio_threshold,
+            )
         except PDFExtractTimeout as e:
             print(f"Warning: {e}; falling back to OCR", file=sys.stderr)
             result = None
-        if result and result.char_count > 50:
+        if result is not None:
             pages = list(result.pages)
             verdicts = list(result.verdicts or [None] * len(pages))
             need = [i + 1 for i, v in enumerate(verdicts) if v in NEEDS_OCR]
@@ -330,7 +338,10 @@ class DocumentIngester:
             from .ocr import OCREngine
 
             engine = OCREngine()
-            ocr_result = await engine.process_pdf(pdf_path)
+            # Direct extraction already applied the configured quality gate;
+            # force the fallback to OCR so it cannot retry direct extraction
+            # with its own defaults.
+            ocr_result = await engine.process_pdf(pdf_path, force_ocr=True)
             if ocr_result.text and len(ocr_result.text.strip()) > 50:
                 return (
                     ocr_result.text,
