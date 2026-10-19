@@ -317,3 +317,28 @@ def test_real_glyph_binary_json(tmp_path):
     assert "Alice" in r.text
     plain = subprocess.run([str(GLYPH), str(pdf)], capture_output=True, text=True, timeout=60)
     assert r.pages[0].strip() == plain.stdout.split("\f")[0].strip()
+
+
+def test_font_pack_env_points_engine_at_pack_when_present(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    monkeypatch.delenv("GLYPH_API_FONTS_DIR", raising=False)
+    assert "GLYPH_API_FONTS_DIR" not in pdf_extract.font_pack_env()  # no pack yet
+    pack = tmp_path / "glyph-api" / "fonts"
+    pack.mkdir(parents=True)
+    assert "GLYPH_API_FONTS_DIR" not in pdf_extract.font_pack_env()  # empty dir is not a pack
+    (pack / "Lato-Regular.ttf").write_bytes(b"\0")
+    assert pdf_extract.font_pack_env()["GLYPH_API_FONTS_DIR"] == str(pack)
+    monkeypatch.setenv("GLYPH_API_FONTS_DIR", "/elsewhere")
+    assert pdf_extract.font_pack_env()["GLYPH_API_FONTS_DIR"] == "/elsewhere"  # explicit wins
+
+
+def test_install_scripts_parse_and_know_the_font_pack():
+    root = Path(__file__).resolve().parents[1]
+    for script in ("install.sh", "uninstall.sh"):
+        subprocess.run(["bash", "-n", str(root / script)], check=True)
+        assert (
+            "glyph-api/fonts" in (root / script).read_text()
+            or "fonts" in (root / script).read_text()
+        )
+    text = (root / "install.sh").read_text()
+    assert "--no-fonts" in text and "fonts.tar.gz" in text and "--strip-components=1" in text

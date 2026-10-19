@@ -20,11 +20,13 @@ die()   { printf '\033[0;31m%s\033[0m\n' "$*" >&2; exit 1; }
 PORTABLE=false
 MINIMAL=false
 SKIP_VERIFY=false
+NO_FONTS=false
 for arg in "$@"; do
     case "$arg" in
         --portable) PORTABLE=true ;;
         --minimal)  MINIMAL=true ;;
         --insecure-skip-verify) SKIP_VERIFY=true ;;
+        --no-fonts) NO_FONTS=true ;;
     esac
 done
 if [ -f ".openfoia-portable" ] || [ -n "${OPENFOIA_DATA_DIR:-}" ]; then
@@ -38,6 +40,7 @@ if [ "$PORTABLE" = true ]; then
     INSTALL_DIR="${BASE_DIR}/bin"
     VENV_DIR="${BASE_DIR}/.openfoia-venv"
     DATA_DIR="${BASE_DIR}/openfoia-data"
+    FONTS_DIR="${INSTALL_DIR}/fonts"        # next to the binary: stays on the USB
 
     # Create portable marker
     touch "${BASE_DIR}/.openfoia-portable"
@@ -47,7 +50,9 @@ else
     INSTALL_DIR="${OPENFOIA_INSTALL_DIR:-$HOME/.local/bin}"
     VENV_DIR="${OPENFOIA_VENV_DIR:-$HOME/.openfoia-venv}"
     DATA_DIR="$HOME/.openfoia"
+    FONTS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/glyph-api/fonts"
 fi
+FONTS_REPO="JordanCoin/pdf-to-text"   # public mirror of the engine releases
 
 # --- Detect platform ---
 detect_platform() {
@@ -142,6 +147,72 @@ pdf-extract binary entirely (OpenFOIA falls back to pure-Python extraction)."
 
     chmod +x "${INSTALL_DIR}/pdf-extract"
     ok "Installed pdf-extract to ${INSTALL_DIR}/pdf-extract"
+}
+
+# --- Verify a download against a published .sha256 (first field) ---
+verify_sha256() {
+    local file="$1" expected="$2" what="$3"
+    local actual
+    if command -v sha256sum &>/dev/null; then
+        actual=$(sha256sum "$file" | awk '{print $1}')
+    elif command -v shasum &>/dev/null; then
+        actual=$(shasum -a 256 "$file" | awk '{print $1}')
+    elif [ "$SKIP_VERIFY" = true ]; then
+        warn "No sha256sum or shasum found — ${what} verification skipped (--insecure-skip-verify)."
+        return 0
+    else
+        rm -f "$file"
+        die "No sha256sum or shasum available to verify ${what}. Install coreutils, or re-run with --insecure-skip-verify."
+    fi
+    if [ "$actual" != "$expected" ]; then
+        rm -f "$file"
+        die "Checksum mismatch for ${what}! Expected ${expected}, got ${actual}. Aborting."
+    fi
+    ok "Checksum verified (SHA256)."
+}
+
+# --- Download the engine's open-source font pack ---
+# Without it the extractor's Level 5 fingerprint stage is silently off:
+# measured on 175 real PDFs, 426,485 unresolved glyphs without the pack vs
+# 397,433 with it. 12.6MB download, ~24MB on disk. Skip with --no-fonts.
+download_fonts() {
+    if [ "$NO_FONTS" = true ]; then
+        info "Skipping font pack (--no-fonts)."
+        return 0
+    fi
+    if ! command -v tar &>/dev/null; then
+        warn "tar not found; skipping the font pack. PDF extraction still works, with more unresolved glyphs."
+        return 1
+    fi
+    info "Downloading the PDF engine font pack (12.6MB, ~24MB on disk)..."
+    local url
+    url=$(curl -fsSL "https://api.github.com/repos/${FONTS_REPO}/releases" \
+        | grep -Eo "\"browser_download_url\"[[:space:]]*:[[:space:]]*\"[^\"]*/fonts\.tar\.gz\"" \
+        | head -1 \
+        | cut -d '"' -f 4) || true
+    if [ -z "$url" ]; then
+        warn "No font pack found in ${FONTS_REPO} releases; skipping. Re-run install.sh later to fetch it."
+        return 1
+    fi
+    local tmp
+    tmp=$(mktemp -t openfoia-fonts.XXXXXX)
+    curl -fsSL "$url" -o "$tmp"
+    local expected
+    expected=$(curl -fsSL "${url}.sha256" 2>/dev/null | awk '{print $1}') || true
+    if [ -n "$expected" ]; then
+        verify_sha256 "$tmp" "$expected" "fonts.tar.gz"
+    elif [ "$SKIP_VERIFY" = true ]; then
+        warn "No .sha256 for the font pack — verification skipped (--insecure-skip-verify)."
+    else
+        rm -f "$tmp"
+        warn "No .sha256 published for the font pack; not installing it unverified."
+        return 1
+    fi
+    mkdir -p "$FONTS_DIR"
+    # The tarball holds a top-level fonts/ directory; drop it so files land in FONTS_DIR.
+    tar -xzf "$tmp" -C "$FONTS_DIR" --strip-components=1
+    rm -f "$tmp"
+    ok "Installed font pack to ${FONTS_DIR} ($(ls "$FONTS_DIR" | wc -l | tr -d ' ') files)"
 }
 
 # --- Install Python package ---
@@ -249,6 +320,7 @@ main() {
 
     install_python
     download_binary "$platform" || true
+    download_fonts || true
     ensure_path
 
     # Initialize database

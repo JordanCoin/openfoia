@@ -80,6 +80,8 @@ A compiled 2.6MB binary extracts text directly from PDF structures — no OCR ne
 
 99.5% accuracy across 480K characters in 50 test PDFs. 100% on every FOIA document tested. Zero runtime dependencies. Falls back to OCR (Tesseract) for scanned documents.
 
+The installer also fetches the engine's open-source font pack (12.6MB download, 24MB on disk) into `~/.local/share/glyph-api/fonts`, next to the binary in portable mode. Without it the engine's fingerprint stage is off: on 175 real PDFs that is 426,485 unresolved glyphs instead of 397,433, and a broken-font NASA handbook goes from 100,987 to 136,535. `openfoia init` reports whether the pack is present; `install.sh --no-fonts` skips it.
+
 OpenFOIA calls the extractor with the large-document runtime profile by default (`--profile large`).
 To control concurrency per process, set:
 - `OPENFOIA_PDF_EXTRACT_MAX_WORKERS` (for example `4` or `8`)

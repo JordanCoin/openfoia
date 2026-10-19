@@ -57,6 +57,40 @@ class PDFExtractResult:
     verdicts: list[str] | None = None
 
 
+def font_pack_dir() -> Path:
+    """Where install.sh puts the engine's open-source font pack.
+
+    Mirrors the engine's own search order (glyph-api ``find_fonts_dir``): the
+    per-user data dir, ``$XDG_DATA_HOME`` or ``~/.local/share`` on Unix and
+    ``%LOCALAPPDATA%`` on Windows, plus ``glyph-api/fonts``. Portable installs
+    put it next to the binary instead, which the engine also checks.
+    """
+    if os.name == "nt" and os.environ.get("LOCALAPPDATA"):
+        base = Path(os.environ["LOCALAPPDATA"])
+    elif os.environ.get("XDG_DATA_HOME"):
+        base = Path(os.environ["XDG_DATA_HOME"])
+    else:
+        base = Path.home() / ".local" / "share"
+    return base / "glyph-api" / "fonts"
+
+
+def font_pack_installed() -> bool:
+    return any(font_pack_dir().glob("*.ttf")) if font_pack_dir().is_dir() else False
+
+
+def font_pack_env() -> dict[str, str]:
+    """Environment for the extractor: point it at the font pack when we have one.
+
+    Without the pack the engine's Level 5 fingerprint stage is silently off and
+    broken-font PDFs keep their unresolved glyphs. An explicit
+    ``GLYPH_API_FONTS_DIR`` always wins.
+    """
+    env = dict(os.environ)
+    if not env.get("GLYPH_API_FONTS_DIR") and font_pack_installed():
+        env["GLYPH_API_FONTS_DIR"] = str(font_pack_dir())
+    return env
+
+
 def find_binary(configured_path: str | None = None) -> str | None:
     """Find the PDF extraction binary.
 
@@ -140,7 +174,9 @@ async def extract_text(
     timeout = timeout_for(pdf_path)
 
     def _run(cmd: list[str]) -> subprocess.CompletedProcess:
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout, env=font_pack_env()
+        )
 
     def _unknown_flag(result: subprocess.CompletedProcess, *names: str) -> bool:
         stderr = (result.stderr or "").lower()

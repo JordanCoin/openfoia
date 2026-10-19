@@ -20,10 +20,12 @@ if [ "$PORTABLE" = true ]; then
     DATA_DIR="$(pwd)/openfoia-data"
     VENV_DIR="$(pwd)/.openfoia-venv"
     BIN_DIR="$(pwd)/bin"
+    FONTS_DIR="${BIN_DIR}/fonts"
 else
     DATA_DIR="$HOME/.openfoia"
     VENV_DIR="${OPENFOIA_VENV_DIR:-$HOME/.openfoia-venv}"
     BIN_DIR="${OPENFOIA_INSTALL_DIR:-$HOME/.local/bin}"
+    FONTS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/glyph-api"
 fi
 
 main() {
@@ -53,6 +55,12 @@ main() {
             ok "Removed $f"
         fi
     done
+
+    # Remove the engine font pack (open-source TTFs, nothing user-created)
+    if [ -d "$FONTS_DIR" ]; then
+        rm -rf "$FONTS_DIR"
+        ok "Removed font pack ${FONTS_DIR}"
+    fi
 
     # Remove bin dir if empty (portable only)
     if [ "$PORTABLE" = true ] && [ -d "$BIN_DIR" ]; then

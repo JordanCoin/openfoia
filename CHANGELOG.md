@@ -12,6 +12,16 @@ exhaustive lists.
 
 ### Added
 
+- The installer now fetches the PDF engine's open-source font pack
+  (`fonts.tar.gz`, 12.6MB, checksum-verified, from the public pdf-to-text
+  release) into `~/.local/share/glyph-api/fonts`, or next to the binary in
+  portable mode, and the extractor is pointed at it. Without the pack the
+  engine's Level 5 fingerprint stage was silently off for every openfoia
+  install; with it, 175 real PDFs go from 426,485 unresolved glyphs to
+  397,433. `install.sh --no-fonts` skips it, `uninstall.sh` removes it, and
+  `openfoia init` says whether it is present. An explicit
+  `GLYPH_API_FONTS_DIR` still wins.
+
 - NARA Catalog works the way NARA's own bulk-download scripts do.
   `records search -s nara --ancestor <NAID>` finds every record under a series
   or file unit (the search term is optional), and `--all` walks every page up
