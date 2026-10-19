@@ -10,6 +10,16 @@ exhaustive lists.
 
 ## [Unreleased]
 
+### Fixed
+
+- `records fetch <NAID> -s nara --objects` downloaded nothing on real
+  records: the live Catalog API links scans under
+  `https://catalog.archives.gov/medialive/`, which the download allowlist did
+  not accept, so every file was skipped as "not NARA's object storage". That
+  path is now allowed (https only, no `..`); other catalog paths and other
+  hosts are still refused. The download notice now names the hosts the
+  files actually come from. Found by the first live run with a real key.
+
 ## [4.6.0] - 2026-10-19
 
 ### Added

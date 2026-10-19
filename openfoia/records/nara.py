@@ -40,9 +40,11 @@ NO_KEY_MESSAGE = (
     f"(there is no signup form) and set {KEY_ENV} (or {KEY_ENV_ALIAS})."
 )
 PAGE_MAX = 100
-# Digital objects (scans, PDFs) are served from NARA's S3 buckets, not the API host.
+# Digital objects (scans, PDFs): the live API links them under the catalog host's
+# /medialive/ path (seen 2026-10-19); older records point at NARA's S3 buckets.
 OBJECT_HOST = "nara-media-001.s3.amazonaws.com"
 OBJECT_PATH_STYLE = ("s3.amazonaws.com", "/NARAprodstorage/")
+OBJECT_CATALOG_PATH = ("catalog.archives.gov", "/medialive/")
 MAX_OBJECT_BYTES = 500 * 1024 * 1024
 
 _last_call = 0.0
@@ -75,9 +77,13 @@ def object_url_allowed(url: str) -> bool:
     parts = urlsplit(url)
     if parts.scheme != "https":
         return False
-    host, prefix = OBJECT_PATH_STYLE
-    return parts.hostname == OBJECT_HOST or (
+    if ".." in parts.path.split("/"):
+        return False
+    if parts.hostname == OBJECT_HOST:
+        return True
+    return any(
         parts.hostname == host and parts.path.startswith(prefix)
+        for host, prefix in (OBJECT_PATH_STYLE, OBJECT_CATALOG_PATH)
     )
 
 

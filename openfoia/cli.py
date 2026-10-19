@@ -5785,10 +5785,10 @@ def _records_nara_objects(
 ) -> None:
     """List (or download and ingest) each NAID's digital objects, like NARA's own scripts."""
     import asyncio
+    from urllib.parse import urlsplit
 
     from .cases import active_case_id_in_db
     from .db import ensure_db, get_data_dir
-    from .records.nara import OBJECT_HOST
 
     listing, failed, ok, notified = [], 0, 0, False
     for raw in ids:
@@ -5817,9 +5817,10 @@ def _records_nara_objects(
 
         if not notified and objs:
             notified = True
+            hosts = sorted({urlsplit(o.get("url") or "").hostname or "?" for o in objs})
             rprint(
-                f"[yellow]Downloading digital objects from {OBJECT_HOST} (NARA's object "
-                f"storage on Amazon S3, a new host; {route}; not counted against the API quota).[/yellow]"
+                f"[yellow]Downloading digital objects from {', '.join(hosts)} (NARA's "
+                f"object storage; {route}; not counted against the API quota).[/yellow]"
             )
         ensure_db()
         case_id = active_case_id_in_db()
