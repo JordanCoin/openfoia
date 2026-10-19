@@ -12,12 +12,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 #: Per-page verdicts the glyph `--json` contract emits (docs/JSON_CONTRACT.md).
 VERDICT_TEXT_LAYER = "text_layer"
@@ -55,6 +58,75 @@ class PDFExtractResult:
     #: per-page verdict (text_layer / garbled / image_only); None when the
     #: binary only produced plain form-feed output
     verdicts: list[str] | None = None
+    #: whole-document gate failures (plain output only); non-empty means
+    #: prefer OCR but keep this text if OCR is unavailable
+    quality_reasons: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class PDFQualityMetrics:
+    """Deterministic whole-document quality measurements."""
+
+    total_chars: int
+    page_count: int
+    chars_per_page: float
+    alpha_ratio: float
+
+
+def evaluate_quality(
+    text: str,
+    page_count: int,
+    *,
+    min_chars: int = 50,
+    min_chars_per_page: int = 20,
+    min_alpha_ratio: float = 0.20,
+) -> tuple[PDFQualityMetrics, tuple[str, ...]]:
+    """Measure extracted text and return quality-gate reason codes."""
+    # Form feeds are page separators, and whitespace should not inflate the
+    # amount of usable extracted text.
+    non_whitespace = sum(1 for char in text if not char.isspace())
+    total_chars = non_whitespace
+    pages = max(page_count, 0)
+    chars_per_page = total_chars / pages if pages else 0.0
+    alphabetic = sum(1 for char in text if char.isalpha())
+    alpha_ratio = alphabetic / non_whitespace if non_whitespace else 0.0
+    metrics = PDFQualityMetrics(total_chars, pages, chars_per_page, alpha_ratio)
+    reasons: list[str] = []
+    if total_chars < min_chars:
+        reasons.append("LOW_TOTAL_CHARS")
+    if chars_per_page < min_chars_per_page:
+        reasons.append("LOW_CHARS_PER_PAGE")
+    if alpha_ratio < min_alpha_ratio:
+        reasons.append("LOW_ALPHA_RATIO")
+    return metrics, tuple(reasons)
+
+
+def _quality_reasons(
+    text: str,
+    page_count: int,
+    *,
+    min_chars: int,
+    min_chars_per_page: int,
+    min_alpha_ratio: float,
+) -> tuple[str, ...]:
+    metrics, reasons = evaluate_quality(
+        text,
+        page_count,
+        min_chars=min_chars,
+        min_chars_per_page=min_chars_per_page,
+        min_alpha_ratio=min_alpha_ratio,
+    )
+    if reasons:
+        logger.warning(
+            "PDF direct extraction flagged for OCR: reason_codes=%s total_chars=%d "
+            "page_count=%d chars_per_page=%.3f alpha_ratio=%.3f",
+            list(reasons),
+            metrics.total_chars,
+            metrics.page_count,
+            metrics.chars_per_page,
+            metrics.alpha_ratio,
+        )
+    return reasons
 
 
 def find_binary(configured_path: str | None = None) -> str | None:
@@ -93,6 +165,8 @@ async def extract_text(
     pdf_path: Path | str,
     binary_path: str | None = None,
     min_chars: int = 50,
+    min_chars_per_page: int = 20,
+    min_alpha_ratio: float = 0.20,
     profile: str = "large",
     max_workers: int | None = None,
 ) -> PDFExtractResult | None:
@@ -105,6 +179,9 @@ async def extract_text(
     - No binary found
     - Binary fails
     - Extracted text is below min_chars (probably a scanned PDF, needs OCR)
+
+    Plain output (no per-page verdicts) that fails the per-page or
+    alphabetic-ratio gates is returned with ``quality_reasons`` set.
 
     Raises PDFExtractTimeout when the binary exceeds the size-scaled limit.
     """
@@ -155,7 +232,9 @@ async def extract_text(
             if parsed is not None:
                 pages, verdicts = parsed
                 text = "\f".join(pages)
-                if len(text.strip()) < min_chars:
+                # Verdicts already route bad pages to OCR one by one, so only the
+                # "nothing here" gate applies; tables legitimately score low alpha.
+                if "LOW_TOTAL_CHARS" in evaluate_quality(text, len(pages), min_chars=min_chars)[1]:
                     return None
                 return PDFExtractResult(
                     text=text,
@@ -185,13 +264,19 @@ async def extract_text(
         return None
 
     text = result.stdout
-    if len(text.strip()) < min_chars:
-        return None
-
     from ..doctext import split_pages
 
     # Pages are separated by form feed (0x0C)
     pages = split_pages(text)
+    reasons = _quality_reasons(
+        text,
+        len(pages),
+        min_chars=min_chars,
+        min_chars_per_page=min_chars_per_page,
+        min_alpha_ratio=min_alpha_ratio,
+    )
+    if "LOW_TOTAL_CHARS" in reasons:
+        return None
 
     return PDFExtractResult(
         text=text,
@@ -199,6 +284,7 @@ async def extract_text(
         char_count=len(text.replace("\f", "")),
         backend=binary,
         pages=pages,
+        quality_reasons=reasons,
     )
 
 
