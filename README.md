@@ -2,13 +2,13 @@
 
 **Local-first investigation toolkit for journalists, researchers, and citizens.**
 
-Your data never leaves your machine. Works offline. Works everywhere.
+Anyone, anywhere, should be able to investigate power safely. Most of the world has no legal right to demand records from its government, and where the right exists, asking can be dangerous. OpenFOIA is built for the reporter in Istanbul, the researcher in Nairobi, the citizen in São Paulo: it runs on your machine, works offline, and can be wiped. Your data never leaves your machine unless you choose to send it.
 
-*One real government document → 45 entities, 166 relationships, extracted locally in seconds. No cloud. No API keys.*
+*One real government document, 45 entities, 166 relationships, extracted locally in seconds. No cloud. No API keys.*
 
-![Entity relationship graph — 45 entities, 166 relationships extracted from a Palantir police surveillance contract pulled from DocumentCloud](docs/entity-graph.png)
+![Entity relationship graph: 45 entities, 166 relationships extracted from a Palantir police surveillance contract pulled from DocumentCloud](docs/entity-graph.png)
 
-![Built-in document reader with entity highlighting — click any entity to jump to it in the source text, with a link to the original document](docs/document-reader.png)
+![Built-in document reader with entity highlighting. Click any entity to jump to it in the source text, with a link to the original document](docs/document-reader.png)
 
 ---
 
@@ -16,7 +16,7 @@ Your data never leaves your machine. Works offline. Works everywhere.
 
 ### With Claude Code (recommended)
 
-If you use [Claude Code](https://claude.ai/code), install the OpenFOIA plugin — you get the CLI plus a built-in copilot that knows every command:
+If you use [Claude Code](https://claude.ai/code), install the OpenFOIA plugin. You get the CLI plus a built-in copilot that knows every command:
 
 ```
 /plugin marketplace add JordanCoin/openfoia
@@ -59,8 +59,8 @@ openfoia request mark REQ-2026-001 denied              # starts the appeal clock
 
 | | |
 |---|---|
-| **PDF text extraction** | Compiled 2.6MB binary, zero dependencies. 99.5% accuracy across 480K chars. Reports each page as text layer, garbled or image only, and only the last two get OCR |
-| **Entity extraction** | 4-tier: LLM → GLiNER → spaCy → Regex. 100% recall with a 2GB local model |
+| **PDF text extraction** | Compiled 2.6MB binary, zero dependencies. Resolves broken fonts and missing encodings without OCR. Reports each page as text layer, garbled or image only, and only the last two get OCR |
+| **Entity extraction** | Four tiers, LLM, GLiNER, spaCy, regex, each falling back to the next. Regex always works, with no model at all |
 | **Relationship graphs** | Interactive graph with built-in document reader. Click entities to read source text with highlights |
 | **Cross-reference** | MuckRock, DocumentCloud, OpenCorporates, SEC EDGAR, OpenSanctions, ICIJ Offshore Leaks |
 | **Claude Code skill** | The plugin teaches Claude the same loop with the same commands, so an agent and a human produce the same cited result |
@@ -71,14 +71,14 @@ openfoia request mark REQ-2026-001 denied              # starts the appeal clock
 | **Data interchange** | Import/export FollowTheMoney format (Aleph, OpenAleph, OpenSanctions) |
 | **Encrypted storage** | SQLCipher AES-256. Decoy profile mode |
 | **Forensic purge** | 3-pass overwrite, shell history scrub, free space fill |
-| **Portable mode** | `openfoia portable` — everything stays on the USB, nothing on the host |
-| **Metadata stripping** | Strips EXIF, PDF author, DOCX revision history on file and web-UI ingest. Email attachments and archived web pages are stored as received — see [THREAT_MODEL.md](docs/THREAT_MODEL.md) |
+| **Portable mode** | `openfoia portable` keeps everything on the USB, nothing on the host |
+| **Metadata stripping** | Strips EXIF, PDF author, DOCX revision history on file and web-UI ingest. Email attachments and archived web pages are stored as received; see [THREAT_MODEL.md](docs/THREAT_MODEL.md) |
 
 ### PDF Extraction Engine
 
-A compiled 2.6MB binary extracts text directly from PDF structures — no OCR needed for born-digital documents. Uses a multi-level resolution cascade to handle broken fonts, missing encodings, and government form PDFs that other tools can't read.
+A compiled 2.6MB binary extracts text directly from PDF structures, so born-digital documents need no OCR. A multi-level resolution cascade handles broken fonts, missing encodings, and government form PDFs that other tools cannot read.
 
-99.5% accuracy across 480K characters in 50 test PDFs. 100% on every FOIA document tested. Zero runtime dependencies. Falls back to OCR (Tesseract) for scanned documents.
+On the engine's test corpus of 46 real PDFs (2.9 million characters), 0.0005 percent of glyphs are left unresolved, 45 of 46 documents extract with clean word flow, and 38 of 46 with no detectable character corruption. The remaining documents are the hard ones: subset fonts with no encoding, scans with a bad text layer. Those pages are flagged and sent to OCR (Tesseract) instead. Zero runtime dependencies.
 
 OpenFOIA calls the extractor with the large-document runtime profile by default (`--profile large`).
 To control concurrency per process, set:
@@ -136,7 +136,7 @@ that disclosure.
 | [MuckRock](https://www.muckrock.com/) | Completed FOIA requests with downloadable response documents | API token (`OPENFOIA_MUCKROCK_TOKEN`) |
 | [DocumentCloud](https://www.documentcloud.org/) | Public documents with pre-extracted text | Public API |
 | [CIA FOIA Reading Room](https://www.cia.gov/readingroom/) | Declassified CIA records (CREST, MORI); `records fetch <CREST or MORI> --source cia` downloads and ingests the PDF | Public site; a bot filter can block scripted access, reported as "blocked" |
-| [National Archives Catalog](https://catalog.archives.gov/) | Archival descriptions and OCR text for accessioned federal records; `records fetch <NAID> --source nara` | Free key by email (`OPENFOIA_NARA_API_KEY`), 10,000 queries a month, counted locally |
+| [National Archives Catalog](https://catalog.archives.gov/) | Accessioned federal records: descriptions, OCR text where NARA has it, and the scans themselves. `records fetch <NAID> --source nara --objects` downloads every page image or PDF of a record and OCRs it locally; `records search --source nara --ancestor <NAID> --all` lists every file unit in a series | Free key by email (`OPENFOIA_NARA_API_KEY`), 10,000 queries a month, counted locally |
 | [OpenCorporates](https://opencorporates.com/) | Global company registrations, ownership, directors, and filings | Free basic search |
 | [SEC EDGAR](https://www.sec.gov/edgar/) | US public-company filings | No API key |
 | [USAspending](https://www.usaspending.gov/) | Federal contracts, grants, loans, and other awards | No API key |
@@ -151,7 +151,7 @@ that disclosure.
 
 | Guide | What |
 |-------|------|
-| **[Journalist Guide](docs/GUIDE.md)** | Full walkthrough — start here if you're new |
+| **[Journalist Guide](docs/GUIDE.md)** | Full walkthrough. Start here if you're new |
 | [The Records Ladder](docs/RECORDS_LADDER.md) | Which rung of the US public-records system holds your record, from the school district to NARA, and how to ask |
 | [Tails OS](docs/TAILS.md) | Running from Tails for maximum privacy |
 | [USB Install](docs/USB.md) | Encrypted USB portable setup |
@@ -163,7 +163,7 @@ Everything runs on `127.0.0.1`. Token-authenticated. Encrypted at rest (optional
 
 **For sensitive investigations:** `openfoia serve --tor`
 
-**Portable mode:** `openfoia portable` — data stays on the USB, nothing touches the host.
+**Portable mode:** `openfoia portable` keeps data on the USB; nothing touches the host.
 
 **When you're done:** `openfoia purge --secure --yes`
 
@@ -183,7 +183,7 @@ Built by people who believe in freedom of information. Inspired by [MuckRock](ht
 
 ## License
 
-AGPL-3.0 — Keep it open.
+AGPL-3.0. Keep it open.
 
 ---
 
