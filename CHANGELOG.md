@@ -33,6 +33,21 @@ exhaustive lists.
   to the record's text. The key can also be set as `CATALOG_API_KEY`, the name
   NARA's scripts use.
 
+### Changed
+
+- PDFs read by an older `pdf-extract` that has no `--json` output (so no
+  per-page verdicts) are now checked for text quality: if the text averages
+  under 20 characters a page, or under 20% of its non-space characters are
+  letters, the whole document goes to OCR. If OCR is not installed or finds
+  nothing, the extracted text is kept and `openfoia install-extras ocr` is
+  suggested once. With the current `pdf-extract` the only change is that the
+  "too little text, OCR everything" check counts non-space characters:
+  scanned and garbled pages are still OCR'd one by one, and tables and FOIA
+  logs keep their exact text-layer numbers. Tune the gates with `OPENFOIA_PDF_EXTRACT_MIN_CHARS`
+  (default 50), `OPENFOIA_PDF_EXTRACT_MIN_CHARS_PER_PAGE` (default 20) and
+  `OPENFOIA_PDF_EXTRACT_MIN_ALPHA_RATIO` (default 0.20), or the matching
+  `pdf_extract` keys in `config.json`. `docs ocr` now uses these settings too.
+
 ## [4.5.0] - 2026-10-14
 
 ### Added
