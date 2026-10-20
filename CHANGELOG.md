@@ -10,6 +10,21 @@ exhaustive lists.
 
 ## [Unreleased]
 
+### Fixed
+
+- `records fetch <NAID> -s nara --objects` still skipped most records:
+  besides `/medialive/`, the live Catalog API serves scans under
+  `https://catalog.archives.gov/medialz/` (19 of 27 records sampled), which
+  the download allowlist refused. Both paths are allowed now (https only, no
+  `..`).
+- A rerun of `--objects` downloaded files again when NARA's catalog lists a
+  placeholder size (1,234 bytes) for them. Downloads now write to a `.part`
+  file and rename it when complete, so a file on disk is always whole and a
+  rerun skips it. This applies to every download openfoia makes.
+  `--list-objects` shows such sizes as "size unknown".
+- `records search --help` listed 2 of 11 sources and said no API keys are
+  needed. It now lists every source and the key each one reads.
+
 ## [4.6.1] - 2026-10-19
 
 ### Fixed
