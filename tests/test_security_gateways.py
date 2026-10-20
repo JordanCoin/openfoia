@@ -327,3 +327,41 @@ def test_download_filename_is_sanitized(raw, expected):
     assert "/" not in got and "\\" not in got
     assert not got.startswith(".")
     assert got == expected
+
+
+def test_download_to_file_never_exposes_a_partial_file(tmp_path):
+    """A download killed mid-stream must not leave a file at *dest* that looks complete:
+    callers (NARA --objects resume) treat an existing file as done."""
+    import asyncio
+
+    from openfoia.records.base import download_to_file
+
+    dest = tmp_path / "out.bin"
+    seen_mid_stream = []
+
+    class _Resp:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        async def aiter_bytes(self, chunk_size=65536):
+            yield b"hello "
+            seen_mid_stream.append(dest.exists())
+            yield b"world"
+
+    class _Stream:
+        async def __aenter__(self):
+            return _Resp()
+
+        async def __aexit__(self, *a):
+            return False
+
+    class _Client:
+        def stream(self, method, url):
+            return _Stream()
+
+    asyncio.run(download_to_file(_Client(), "https://x.test/a.pdf", dest, max_bytes=1024))
+    assert seen_mid_stream == [False]
+    assert dest.read_bytes() == b"hello world"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["out.bin"]

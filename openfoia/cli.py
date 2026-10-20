@@ -5140,12 +5140,21 @@ def records_search(
     """Search public records databases.
 
     Searches external public records APIs and returns normalized entities.
-    No API keys needed for basic searches. When a case is active the query
-    is logged to it (see 'openfoia case').
+    Each search sends the query to that source. When a case is active the
+    query is logged to it (see 'openfoia case').
 
-    Sources:
+    Sources (key = environment variable it needs):
+      documentcloud   - Public documents with extracted text
+      muckrock        - Completed FOIA requests (key: OPENFOIA_MUCKROCK_TOKEN)
+      nara            - National Archives Catalog (key: OPENFOIA_NARA_API_KEY)
+      cia             - CIA FOIA Reading Room (often blocked to scripts)
       opencorporates  - Company registrations worldwide
       sec             - SEC EDGAR filings (US public companies)
+      usaspending     - Federal contracts and grants
+      nonprofits      - ProPublica Nonprofit Explorer (IRS Form 990)
+      govinfo         - US government publications (key: OPENFOIA_GOVINFO_API_KEY or demo)
+      fec             - Campaign finance (shared demo key, rate-limited)
+      regulations     - Rulemaking dockets (shared demo key, rate-limited)
 
     Examples:
         openfoia records search "Acme Corp" --source opencorporates
@@ -5789,6 +5798,7 @@ def _records_nara_objects(
 
     from .cases import active_case_id_in_db
     from .db import ensure_db, get_data_dir
+    from .records.nara import PLACEHOLDER_SIZE as NARA_PLACEHOLDER_SIZE
 
     listing, failed, ok, notified = [], 0, 0, False
     for raw in ids:
@@ -5811,7 +5821,10 @@ def _records_nara_objects(
                 continue
             rprint(f"\n[bold]{naid}[/bold] {entity.name}: {len(objs)} digital objects")
             for i, o in enumerate(objs, 1):
-                size = f"{o['size']:,} bytes" if o.get("size") else "-"
+                # ponytail: NARA lists 1234 as a placeholder size on many objects
+                # (seen 2026-10-20); a real 1,234-byte scan is implausible.
+                real = o.get("size") and o["size"] != NARA_PLACEHOLDER_SIZE
+                size = f"{o['size']:,} bytes" if real else "size unknown"
                 typer.echo(f"  {i:>4}  {o.get('type') or '-'}  {size}  {o.get('url') or '-'}")
             continue
 

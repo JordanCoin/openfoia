@@ -41,11 +41,16 @@ NO_KEY_MESSAGE = (
 )
 PAGE_MAX = 100
 # Digital objects (scans, PDFs): the live API links them under the catalog host's
-# /medialive/ path (seen 2026-10-19); older records point at NARA's S3 buckets.
+# /medialive/ or /medialz/ paths (both seen 2026-10-20); older records point at
+# NARA's S3 buckets.
 OBJECT_HOST = "nara-media-001.s3.amazonaws.com"
 OBJECT_PATH_STYLE = ("s3.amazonaws.com", "/NARAprodstorage/")
-OBJECT_CATALOG_PATH = ("catalog.archives.gov", "/medialive/")
+OBJECT_CATALOG_PATHS = (
+    ("catalog.archives.gov", "/medialive/"),
+    ("catalog.archives.gov", "/medialz/"),
+)
 MAX_OBJECT_BYTES = 500 * 1024 * 1024
+PLACEHOLDER_SIZE = 1234  # objectFileSize NARA reports when it does not know the size
 
 _last_call = 0.0
 _quota_warned = False
@@ -83,7 +88,7 @@ def object_url_allowed(url: str) -> bool:
         return True
     return any(
         parts.hostname == host and parts.path.startswith(prefix)
-        for host, prefix in (OBJECT_PATH_STYLE, OBJECT_CATALOG_PATH)
+        for host, prefix in (OBJECT_PATH_STYLE, *OBJECT_CATALOG_PATHS)
     )
 
 
@@ -250,8 +255,10 @@ class NARAAdapter(RecordAdapter):
                 _object_filename(obj.get("filename"))
                 or safe_download_filename(url, default=f"object-{i}")
             )
-            size = obj.get("size")
-            if dest.exists() and (not size or dest.stat().st_size == size):
+            # Downloads are atomic (download_to_file renames when complete), so a
+            # file on disk is whole. Don't compare with objectFileSize: NARA lists
+            # 1234 as a placeholder on many objects.
+            if dest.exists():
                 out.append((obj, dest, "present"))
                 continue
             if not object_url_allowed(url):

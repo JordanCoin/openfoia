@@ -445,6 +445,29 @@ def test_object_host_allowlist():
     assert not nara_mod.object_url_allowed("https://catalog.archives.gov/api/v2/records")
     assert not nara_mod.object_url_allowed("https://catalog.archives.gov/medialive/../api/v2")
     assert not nara_mod.object_url_allowed("https://catalog.archives.gov.evil.example/medialive/a")
+    # Many records (e.g. NAID 122681436, State Dept RG 59) serve objects under /medialz/.
+    medialz = "https://catalog.archives.gov/medialz/dc-metro/rg-059/81119169/122673999/x.jpg"
+    assert nara_mod.object_url_allowed(medialz)
+    assert not nara_mod.object_url_allowed(medialz.replace("https", "http", 1))
+    assert not nara_mod.object_url_allowed("https://catalog.archives.gov/medialz/../api/v2")
+
+
+def test_existing_file_counts_as_present_despite_placeholder_size(tmp_path, monkeypatch):
+    """NARA reports objectFileSize 1234 as a placeholder on many objects (seen live,
+    NAID 122681436: listed 1,234 bytes, real 1,573,115). Downloads are atomic, so a
+    file on disk is complete: a rerun must not download it again."""
+    import asyncio
+    from types import SimpleNamespace
+
+    async def must_not_download(*a, **k):
+        raise AssertionError("a complete file on disk was downloaded again")
+
+    monkeypatch.setattr("openfoia.records.base.download_to_file", must_not_download)
+    (tmp_path / "1.jpg").write_bytes(b"x" * 10)
+    obj = {"url": "https://catalog.archives.gov/medialz/a/1.jpg", "filename": "1.jpg", "size": 1234}
+    entity = SimpleNamespace(extra_data={"objects": [obj]})
+    out = asyncio.run(NARAAdapter(api_key="k").download_objects(entity, tmp_path))
+    assert [status for _, _, status in out] == ["present"]
 
 
 def test_objects_use_the_configured_tor_policy(monkeypatch):
@@ -543,3 +566,23 @@ def test_object_filenames_keep_url_special_characters():
     assert nara_mod._object_filename("a?b;c.pdf") == "a_b_c.pdf"
     assert nara_mod._object_filename("../../etc/passwd") == "passwd"
     assert nara_mod._object_filename("..") == "" and nara_mod._object_filename(None) == ""
+
+
+def test_list_objects_shows_placeholder_size_as_unknown(monkeypatch):
+    monkeypatch.setenv("OPENFOIA_NARA_API_KEY", "k")
+    hit = _hit_with_files()
+    hit["_source"]["record"]["digitalObjects"][0]["objectFileSize"] = 1234
+    _patch_request(monkeypatch, _response([hit]), [])
+    r = runner.invoke(app, ["records", "fetch", "7283224", "-s", "nara", "--list-objects"])
+    assert r.exit_code == 0, r.output
+    assert "1,234 bytes" not in r.output and "size unknown" in r.output
+
+
+def test_search_help_lists_every_source_and_keys():
+    from openfoia.records import list_sources
+
+    r = runner.invoke(app, ["records", "search", "--help"])
+    assert "No API keys needed" not in r.output
+    for name in list_sources():
+        assert name in r.output, name
+    assert "OPENFOIA_NARA_API_KEY" in r.output

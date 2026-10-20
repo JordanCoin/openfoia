@@ -81,12 +81,16 @@ async def download_to_file(client: Any, url: str, dest: Any, max_bytes: int) -> 
     from pathlib import Path
 
     dest = Path(dest)
+    # Stream into a sibling .part file and rename when complete, so *dest* only
+    # ever exists whole: even a killed process can't leave a truncated file
+    # that a resume would mistake for a finished download.
+    part = dest.with_name(dest.name + ".part")
     written = 0
 
     try:
         async with client.stream("GET", url) as response:
             response.raise_for_status()
-            with open(dest, "wb") as f:
+            with open(part, "wb") as f:
                 async for chunk in response.aiter_bytes():
                     written += len(chunk)
                     if written > max_bytes:
@@ -94,9 +98,9 @@ async def download_to_file(client: Any, url: str, dest: Any, max_bytes: int) -> 
                             f"Refusing download over {max_bytes} bytes (cap exceeded): {url!r}"
                         )
                     f.write(chunk)
+        part.replace(dest)
     except BaseException:
-        if dest.exists():
-            dest.unlink()
+        part.unlink(missing_ok=True)
         raise
 
     return written
