@@ -27,6 +27,10 @@ exhaustive lists.
   refuses keyless requests; a 401/403 is reported as
   `API key required: set OPENFOIA_OPENSANCTIONS_API_KEY` instead of a bare
   HTTP status, and no further names are sent to it for the rest of the run.
+- Crossref dedup now strips 50+ company legal forms and honorifics; no new
+  dependency. "Clearview AI Inc.", "Clearview AI, Ltd" and "CLEARVIEW AI
+  LIMITED" become one lookup, as do "Petrobras S.A." and "Petrobras SA", and
+  "Dr. Jane Doe" matches "Jane Doe". (#116)
 
 ### Fixed
 

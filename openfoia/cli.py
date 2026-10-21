@@ -216,7 +216,8 @@ def init(
 @app.command("install-extras")
 def install_extras(
     extra: str = typer.Argument(
-        ..., help="Extra to install: ner, ocr, fax, mail, cloud-ai, tor, browser, encryption, all"
+        ...,
+        help="Extra to install: ner, ocr, fax, mail, cloud-ai, tor, browser, encryption, match, all",
     ),
 ):
     """Install optional features after the initial setup.
@@ -228,6 +229,7 @@ def install_extras(
         openfoia install-extras ocr          # Tesseract OCR support
         openfoia install-extras cloud-ai     # Anthropic + OpenAI
         openfoia install-extras encryption   # SQLCipher encrypted database
+        openfoia install-extras match        # rigour name matching for crossref
         openfoia install-extras all          # everything
     """
     import subprocess
@@ -243,6 +245,7 @@ def install_extras(
         "tor",
         "browser",
         "encryption",
+        "match",
         "all",
     }
     if extra not in valid:
@@ -259,6 +262,7 @@ def install_extras(
         "tor": "~1MB",
         "browser": "~50MB (+ playwright install after)",
         "encryption": "~5MB (also needs system libsqlcipher-dev)",
+        "match": "~25MB (needs system ICU + pkg-config: libicu-dev or brew icu4c)",
         "all": "~2.5GB total",
     }
 

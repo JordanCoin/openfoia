@@ -19,6 +19,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from .matching import dedup_key
 from .models import EntityType
 from .net import EgressPolicy, egress_client
 
@@ -144,22 +145,13 @@ def _check_rate_limit(result: Any) -> None:
 
 
 def _deduplicate_entities(entities: list[Any]) -> list[Any]:
-    """Deduplicate entities by normalized name (case-insensitive).
+    """Deduplicate entities by ``matching.dedup_key``, keeping the highest confidence.
 
-    Keeps the highest-confidence version of each name.
-    Also merges near-duplicates like 'Clearview AI' and 'Clearview Ai Inc.'
+    Merges near-duplicates like 'Clearview AI' and 'Clearview Ai Inc.'
     """
     seen: dict[str, Any] = {}
     for e in entities:
-        key = e.normalized_text.lower().strip().rstrip(".")
-        # Strip common suffixes for dedup: Inc, LLC, Corp, Ltd
-        base_key = key
-        for suffix in [" inc", " llc", " corp", " ltd", " co", " lp"]:
-            if base_key.endswith(suffix):
-                base_key = base_key[: -len(suffix)].rstrip(",. ")
-                break
-
-        # Use base_key for dedup, but keep the full name
+        base_key = dedup_key(e.normalized_text, e.entity_type)
         if base_key not in seen or e.confidence > seen[base_key].confidence:
             seen[base_key] = e
 
