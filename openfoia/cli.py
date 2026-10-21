@@ -6812,6 +6812,24 @@ def crossref(
     from .models import Request as RequestModel
     from .net import TorUnavailableError, describe_egress
 
+    source_list = sources.split(",") if sources else None
+
+    if opensanctions_data and opensanctions_data.is_file():
+        rprint("[red]--opensanctions-data: pass the directory containing targets.simple.csv.[/red]")
+        raise typer.Exit(1)
+
+    # A requested offline source with no data would silently drop out of the
+    # run and read as "screened, clean".
+    for offline_src, data_dir, flag in (
+        ("icij", icij_data, "--icij-data"),
+        ("opensanctions-local", opensanctions_data, "--opensanctions-data"),
+    ):
+        if source_list and offline_src in source_list and not (data_dir and data_dir.exists()):
+            rprint(
+                f"[red]--sources {offline_src} needs {flag} pointing at the downloaded data.[/red]"
+            )
+            raise typer.Exit(1)
+
     db_path = get_db_path()
     if not db_path.exists():
         rprint("[yellow]Database not initialized. Run 'openfoia init' first.[/yellow]")
@@ -6855,24 +6873,6 @@ def crossref(
                     context=e.context or "",
                 )
             )
-
-    source_list = sources.split(",") if sources else None
-
-    if opensanctions_data and opensanctions_data.is_file():
-        rprint("[red]--opensanctions-data: pass the directory containing targets.simple.csv.[/red]")
-        raise typer.Exit(1)
-
-    # A requested offline source with no data would silently drop out of the
-    # run and read as "screened, clean".
-    for offline_src, data_dir, flag in (
-        ("icij", icij_data, "--icij-data"),
-        ("opensanctions-local", opensanctions_data, "--opensanctions-data"),
-    ):
-        if source_list and offline_src in source_list and not (data_dir and data_dir.exists()):
-            rprint(
-                f"[red]--sources {offline_src} needs {flag} pointing at the downloaded data.[/red]"
-            )
-            raise typer.Exit(1)
 
     # Warn about network activity — crossref sends entity names to external APIs
     network_sources = [

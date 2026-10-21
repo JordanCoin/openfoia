@@ -154,12 +154,15 @@ def test_cli_offline_screening_sends_nothing(monkeypatch, tmp_path):
     assert "FLAGGED: Olu Sample" in result.output
 
 
-def test_cli_requested_offline_source_without_data_fails():
+def test_cli_requested_offline_source_without_data_fails(monkeypatch, tmp_path):
+    monkeypatch.setenv("OPENFOIA_DATA_DIR", str(tmp_path))  # no database: flags fail first
     result = CliRunner().invoke(app, ["crossref", "--sources", "opensanctions-local"])
     assert result.exit_code != 0
+    assert "needs --opensanctions-data" in result.output
 
 
-def test_cli_data_flag_pointing_at_the_csv_asks_for_the_directory():
+def test_cli_data_flag_pointing_at_the_csv_asks_for_the_directory(monkeypatch, tmp_path):
+    monkeypatch.setenv("OPENFOIA_DATA_DIR", str(tmp_path))
     csv_file = str(FIXTURE_DIR / "targets.simple.csv")
     result = CliRunner().invoke(app, ["crossref", "--opensanctions-data", csv_file])
     assert result.exit_code != 0
