@@ -17,13 +17,16 @@ exhaustive lists.
   against a downloaded `targets.simple.csv` (449 MB, from
   https://www.opensanctions.org/datasets/default/) with no network and no
   prompt. Names match after lowercasing, stripping punctuation and collapsing
-  whitespace: the primary name scores 1.0, an alias 0.8. The data is
-  CC BY-NC 4.0, free for journalists and non-commercial use.
+  whitespace: the primary name scores 1.0, an alias 0.8. A match is marked
+  SANCTIONED only when one of its list titles is a sanctions list (title
+  says "sanction", or an OFAC list); debarments, health-care exclusions and
+  wanted notices show their list title instead. The data is CC BY-NC 4.0,
+  free for journalists and non-commercial use.
 - `OPENFOIA_OPENSANCTIONS_API_KEY` (environment only) is sent as
   `Authorization: ApiKey ...` to the OpenSanctions API. The hosted API now
   refuses keyless requests; a 401/403 is reported as
   `API key required: set OPENFOIA_OPENSANCTIONS_API_KEY` instead of a bare
-  HTTP status.
+  HTTP status, and no further names are sent to it for the rest of the run.
 
 ### Fixed
 

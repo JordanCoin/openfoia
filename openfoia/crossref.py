@@ -112,9 +112,12 @@ class _SourceCheckError(RuntimeError):
         error: BaseException,
         partial_hits: list[CrossRefHit] | None = None,
         error_type: str | None = None,
+        stop_source: str | None = None,
     ):
         self.error_type = error_type or type(error).__name__
         self.partial_hits = partial_hits or []
+        # Status for later entities when the source must not be asked again.
+        self.stop_source = stop_source
         super().__init__(self.error_type)
 
 
@@ -240,7 +243,7 @@ async def crossref_entities(
     results: list[CrossRefResult] = []
     source_errors: dict[str, str] = {}
     # Track sources that hit rate limits — skip them for remaining entities
-    exhausted_sources: set[str] = set()
+    exhausted_sources: dict[str, str] = {}
 
     for idx, entity in enumerate(targets):
         hits: list[CrossRefHit] = []
@@ -255,7 +258,7 @@ async def crossref_entities(
 
         for source_name, checker in available_sources.items():
             if source_name in exhausted_sources:
-                source_statuses[source_name] = "skipped(rate-limited)"
+                source_statuses[source_name] = exhausted_sources[source_name]
                 continue
             sources_checked.append(source_name)
             try:
@@ -267,7 +270,7 @@ async def crossref_entities(
                     "CrossRef %s rate limited — skipping for remaining entities",
                     source_name,
                 )
-                exhausted_sources.add(source_name)
+                exhausted_sources[source_name] = "skipped(rate-limited)"
                 source_statuses[source_name] = "ERRORED(RateLimited)"
                 source_errors.setdefault(source_name, "RateLimited")
             except _SourceCheckError as exc:
@@ -279,6 +282,8 @@ async def crossref_entities(
                 # A partially failed source still keeps whatever it did find:
                 # the status marks it incomplete, but real matches survive.
                 hits.extend(exc.partial_hits)
+                if exc.stop_source:
+                    exhausted_sources[source_name] = exc.stop_source
                 source_statuses[source_name] = f"ERRORED({exc.error_type})"
                 source_errors.setdefault(source_name, exc.error_type)
             except Exception as e:
@@ -883,9 +888,12 @@ async def _check_opensanctions(
             if resp.status_code == 429:
                 raise _RateLimited("OpenSanctions rate limit")
             if resp.status_code in (401, 403):
+                # Without a key every request fails the same way; stop sending
+                # names for the rest of the run.
                 raise _SourceCheckError(
                     PermissionError(f"HTTP {resp.status_code}"),
                     error_type=f"API key required: set {OPENSANCTIONS_KEY_ENV}",
+                    stop_source="skipped(api-key-required)",
                 )
             if resp.status_code != 200:
                 raise _SourceCheckError(RuntimeError(f"HTTP {resp.status_code}"))
@@ -907,18 +915,7 @@ async def _check_opensanctions(
         countries = properties.get("country", [])
         topics = result.get("datasets", [])
 
-        is_pep = any("pep" in t.lower() for t in topics)
-        is_sanctioned = any("sanction" in t.lower() for t in topics)
-
-        detail_parts = []
-        if is_pep:
-            detail_parts.append("PEP (Politically Exposed Person)")
-        if is_sanctioned:
-            detail_parts.append("SANCTIONED")
-        if countries:
-            detail_parts.append(f"Countries: {', '.join(countries[:3])}")
-        if not detail_parts:
-            detail_parts.append(schema)
+        is_pep, is_sanctioned, detail_parts = _classify_datasets(topics, countries, schema)
 
         result_name = properties.get("name", [name])[0] if properties.get("name") else name
 
@@ -939,6 +936,36 @@ async def _check_opensanctions(
         )
 
     return hits
+
+
+_PEP_RE = re.compile(r"(?<![a-z])peps?(?![a-z])|politically exposed", re.IGNORECASE)
+
+
+def _classify_datasets(
+    datasets: list[str], countries: list[str], schema: str
+) -> tuple[bool, bool, list[str]]:
+    """Return (is_pep, is_sanctioned, detail parts) from dataset titles or names.
+
+    Only a list whose title says "sanction" counts: OpenSanctions also carries
+    procurement debarments, health-care exclusions and wanted notices, and its
+    ``sanctions`` column is filled for those too.
+    """
+    is_pep = any(_PEP_RE.search(d) for d in datasets)
+    # ponytail: title keywords; "US OFAC Specially Designated Nationals (SDN) List"
+    # lacks the word. The full dataset's per-entity topics are the exact signal.
+    is_sanctioned = any("sanction" in d.lower() or "ofac" in d.lower() for d in datasets)
+    parts = []
+    if is_pep:
+        parts.append("PEP (Politically Exposed Person)")
+    if is_sanctioned:
+        parts.append("SANCTIONED")
+    if countries:
+        parts.append(f"Countries: {', '.join(countries[:3])}")
+    if datasets:
+        parts.append(f"Lists: {'; '.join(datasets[:2])}")
+    if not parts:
+        parts.append(schema)
+    return is_pep, is_sanctioned, parts
 
 
 def _normalize_name(text: str) -> str:
@@ -986,20 +1013,10 @@ async def _check_opensanctions_local(
                     match_type, score = "alias", 0.8
 
                 datasets = [d for d in (row.get("dataset") or "").split(";") if d]
-                is_pep = any("pep" in d.lower() for d in datasets)
-                is_sanctioned = bool(row.get("sanctions")) or any(
-                    "sanction" in d.lower() for d in datasets
-                )
-                detail_parts = []
-                if is_pep:
-                    detail_parts.append("PEP (Politically Exposed Person)")
-                if is_sanctioned:
-                    detail_parts.append("SANCTIONED")
                 countries = [c for c in (row.get("countries") or "").split(";") if c]
-                if countries:
-                    detail_parts.append(f"Countries: {', '.join(countries[:3])}")
-                if not detail_parts:
-                    detail_parts.append(row.get("schema") or "")
+                is_pep, is_sanctioned, detail_parts = _classify_datasets(
+                    datasets, countries, row.get("schema") or ""
+                )
 
                 entity_id = row.get("id") or ""
                 hits.append(

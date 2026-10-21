@@ -6858,6 +6858,10 @@ def crossref(
 
     source_list = sources.split(",") if sources else None
 
+    if opensanctions_data and opensanctions_data.is_file():
+        rprint("[red]--opensanctions-data: pass the directory containing targets.simple.csv.[/red]")
+        raise typer.Exit(1)
+
     # A requested offline source with no data would silently drop out of the
     # run and read as "screened, clean".
     for offline_src, data_dir, flag in (

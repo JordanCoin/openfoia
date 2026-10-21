@@ -39,9 +39,25 @@ def test_local_exact_name_match_scores_one_and_flags_sanctions():
         "score": 1.0,
         "is_pep": False,
         "is_sanctioned": True,
-        "datasets": ["eu_fsf", "us_ofac_sdn"],
+        "datasets": [
+            "EU Financial Sanctions Files (FSF)",
+            "US OFAC Specially Designated Nationals (SDN) List",
+        ],
     }
+    assert "Lists: EU Financial Sanctions Files (FSF); US OFAC" in hit.details
     assert hit.url == "https://www.opensanctions.org/entities/NK-fx001/"
+
+
+def test_local_exclusion_with_sanctions_cell_is_not_sanctioned():
+    (hit,) = _local("Dana Excluded")
+    assert hit.extra["is_sanctioned"] is False
+    assert "SANCTIONED" not in hit.details
+    assert "US HHS Office of Inspector General Exclusions" in hit.details
+
+
+def test_local_pep_needs_the_word_not_a_substring():
+    assert _local("Olu Sample")[0].extra["is_pep"] is True  # "PEP position annotations"
+    assert _local("Acme Offshore")[0].extra["is_pep"] is False  # "Peppercorn ..."
 
 
 def test_local_alias_match_scores_point_eight_and_flags_pep():
@@ -143,6 +159,13 @@ def test_cli_requested_offline_source_without_data_fails():
     assert result.exit_code != 0
 
 
+def test_cli_data_flag_pointing_at_the_csv_asks_for_the_directory():
+    csv_file = str(FIXTURE_DIR / "targets.simple.csv")
+    result = CliRunner().invoke(app, ["crossref", "--opensanctions-data", csv_file])
+    assert result.exit_code != 0
+    assert "pass the directory containing targets.simple.csv" in result.output
+
+
 class _Resp:
     def __init__(self, status_code, data=None):
         self.status_code = status_code
@@ -201,3 +224,21 @@ def test_unauthorized_reports_key_required_and_names_env_var(monkeypatch, status
     assert "API key required" in message
     assert OPENSANCTIONS_KEY_ENV in message
     assert FAKE_KEY not in message
+
+
+def test_keyless_401_stops_sending_names_for_the_rest_of_the_run(monkeypatch):
+    monkeypatch.delenv(OPENSANCTIONS_KEY_ENV, raising=False)
+    monkeypatch.setitem(crossref_mod._SOURCE_DELAYS, "opensanctions", 0.0)
+    seen = _patch_client(monkeypatch, _Resp(401))
+    entities = [
+        SimpleNamespace(entity_type=EntityType.PERSON, normalized_text=n, confidence=0.95)
+        for n in ("Ana Fixture", "Olu Sample")
+    ]
+
+    report = asyncio.run(crossref_entities(entities, sources=["opensanctions"], allow_network=True))
+
+    assert len(seen) == 1
+    assert report.source_errors == {
+        "opensanctions": f"API key required: set {OPENSANCTIONS_KEY_ENV}"
+    }
+    assert report.results[1].source_statuses["opensanctions"] == "skipped(api-key-required)"
