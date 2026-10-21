@@ -160,6 +160,76 @@ def test_documentcloud_rate_limit_exits_nonzero(monkeypatch):
     assert "No results found" not in result.output
 
 
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(
+            403,
+            headers={"server": "cloudflare", "cf-ray": "abc123", "cf-mitigated": "challenge"},
+            text="Forbidden",
+        ),
+        httpx.Response(
+            403,
+            headers={"content-type": "text/html"},
+            text="<html><title>Just a moment...</title>challenge-platform</html>",
+        ),
+    ],
+)
+def test_documentcloud_cloudflare_block_is_specific_error(monkeypatch, response):
+    from openfoia.records import documentcloud
+
+    _mock_transport(monkeypatch, documentcloud, lambda request: response)
+
+    result = asyncio.run(documentcloud.DocumentCloudAdapter().search("PAS"))
+
+    assert result.entities == []
+    assert result.error is not None
+    assert "may be blocked from this connection" in result.error
+    assert "browser" in result.error
+    assert "docs ingest" in result.error
+
+
+def test_documentcloud_generic_forbidden_is_not_cloudflare_error(monkeypatch):
+    from openfoia.records import documentcloud
+
+    _mock_transport(
+        monkeypatch,
+        documentcloud,
+        lambda request: httpx.Response(
+            403,
+            headers={"server": "cloudflare", "cf-ray": "abc123"},
+            text="Forbidden. Cloudflare Ray ID: abc123",
+        ),
+    )
+
+    result = asyncio.run(documentcloud.DocumentCloudAdapter().search("PAS"))
+
+    assert result.entities == []
+    assert result.error is not None
+    assert "search failed" in result.error
+    assert "may be blocked from this connection" not in result.error
+
+
+def test_documentcloud_read_timeout_is_uncertain_block_error(monkeypatch):
+    from openfoia.records import documentcloud
+
+    def handler(request):
+        raise httpx.ReadTimeout("read timed out", request=request)
+
+    _mock_transport(monkeypatch, documentcloud, handler)
+
+    result = asyncio.run(documentcloud.DocumentCloudAdapter().search("PAS"))
+
+    assert result.entities == []
+    assert result.error is not None
+    assert "did not complete before the response timeout" in result.error
+    assert "may be slow or unavailable" in result.error
+    assert "may be blocked from this connection" in result.error
+    assert "did not return a response" not in result.error
+    assert "browser" in result.error
+    assert "docs ingest" in result.error
+
+
 def test_all_sources_reports_each_source_status(monkeypatch):
     class Ok:
         async def search(self, query, **kwargs):
