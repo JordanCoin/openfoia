@@ -10,6 +10,27 @@ exhaustive lists.
 
 ## [Unreleased]
 
+### Added
+
+- Offline OpenSanctions screening: `openfoia crossref --sources
+  opensanctions-local --opensanctions-data <dir>` matches entity names
+  against a downloaded `targets.simple.csv` (449 MB, from
+  https://www.opensanctions.org/datasets/default/) with no network and no
+  prompt. Names match after lowercasing, stripping punctuation and collapsing
+  whitespace: the primary name scores 1.0, an alias 0.8. The data is
+  CC BY-NC 4.0, free for journalists and non-commercial use.
+- `OPENFOIA_OPENSANCTIONS_API_KEY` (environment only) is sent as
+  `Authorization: ApiKey ...` to the OpenSanctions API. The hosted API now
+  refuses keyless requests; a 401/403 is reported as
+  `API key required: set OPENFOIA_OPENSANCTIONS_API_KEY` instead of a bare
+  HTTP status.
+
+### Fixed
+
+- `crossref --sources icij` or `opensanctions-local` without the matching
+  data flag exits with an error instead of running zero sources and reading
+  as a clean result.
+
 ## [4.6.2] - 2026-10-20
 
 ### Fixed

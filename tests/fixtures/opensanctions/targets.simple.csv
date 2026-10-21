@@ -1,0 +1,21 @@
+id,schema,name,aliases,birth_date,countries,addresses,identifiers,sanctions,phones,emails,program_ids,dataset,first_seen,last_seen,last_change
+NK-fx001,Person,Ivar Q. Testerov,Ivar Testerov;Иван Тестеров,1961-03-04,ru,,,EU Council - Reg 269/2014,,,EU-UKR,eu_fsf;us_ofac_sdn,2022-02-26T00:00:00,2026-10-20T00:00:00,2024-05-01T00:00:00
+NK-fx002,Person,Marta Placeholder-Ruiz,"""La Jefa"" Ruiz;Marta Ruiz",1970-01-01,ve,,,,,,,wd_peps,2021-01-01T00:00:00,2026-10-20T00:00:00,2025-01-01T00:00:00
+NK-fx003,Company,Fictional Shipping Ltd,Fictional Shipping Limited;FSL Holdings,,cy;mt,,,OFAC SDN,,,UKRAINE-EO13662,us_ofac_sdn,2020-06-01T00:00:00,2026-10-20T00:00:00,2023-02-01T00:00:00
+NK-fx004,Person,Olu Sample,,1980-05-05,ng,,,,,,,ng_chipper_peps,2023-01-01T00:00:00,2026-10-20T00:00:00,2024-01-01T00:00:00
+NK-fx005,Organization,Example Trade Union,,,,,,,,,,ext_example,2023-01-01T00:00:00,2026-10-20T00:00:00,2024-01-01T00:00:00
+NK-fx006,Person,Ana Fixture,Ana B. Fixture,1975-07-07,br,,,,,,,br_example,2023-01-01T00:00:00,2026-10-20T00:00:00,2024-01-01T00:00:00
+NK-fx007,Person,Kemal Dummy,Kemal Dummy Bey,1966-02-02,tr,,,,,,,tr_example_peps,2023-01-01T00:00:00,2026-10-20T00:00:00,2024-01-01T00:00:00
+NK-fx008,Company,Nairobi Mock Contractors,,,ke,,,,,,,ke_example,2023-01-01T00:00:00,2026-10-20T00:00:00,2024-01-01T00:00:00
+NK-fx009,Person,Lee Placeholder,,1990-09-09,kr,,,,,,,kr_example,2023-01-01T00:00:00,2026-10-20T00:00:00,2024-01-01T00:00:00
+NK-fx010,Vessel,MV Imaginary Star,Imaginary Star,,pa,,,UK sanctions list,,,,gb_hmt_sanctions,2023-01-01T00:00:00,2026-10-20T00:00:00,2024-01-01T00:00:00
+NK-fx011,Person,Sven Notreal,,1955-11-11,se,,,,,,,se_example,2023-01-01T00:00:00,2026-10-20T00:00:00,2024-01-01T00:00:00
+NK-fx012,Company,Acme Offshore Holdings Inc,Acme Offshore,,vg,,,,,,,ext_example,2023-01-01T00:00:00,2026-10-20T00:00:00,2024-01-01T00:00:00
+NK-fx013,Person,Priya Testcase,,1985-04-04,in,,,,,,,in_example,2023-01-01T00:00:00,2026-10-20T00:00:00,2024-01-01T00:00:00
+NK-fx014,Person,Jean-Luc Exemple,,1972-12-12,fr,,,,,,,fr_example,2023-01-01T00:00:00,2026-10-20T00:00:00,2024-01-01T00:00:00
+NK-fx015,Organization,Mock Ministry of Testing,,,xx,,,,,,,ext_example,2023-01-01T00:00:00,2026-10-20T00:00:00,2024-01-01T00:00:00
+NK-fx016,Person,Hana Stub,,1988-08-08,jp,,,,,,,jp_example,2023-01-01T00:00:00,2026-10-20T00:00:00,2024-01-01T00:00:00
+NK-fx017,Person,Carlos Fakeman,,1979-03-03,mx,,,,,,,mx_example,2023-01-01T00:00:00,2026-10-20T00:00:00,2024-01-01T00:00:00
+NK-fx018,Company,Sao Paulo Sample SA,,,br,,,,,,,br_example,2023-01-01T00:00:00,2026-10-20T00:00:00,2024-01-01T00:00:00
+NK-fx019,Person,Amira Probe,,1983-06-06,eg,,,,,,,eg_example,2023-01-01T00:00:00,2026-10-20T00:00:00,2024-01-01T00:00:00
+NK-fx020,Person,Tomasz Mockowski,,1964-10-10,pl,,,,,,,pl_example,2023-01-01T00:00:00,2026-10-20T00:00:00,2024-01-01T00:00:00
