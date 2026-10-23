@@ -31,7 +31,7 @@ class CrossRefHit:
 
     source: str
     entity_name: str
-    match_type: str  # "exact", "partial", "fuzzy"
+    match_type: str  # "exact", "partial", "fuzzy", "alias"
     details: str
     url: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
@@ -83,8 +83,12 @@ _SOURCE_DELAYS: dict[str, float] = {
     "regulations": 1.0,  # DEMO_KEY shared pool — be conservative
     "opensanctions": 0.5,  # ~5 req/sec free
     "icij": 0.0,  # local CSV, no API
+    "opensanctions-local": 0.0,  # local CSV, no API
 }
 _DEFAULT_DELAY = 0.5
+
+OPENSANCTIONS_KEY_ENV = "OPENFOIA_OPENSANCTIONS_API_KEY"
+OPENSANCTIONS_FILE = "targets.simple.csv"
 
 
 class _RateLimited(BaseException):
@@ -108,9 +112,12 @@ class _SourceCheckError(RuntimeError):
         error: BaseException,
         partial_hits: list[CrossRefHit] | None = None,
         error_type: str | None = None,
+        stop_source: str | None = None,
     ):
         self.error_type = error_type or type(error).__name__
         self.partial_hits = partial_hits or []
+        # Status for later entities when the source must not be asked again.
+        self.stop_source = stop_source
         super().__init__(self.error_type)
 
 
@@ -160,7 +167,7 @@ def _deduplicate_entities(entities: list[Any]) -> list[Any]:
 
 
 #: Sources that run entirely against local data — safe with no network.
-OFFLINE_SOURCES = frozenset({"icij"})
+OFFLINE_SOURCES = frozenset({"icij", "opensanctions-local"})
 
 
 async def crossref_entities(
@@ -170,6 +177,7 @@ async def crossref_entities(
     on_progress: Any | None = None,
     allow_network: bool = False,
     egress: EgressPolicy | None = None,
+    opensanctions_data_dir: str | None = None,
 ) -> CrossRefReport:
     """Cross-reference extracted entities against all available sources.
 
@@ -180,6 +188,8 @@ async def crossref_entities(
         entities: ExtractedEntity objects from the extraction pipeline
         sources: List of sources to check (default: all available)
         icij_data_dir: Path to downloaded ICIJ CSV data (for offline search)
+        opensanctions_data_dir: Directory holding OpenSanctions targets.simple.csv
+            (for offline search)
         allow_network: Must be explicitly True to contact remote sources.
             Cross-referencing sends the *names of the people and organizations
             under investigation* to third-party APIs, which is the single most
@@ -199,7 +209,7 @@ async def crossref_entities(
     """
     import asyncio
 
-    available_sources = _get_available_sources(icij_data_dir, egress)
+    available_sources = _get_available_sources(icij_data_dir, egress, opensanctions_data_dir)
     if sources:
         available_sources = {k: v for k, v in available_sources.items() if k in sources}
 
@@ -233,7 +243,7 @@ async def crossref_entities(
     results: list[CrossRefResult] = []
     source_errors: dict[str, str] = {}
     # Track sources that hit rate limits — skip them for remaining entities
-    exhausted_sources: set[str] = set()
+    exhausted_sources: dict[str, str] = {}
 
     for idx, entity in enumerate(targets):
         hits: list[CrossRefHit] = []
@@ -248,7 +258,7 @@ async def crossref_entities(
 
         for source_name, checker in available_sources.items():
             if source_name in exhausted_sources:
-                source_statuses[source_name] = "skipped(rate-limited)"
+                source_statuses[source_name] = exhausted_sources[source_name]
                 continue
             sources_checked.append(source_name)
             try:
@@ -260,7 +270,7 @@ async def crossref_entities(
                     "CrossRef %s rate limited — skipping for remaining entities",
                     source_name,
                 )
-                exhausted_sources.add(source_name)
+                exhausted_sources[source_name] = "skipped(rate-limited)"
                 source_statuses[source_name] = "ERRORED(RateLimited)"
                 source_errors.setdefault(source_name, "RateLimited")
             except _SourceCheckError as exc:
@@ -272,6 +282,8 @@ async def crossref_entities(
                 # A partially failed source still keeps whatever it did find:
                 # the status marks it incomplete, but real matches survive.
                 hits.extend(exc.partial_hits)
+                if exc.stop_source:
+                    exhausted_sources[source_name] = exc.stop_source
                 source_statuses[source_name] = f"ERRORED({exc.error_type})"
                 source_errors.setdefault(source_name, exc.error_type)
             except Exception as e:
@@ -320,7 +332,9 @@ async def crossref_entities(
 
 
 def _get_available_sources(
-    icij_data_dir: str | None = None, egress: EgressPolicy | None = None
+    icij_data_dir: str | None = None,
+    egress: EgressPolicy | None = None,
+    opensanctions_data_dir: str | None = None,
 ) -> dict[str, Any]:
     """Discover which cross-reference sources are available.
 
@@ -364,8 +378,17 @@ def _get_available_sources(
     # Regulations.gov — federal rulemaking documents (DEMO_KEY)
     sources["regulations"] = lambda name, etype: _check_regulations(name, etype, egress)
 
-    # OpenSanctions — available if data downloaded or API key set
+    # OpenSanctions API — keyed by OPENFOIA_OPENSANCTIONS_API_KEY when set
     sources["opensanctions"] = lambda name, etype: _check_opensanctions(name, etype, egress)
+
+    # OpenSanctions bulk data — available if targets.simple.csv downloaded locally
+    if opensanctions_data_dir:
+        from pathlib import Path
+
+        if Path(opensanctions_data_dir).exists():
+            sources["opensanctions-local"] = lambda name, etype: _check_opensanctions_local(
+                name, etype, opensanctions_data_dir
+            )
 
     return sources
 
@@ -844,19 +867,34 @@ async def _check_opensanctions(
 ) -> list[CrossRefHit]:
     """Search OpenSanctions for sanctions/PEP matches.
 
-    Uses the free API (rate limited, non-commercial use).
+    Sends ``OPENFOIA_OPENSANCTIONS_API_KEY`` (environment only) in the
+    documented ``Authorization: ApiKey`` header when it is set.
     """
+    import os
+
     hits = []
+    headers = {"Accept": "application/json"}
+    api_key = os.environ.get(OPENSANCTIONS_KEY_ENV)
+    if api_key:
+        headers["Authorization"] = f"ApiKey {api_key}"
 
     try:
         async with egress_client(egress, timeout=15) as client:
             resp = await client.get(
                 "https://api.opensanctions.org/search/default",
                 params={"q": name, "limit": 5},
-                headers={"Accept": "application/json"},
+                headers=headers,
             )
             if resp.status_code == 429:
                 raise _RateLimited("OpenSanctions rate limit")
+            if resp.status_code in (401, 403):
+                # Without a key every request fails the same way; stop sending
+                # names for the rest of the run.
+                raise _SourceCheckError(
+                    PermissionError(f"HTTP {resp.status_code}"),
+                    error_type=f"API key required: set {OPENSANCTIONS_KEY_ENV}",
+                    stop_source="skipped(api-key-required)",
+                )
             if resp.status_code != 200:
                 raise _SourceCheckError(RuntimeError(f"HTTP {resp.status_code}"))
             data = resp.json()
@@ -877,18 +915,7 @@ async def _check_opensanctions(
         countries = properties.get("country", [])
         topics = result.get("datasets", [])
 
-        is_pep = any("pep" in t.lower() for t in topics)
-        is_sanctioned = any("sanction" in t.lower() for t in topics)
-
-        detail_parts = []
-        if is_pep:
-            detail_parts.append("PEP (Politically Exposed Person)")
-        if is_sanctioned:
-            detail_parts.append("SANCTIONED")
-        if countries:
-            detail_parts.append(f"Countries: {', '.join(countries[:3])}")
-        if not detail_parts:
-            detail_parts.append(schema)
+        is_pep, is_sanctioned, detail_parts = _classify_datasets(topics, countries, schema)
 
         result_name = properties.get("name", [name])[0] if properties.get("name") else name
 
@@ -907,5 +934,115 @@ async def _check_opensanctions(
                 },
             )
         )
+
+    return hits
+
+
+_PEP_RE = re.compile(r"(?<![a-z])peps?(?![a-z])|politically exposed", re.IGNORECASE)
+
+
+def _classify_datasets(
+    datasets: list[str], countries: list[str], schema: str
+) -> tuple[bool, bool, list[str]]:
+    """Return (is_pep, is_sanctioned, detail parts) from dataset titles or names.
+
+    Only a list whose title says "sanction" counts: OpenSanctions also carries
+    procurement debarments, health-care exclusions and wanted notices, and its
+    ``sanctions`` column is filled for those too.
+    """
+    is_pep = any(_PEP_RE.search(d) for d in datasets)
+    # ponytail: title keywords; "US OFAC Specially Designated Nationals (SDN) List"
+    # lacks the word. The full dataset's per-entity topics are the exact signal.
+    is_sanctioned = any("sanction" in d.lower() or "ofac" in d.lower() for d in datasets)
+    parts = []
+    if is_pep:
+        parts.append("PEP (Politically Exposed Person)")
+    if is_sanctioned:
+        parts.append("SANCTIONED")
+    if countries:
+        parts.append(f"Countries: {', '.join(countries[:3])}")
+    if datasets:
+        parts.append(f"Lists: {'; '.join(datasets[:2])}")
+    if not parts:
+        parts.append(schema)
+    return is_pep, is_sanctioned, parts
+
+
+def _normalize_name(text: str) -> str:
+    """Lowercase, turn punctuation into spaces, collapse whitespace."""
+    return " ".join(re.sub(r"[^\w\s]", " ", text.lower()).split())
+
+
+async def _check_opensanctions_local(
+    name: str, entity_type: EntityType, data_dir: str
+) -> list[CrossRefHit]:
+    """Screen a name against a downloaded OpenSanctions targets.simple.csv.
+
+    Download from https://www.opensanctions.org/datasets/default/ (CC BY-NC 4.0).
+    The file is streamed row by row; nothing leaves the machine.
+    """
+    import csv
+    from pathlib import Path
+
+    csv_path = Path(data_dir) / OPENSANCTIONS_FILE
+    if not csv_path.is_file():
+        # Same reasoning as NoICIJData: "checked, no hits" would claim a
+        # screening that never read a single row.
+        raise _SourceCheckError(
+            FileNotFoundError(f"no {OPENSANCTIONS_FILE} in data directory"),
+            error_type="NoOpenSanctionsData",
+        )
+
+    target = _normalize_name(name)
+    if not target:
+        return []
+
+    hits: list[CrossRefHit] = []
+    # ponytail: one full pass over the file per entity; build a name index if
+    # screening hundreds of entities against the 449 MB file gets too slow.
+    try:
+        with open(csv_path, encoding="utf-8", errors="ignore", newline="") as f:
+            for row in csv.DictReader(f):
+                primary = row.get("name") or ""
+                if _normalize_name(primary) == target:
+                    match_type, score = "exact", 1.0
+                else:
+                    aliases = next(csv.reader([row.get("aliases") or ""], delimiter=";"), [])
+                    if not any(_normalize_name(a) == target for a in aliases):
+                        continue
+                    match_type, score = "alias", 0.8
+
+                datasets = [d for d in (row.get("dataset") or "").split(";") if d]
+                countries = [c for c in (row.get("countries") or "").split(";") if c]
+                is_pep, is_sanctioned, detail_parts = _classify_datasets(
+                    datasets, countries, row.get("schema") or ""
+                )
+
+                entity_id = row.get("id") or ""
+                hits.append(
+                    CrossRefHit(
+                        source="opensanctions-local",
+                        entity_name=name,
+                        match_type=match_type,
+                        details=f"{primary or name} — {'; '.join(detail_parts)}",
+                        url=f"https://www.opensanctions.org/entities/{entity_id}/"
+                        if entity_id
+                        else None,
+                        extra={
+                            "score": score,
+                            "is_pep": is_pep,
+                            "is_sanctioned": is_sanctioned,
+                            "datasets": datasets,
+                        },
+                    )
+                )
+                if len(hits) >= 10:
+                    break
+    except Exception as exc:
+        # Log the file only, never the searched name or the row contents.
+        logger.warning(
+            "Failed to read OpenSanctions file %s: %s", csv_path.name, type(exc).__name__
+        )
+        raise _SourceCheckError(exc, partial_hits=hits) from exc
 
     return hits
