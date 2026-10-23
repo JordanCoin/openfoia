@@ -10,6 +10,8 @@ exhaustive lists.
 
 ## [Unreleased]
 
+## [4.7.0] - 2026-10-23
+
 ### Added
 
 - Offline OpenSanctions screening: `openfoia crossref --sources
@@ -600,6 +602,7 @@ security/OPSEC pass; the notes below describe what it changed, factually.
 Baseline for this changelog. Earlier tags (`v0.0.1` through `v2.0.0`,
 2026-02-19 to 2026-03-22) predate it; see the git history for details.
 
+[4.7.0]: https://github.com/JordanCoin/openfoia/compare/v4.6.2...v4.7.0
 [4.6.2]: https://github.com/JordanCoin/openfoia/compare/v4.6.1...v4.6.2
 [4.6.1]: https://github.com/JordanCoin/openfoia/compare/v4.6.0...v4.6.1
 [4.6.0]: https://github.com/JordanCoin/openfoia/compare/v4.5.0...v4.6.0
