@@ -45,8 +45,6 @@ browser = ["playwright>=1.40.0"]
 email-files = ["extract-msg>=0.48.0"]
 # DocumentCloud integration
 documentcloud = ["documentcloud>=4.0.0"]
-# Name normalization for crossref dedup (rigour builds pyicu: needs system ICU)
-match = ["rigour>=2.5.0"]
 # Encrypted database.
 # sqlcipher3-binary ships prebuilt wheels; pysqlcipher3 is unmaintained
 # (2021), source-only, and no longer pip-installs on modern Python — which
@@ -55,7 +53,7 @@ match = ["rigour>=2.5.0"]
 encryption = ["sqlcipher3-binary>=0.5.0"]
 # Everything
 all = [
-    "openfoia[ocr,fax,mail,cloud-ai,ner,tor,browser,email-files,encryption,match]",
+    "openfoia[ocr,fax,mail,cloud-ai,ner,tor,browser,email-files,encryption]",
 ]
 # Development
 dev = [
