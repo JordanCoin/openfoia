@@ -16,6 +16,36 @@ exhaustive lists.
   uncertain read timeouts from ordinary API failures, with a browser and local
   `docs ingest` fallback.
 
+## [4.7.0] - 2026-10-23
+
+### Added
+
+- Offline OpenSanctions screening: `openfoia crossref --sources
+  opensanctions-local --opensanctions-data <dir>` matches entity names
+  against a downloaded `targets.simple.csv` (449 MB, from
+  https://www.opensanctions.org/datasets/default/) with no network and no
+  prompt. Names match after lowercasing, stripping punctuation and collapsing
+  whitespace: the primary name scores 1.0, an alias 0.8. A match is marked
+  SANCTIONED only when one of its list titles is a sanctions list (title
+  says "sanction", or an OFAC list); debarments, health-care exclusions and
+  wanted notices show their list title instead. The data is CC BY-NC 4.0,
+  free for journalists and non-commercial use.
+- `OPENFOIA_OPENSANCTIONS_API_KEY` (environment only) is sent as
+  `Authorization: ApiKey ...` to the OpenSanctions API. The hosted API now
+  refuses keyless requests; a 401/403 is reported as
+  `API key required: set OPENFOIA_OPENSANCTIONS_API_KEY` instead of a bare
+  HTTP status, and no further names are sent to it for the rest of the run.
+- Crossref dedup now strips 50+ company legal forms and honorifics; no new
+  dependency. "Clearview AI Inc.", "Clearview AI, Ltd" and "CLEARVIEW AI
+  LIMITED" become one lookup, as do "Petrobras S.A." and "Petrobras SA", and
+  "Dr. Jane Doe" matches "Jane Doe". (#116)
+
+### Fixed
+
+- `crossref --sources icij` or `opensanctions-local` without the matching
+  data flag exits with an error instead of running zero sources and reading
+  as a clean result.
+
 ## [4.6.2] - 2026-10-20
 
 ### Fixed
@@ -578,6 +608,7 @@ security/OPSEC pass; the notes below describe what it changed, factually.
 Baseline for this changelog. Earlier tags (`v0.0.1` through `v2.0.0`,
 2026-02-19 to 2026-03-22) predate it; see the git history for details.
 
+[4.7.0]: https://github.com/JordanCoin/openfoia/compare/v4.6.2...v4.7.0
 [4.6.2]: https://github.com/JordanCoin/openfoia/compare/v4.6.1...v4.6.2
 [4.6.1]: https://github.com/JordanCoin/openfoia/compare/v4.6.0...v4.6.1
 [4.6.0]: https://github.com/JordanCoin/openfoia/compare/v4.5.0...v4.6.0

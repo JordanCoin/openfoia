@@ -6764,10 +6764,18 @@ def crossref(
     sources: str | None = typer.Option(
         None,
         "--sources",
-        help="Comma-separated sources (muckrock,opencorporates,sec,opensanctions,documentcloud)",
+        help="Comma-separated sources (muckrock,opencorporates,sec,opensanctions,"
+        "documentcloud; offline: icij,opensanctions-local)",
     ),
     icij_data: Path | None = typer.Option(
         None, "--icij-data", help="Path to downloaded ICIJ CSV data"
+    ),
+    opensanctions_data: Path | None = typer.Option(
+        None,
+        "--opensanctions-data",
+        help="Directory holding targets.simple.csv from "
+        "opensanctions.org/datasets/default (offline screening; data is CC BY-NC 4.0, "
+        "free for journalists and non-commercial use)",
     ),
     output: Path | None = typer.Option(None, "--output", "-o", help="Save report to file"),
     ftm: Path | None = typer.Option(
@@ -6793,15 +6801,34 @@ def crossref(
         openfoia crossref                           # all entities in database
         openfoia crossref -r REQ-20260322-ABC123    # from one request
         openfoia crossref --icij-data ./icij-csvs/  # include Offshore Leaks
+        openfoia crossref --sources opensanctions-local --opensanctions-data ./os/
         openfoia crossref --ftm results.ftm.json    # export as FollowTheMoney
         openfoia crossref --tor                     # hide your IP from the APIs
     """
     from .config import load_config
-    from .crossref import crossref_entities
+    from .crossref import OFFLINE_SOURCES, crossref_entities
     from .db import get_db_path, get_session
     from .models import Document, Entity
     from .models import Request as RequestModel
     from .net import TorUnavailableError, describe_egress
+
+    source_list = sources.split(",") if sources else None
+
+    if opensanctions_data and opensanctions_data.is_file():
+        rprint("[red]--opensanctions-data: pass the directory containing targets.simple.csv.[/red]")
+        raise typer.Exit(1)
+
+    # A requested offline source with no data would silently drop out of the
+    # run and read as "screened, clean".
+    for offline_src, data_dir, flag in (
+        ("icij", icij_data, "--icij-data"),
+        ("opensanctions-local", opensanctions_data, "--opensanctions-data"),
+    ):
+        if source_list and offline_src in source_list and not (data_dir and data_dir.exists()):
+            rprint(
+                f"[red]--sources {offline_src} needs {flag} pointing at the downloaded data.[/red]"
+            )
+            raise typer.Exit(1)
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -6847,8 +6874,6 @@ def crossref(
                 )
             )
 
-    source_list = sources.split(",") if sources else None
-
     # Warn about network activity — crossref sends entity names to external APIs
     network_sources = [
         s
@@ -6867,7 +6892,7 @@ def crossref(
                 "opensanctions",
             ]
         )
-        if s != "icij"
+        if s not in OFFLINE_SOURCES
     ]
     cfg = load_config()
     policy = _egress_policy_from(cfg, tor=tor)
@@ -6902,7 +6927,10 @@ def crossref(
             "each endpoint — Tor hides who is asking, not what is asked. A global "
             "adversary watching both ends of the connection can still correlate timing.[/dim]"
         )
-        rprint("[dim]  Use --sources icij for offline-only (requires downloaded ICIJ CSVs)[/dim]")
+        rprint(
+            "[dim]  Use --sources icij,opensanctions-local for offline-only "
+            "(requires --icij-data / --opensanctions-data downloads)[/dim]"
+        )
         rprint(
             "[dim]  Use --tor to hide your IP from these endpoints (requires Tor running).[/dim]"
         )
@@ -6925,6 +6953,7 @@ def crossref(
                 entities,
                 sources=source_list,
                 icij_data_dir=str(icij_data) if icij_data else None,
+                opensanctions_data_dir=str(opensanctions_data) if opensanctions_data else None,
                 on_progress=_progress,
                 allow_network=True,  # user was warned and confirmed above
                 egress=policy,
@@ -6963,6 +6992,7 @@ def crossref(
                 "sec": "green",
                 "icij": "red",
                 "opensanctions": "magenta",
+                "opensanctions-local": "magenta",
             }.get(hit.source, "white")
 
             rprint(
