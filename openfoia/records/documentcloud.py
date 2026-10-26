@@ -37,6 +37,27 @@ PAGE_FETCH_CONCURRENCY = 4
 MAX_PAGE_FETCH = 2000
 
 
+def _is_cloudflare_block(response: httpx.Response) -> bool:
+    """Return whether a 403 response has specific Cloudflare evidence."""
+    if response.status_code != 403:
+        return False
+
+    headers = {key.lower(): value.lower() for key, value in response.headers.items()}
+    if headers.get("cf-mitigated") == "challenge":
+        return True
+
+    body = response.text.lower()
+    return any(
+        marker in body
+        for marker in (
+            "just a moment...",
+            "attention required! | cloudflare",
+            "cf-chl-",
+            "challenge-platform",
+        )
+    )
+
+
 async def _fetch_page_texts(
     client: httpx.AsyncClient, base: str, page_count: int
 ) -> list[str] | None:
@@ -146,8 +167,43 @@ class DocumentCloudAdapter(RecordAdapter):
                         per_page=page_size,
                         error=msg,
                     )
+                if _is_cloudflare_block(resp):
+                    msg = (
+                        "DocumentCloud scripted access may be blocked from this connection "
+                        "by a Cloudflare or bot challenge; this can vary by network, exit IP, "
+                        "or region. Try the document in a browser, then use `docs ingest` "
+                        "for local processing."
+                    )
+                    logger.warning(msg)
+                    return SearchResult(
+                        source="documentcloud",
+                        query=query,
+                        total_results=0,
+                        entities=[],
+                        page=page,
+                        per_page=page_size,
+                        error=msg,
+                    )
                 resp.raise_for_status()
                 data = resp.json()
+        except httpx.ReadTimeout:
+            msg = (
+                "DocumentCloud search did not complete before the response timeout; the "
+                "response may be slow or unavailable, or scripted access may be blocked from "
+                "this connection. This is uncertain and can vary by network, exit IP, or "
+                "region. Try the document in a browser, then use `docs ingest` for local "
+                "processing."
+            )
+            logger.warning(msg)
+            return SearchResult(
+                source="documentcloud",
+                query=query,
+                total_results=0,
+                entities=[],
+                page=page,
+                per_page=page_size,
+                error=msg,
+            )
         except httpx.TimeoutException:
             msg = f"DocumentCloud search timed out for: {query}"
             logger.warning(msg)
