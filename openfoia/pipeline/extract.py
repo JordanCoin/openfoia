@@ -205,6 +205,11 @@ _ABBREVIATIONS = _ORG_SUFFIXES | {
     "mr", "mrs", "ms", "dr", "rev", "jr", "sr", "st", "hon", "prof", "gen", "sgt", "lt", "col",
     "capt", "dept", "div", "assn", "bros", "intl", "natl", "govt", "ave", "blvd", "no", "vs",
 }  # fmt: skip
+
+# Function words inside names, ignored when judging prose vs. name
+_CONNECTORS = frozenset(
+    {"and", "of", "the", "de", "du", "da", "del", "la", "le", "van", "von", "y", "for"}
+)
 # One plausible name token in any script: "U.S.", "AT&T", "O'Brien", "Smith-Jones", "Müller"
 _NAME_TOKEN = re.compile(r"^[^\W_]+(?:[.&'\u2019\-][^\W_]+)*\.?['\u2019]?$")
 
@@ -259,6 +264,12 @@ def _mention_score(m: Mention) -> float:
     ]
     if len(sentence_ends) > 1 or (sentence_ends == [len(words) - 1] and len(words) >= 6):
         return 0.0
+    # Six or more words that are mostly lowercase is prose, not a name, even
+    # when the only period sits on an abbreviation ("... by Acme Inc.").
+    if m.entity_type in _NER_TYPES and len(words) >= 6:
+        content = [w for w in words if w.lower() not in _CONNECTORS and w != "&"]
+        if content and sum(w[:1].islower() for w in content) * 2 > len(content):
+            return 0.0
 
     garbled = 0
     if m.entity_type in _NER_TYPES:
@@ -805,7 +816,8 @@ def _find_entity_match(text: str, entities: list[ExtractedEntity]) -> ExtractedE
 # "8b", "1.5b", "270m"; the lookbehind skips MoE tags like "8x7b"
 _PARAM_COUNT = re.compile(r"(?<![\dx.])(\d+(?:\.\d+)?)([bm])\b", re.IGNORECASE)
 _KNOWN_SMALL_MODELS = ("tinyllama", "smollm", "phi3", "phi4-mini", "llama3.2")
-# qwen3:8b runs away on the full prompt (truncated JSON even with think off and 8000 tokens)
+# qwen3:8b runs away on the full prompt (truncated JSON even with think off and 8000 tokens).
+# Matched anywhere in the name so "hf.co/unsloth/Qwen3-8B-GGUF" counts too.
 _COMPACT_FAMILIES = ("qwen3",)
 _COMPACT_TYPES = ("PERSON", "ORGANIZATION", "LOCATION", "DATE", "MONEY")
 
@@ -819,7 +831,7 @@ def _is_compact_model(model: str | None, setting: str | bool = "auto") -> bool:
     if choice in ("true", "false"):
         return choice == "true"
     name = (model or "").lower()
-    if any(name.startswith(f) for f in _COMPACT_FAMILIES):
+    if any(f in name for f in _COMPACT_FAMILIES):
         return True
     m = _PARAM_COUNT.search(name)
     if m:
