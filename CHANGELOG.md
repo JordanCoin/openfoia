@@ -37,6 +37,19 @@ exhaustive lists.
   your query or identifiers from your real IP with no Tor check. They now route
   through Tor, refuse to run when Tor is configured but unreachable, and print
   the route ("via Tor, real IP hidden" or "direct, real IP") before sending.
+- `openfoia browse` ignored `network.tor: true` and loaded pages from your real
+  IP unless you passed `--tor`. It now follows the config (`--tor` / `--no-tor`
+  override it), refuses to open the page when Tor is configured but
+  unreachable, and prints the route before loading (#132).
+- The "Tor is not reachable" error now goes to stderr, so it no longer lands
+  in `--json` or `--csv -` output, and tells you to start Tor or set
+  `network.tor` to false instead of suggesting a `--tor` flag most commands
+  do not have.
+- `--csv PATH` on `records search`, `request list`, `analyze extract` and
+  `deadlines list` now writes a header-only file when there are no results,
+  instead of leaving a stale file from an earlier run in place.
+- `records search --csv` keeps full USAspending descriptions and ranked-search
+  snippets; only the on-screen table shortens them.
 - The entity graph now cools and settles instead of jittering forever: forces
   decay over ~300 frames, the animation loop stops once settled, overlapping
   nodes are pushed apart, and dragging a node reheats the layout (#58).

@@ -925,7 +925,8 @@ def request_list(
 
         if not requests:
             rprint("[yellow]No requests found.[/yellow]")
-            return
+            if not csv_path:
+                return
 
         table = Table(title=f"FOIA Requests ({len(requests)} results)")
         table.add_column("Request #", style="cyan")
@@ -3425,6 +3426,8 @@ def analyze_extract(
 
         if not result.entities:
             rprint("[yellow]No entities found in document.[/yellow]")
+            if csv_path:
+                _emit_table(Table("Type", "Entity", "Confidence"), csv_path)
             return
 
         # Save entities to database
@@ -4528,7 +4531,8 @@ def deadline_list(
         rows, no_clock, unsent = _collect_clocks(session, show_all)
         if not rows and not no_clock and not unsent:
             rprint("[dim]No active requests with deadlines.[/dim]")
-            return
+            if not csv_path:
+                return
         from .clocks import is_overdue
 
         def clock_table(group) -> Table:
@@ -4694,12 +4698,12 @@ def _check_tor_or_exit(policy: EgressPolicy) -> None:
         return
 
     if not asyncio.run(check_tor(policy)):
-        rprint(
-            f"[red]Tor egress requested but the SOCKS proxy at "
-            f"{policy.tor_host}:{policy.tor_port} is not reachable.[/red]"
-        )
-        rprint(
-            "[yellow]Start Tor (e.g. `tor` / `sudo systemctl start tor`) or drop --tor.[/yellow]"
+        typer.echo(
+            f"Tor egress requested but the SOCKS proxy at "
+            f"{policy.tor_host}:{policy.tor_port} is not reachable.\n"
+            "Start Tor (e.g. `tor` / `sudo systemctl start tor`), or set "
+            '"network": {"tor": false} in config.json to go direct.',
+            err=True,
         )
         raise typer.Exit(1)
 
@@ -4752,8 +4756,8 @@ def egress_status(
 @app.command()
 def browse(
     url: str = typer.Argument(..., help="URL to navigate to"),
-    tor: bool = typer.Option(
-        False, "--tor", help="Route traffic through Tor (SOCKS5 localhost:9050)"
+    tor: bool | None = typer.Option(
+        None, "--tor/--no-tor", help="Route through Tor; default is network.tor in config"
     ),
     headless: bool = typer.Option(False, "--headless", help="Run browser without visible window"),
     save: bool = typer.Option(
@@ -4762,9 +4766,9 @@ def browse(
 ):
     """Browse a URL with optional Tor routing and fingerprint hardening.
 
-    Uses Playwright to launch a hardened Chromium instance. When --tor is
-    specified, traffic is routed through the Tor SOCKS5 proxy at localhost:9050
-    (the Tor daemon must be running).
+    Uses Playwright to launch a hardened Chromium instance. Traffic goes
+    through the Tor SOCKS5 proxy when network.tor is set in config or --tor
+    is passed (the Tor daemon must be running); --no-tor goes direct.
 
     Fingerprint hardening is always applied: WebGL disabled, WebRTC disabled,
     timezone set to UTC, and a common user-agent is used.
@@ -4778,13 +4782,18 @@ def browse(
     """
     import asyncio
 
+    from .config import load_config
     from .tor_browse import browse as _browse
+
+    policy = _egress_policy_from(load_config(), tor=tor)
+    _check_tor_or_exit(policy)
+    typer.echo(f"Opening {url} ({_route_note(policy)}).", err=True)
 
     try:
         result = asyncio.run(
             _browse(
                 url,
-                use_tor=tor,
+                use_tor=policy.is_tor,
                 headless=headless,
                 save=save,
             )
@@ -5408,10 +5417,11 @@ def _print_search_result(
             )
         else:
             rprint(f"[yellow]No results found for '{query}' on {source}.[/yellow]")
-        return
-
-    rprint(f"\n[bold]{source}[/bold]: {result.total_results} total results for '{query}'")
-    rprint("=" * 60)
+        if not csv_path:
+            return
+    else:
+        rprint(f"\n[bold]{source}[/bold]: {result.total_results} total results for '{query}'")
+        rprint("=" * 60)
 
     entities = result.entities[:limit]
 
@@ -5420,10 +5430,10 @@ def _print_search_result(
         table.add_column("Score", width=5, justify="right")
         table.add_column("ID", style="dim", width=10, no_wrap=True, overflow="crop")
         table.add_column("Title", style="cyan", ratio=2)
-        table.add_column("Snippet", ratio=3, style="yellow")
+        table.add_column("Snippet", ratio=3, style="yellow", no_wrap=True, overflow="ellipsis")
         for e in entities:
             c = _compact_result(e)
-            table.add_row(str(c["score"]), c["id"] or "-", e.name, c["snippet"][:120])
+            table.add_row(str(c["score"]), c["id"] or "-", e.name, c["snippet"])
         _emit_table(table, csv_path)
         rprint(f"\n[dim]Showing {len(entities)} of {result.total_results} results.[/dim]")
         return
@@ -5482,7 +5492,7 @@ def _print_search_result(
         table.add_column("Amount", width=12, justify="right", style="green")
         table.add_column("Agency", ratio=2)
         table.add_column("Type", width=10)
-        table.add_column("Description", ratio=3)
+        table.add_column("Description", ratio=3, no_wrap=True, overflow="ellipsis")
 
         for e in entities:
             table.add_row(
@@ -5490,7 +5500,7 @@ def _print_search_result(
                 e.extra_data.get("amount_formatted", "-"),
                 e.extra_data.get("awarding_agency", "-") or "-",
                 e.extra_data.get("award_type", "-") or "-",
-                (e.extra_data.get("description") or "-")[:80],
+                e.extra_data.get("description") or "-",
             )
         _emit_table(table, csv_path)
         rprint("\n[dim]View on USAspending.gov: click award URLs in the table[/dim]")
