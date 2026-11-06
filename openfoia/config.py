@@ -41,6 +41,7 @@ class AIConfig:
     model: str = "llama3.2"
     base_url: str | None = None
     api_key: str | None = None
+    compact_prompt: str = "auto"  # auto, true, false (env OPENFOIA_AI_COMPACT_PROMPT)
 
     # For entity extraction
     extraction_temperature: float = 0.1
@@ -265,6 +266,7 @@ def _merge_config(config: OpenFOIAConfig, data: dict[str, Any]) -> OpenFOIAConfi
             or ai.get("_api_key")
             or ai.get(ai.get("provider", ""), {}).get("api_key")
         )
+        config.ai.compact_prompt = str(ai.get("compact_prompt", config.ai.compact_prompt)).lower()
 
         # Handle ollama specifically
         if config.ai.provider == "ollama" and "ollama" in ai:
@@ -372,6 +374,8 @@ def _apply_env_overrides(config: OpenFOIAConfig, prefix: str) -> OpenFOIAConfig:
         config.ai.api_key = v
     if v := os.environ.get(f"{prefix}AI_BASE_URL"):
         config.ai.base_url = v
+    if v := os.environ.get(f"{prefix}AI_COMPACT_PROMPT"):
+        config.ai.compact_prompt = v.lower()
 
     # Specific providers
     if v := os.environ.get(f"{prefix}ANTHROPIC_API_KEY"):
@@ -497,6 +501,7 @@ def save_config(config: OpenFOIAConfig, config_path: Path | str | None = None) -
         "ai": {
             "provider": config.ai.provider,
             "model": config.ai.model,
+            "compact_prompt": config.ai.compact_prompt,
         },
         "ocr": {
             "backend": config.ocr.backend,

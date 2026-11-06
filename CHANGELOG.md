@@ -30,6 +30,8 @@ exhaustive lists.
 
 ### Fixed
 
+- Local models under 8B and the qwen3 family now get a short extraction prompt (core entity types, no relationships; override with `ai.compact_prompt: true|false` or `OPENFOIA_AI_COMPACT_PROMPT`), and `<think>` blocks from reasoning models like qwen3 are stripped before JSON parsing; qwen3:8b went from unparseable output to 13 of 14 entities on the test letter (#59).
+- Entity extraction drops full sentences, run-on lines over 80 characters, and OCR garbage like `EC .Orchestrating a or g-?te' 22`, and down-weights punctuation-heavy text and PERSON hits over 5 words (#57).
 - `network.tor: true` was ignored by `records search -s <source>` (every source
   except cia), `records search --all-sources` (all sources, cia included),
   `records fetch -s documentcloud`, `records fetch -s nara` without
