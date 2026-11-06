@@ -97,3 +97,32 @@ def test_max_attempts_one_sends_a_single_request_on_429(monkeypatch):
 
     assert asyncio.run(go()).status_code == 429
     assert len(calls) == 1
+
+
+def test_max_attempts_from_file_is_coerced_and_bad_values_ignored(data_dir):
+    _write(data_dir, {"network": {"max_attempts": "5"}})
+    assert load_config().network.max_attempts == 5
+    _write(data_dir, {"network": {"max_attempts": "lots"}})
+    assert load_config().network.max_attempts == 3
+
+
+def test_personal_data_gov_key_is_withheld_over_tor(monkeypatch):
+    from openfoia import crossref
+    from openfoia.net import EgressMode, EgressPolicy
+
+    seen = {}
+
+    async def fake_fec(name, etype, egress, api_key=None):
+        seen["fec"] = api_key
+        return None
+
+    monkeypatch.setattr(crossref, "_check_fec", fake_fec)
+    tor = EgressPolicy(mode=EgressMode.TOR)
+    sources = crossref._get_available_sources(egress=tor, api_data_gov_key="personal")
+    asyncio.run(sources["fec"]("Acme", "ORGANIZATION"))
+    assert seen["fec"] is None
+
+    direct = EgressPolicy()
+    sources = crossref._get_available_sources(egress=direct, api_data_gov_key="personal")
+    asyncio.run(sources["fec"]("Acme", "ORGANIZATION"))
+    assert seen["fec"] == "personal"

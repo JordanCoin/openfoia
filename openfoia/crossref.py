@@ -343,6 +343,12 @@ def _get_available_sources(
     """
     sources: dict[str, Any] = {}
 
+    # A personal api.data.gov key is tied to the signup email, so sending it
+    # over Tor identifies the user anyway. Withhold it and use DEMO_KEY.
+    if api_data_gov_key and egress is not None and egress.is_tor:
+        logger.info("Tor mode: not sending the personal api.data.gov key; using DEMO_KEY")
+        api_data_gov_key = None
+
     # MuckRock — always available (public API, no key)
     sources["muckrock"] = lambda name, etype: _check_muckrock(name, etype, egress)
 

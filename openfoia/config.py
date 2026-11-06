@@ -348,7 +348,8 @@ def _merge_config(config: OpenFOIAConfig, data: dict[str, Any]) -> OpenFOIAConfi
         config.network.tor_host = net.get("tor_host", config.network.tor_host)
         config.network.tor_port = net.get("tor_port", config.network.tor_port)
         config.network.isolate_streams = net.get("isolate_streams", config.network.isolate_streams)
-        config.network.max_attempts = net.get("max_attempts", config.network.max_attempts)
+        with contextlib.suppress(TypeError, ValueError):
+            config.network.max_attempts = int(net.get("max_attempts", config.network.max_attempts))
 
     if "records" in data:
         rec = data["records"]
