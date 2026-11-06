@@ -30,6 +30,13 @@ exhaustive lists.
 
 ### Fixed
 
+- `network.tor: true` was ignored by `records search -s <source>` (every source
+  except cia), `records search --all-sources` (all sources, cia included),
+  `records fetch -s documentcloud`, `records fetch -s nara` without
+  `--objects`/`--list-objects`, and `records download -s muckrock`: they sent
+  your query or identifiers from your real IP with no Tor check. They now route
+  through Tor, refuse to run when Tor is configured but unreachable, and print
+  the route ("via Tor, real IP hidden" or "direct, real IP") before sending.
 - The entity graph now cools and settles instead of jittering forever: forces
   decay over ~300 frames, the animation loop stops once settled, overlapping
   nodes are pushed apart, and dragging a node reheats the layout (#58).

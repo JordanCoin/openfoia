@@ -498,3 +498,90 @@ def test_threat_model_names_what_tor_does_not_protect():
     text = _threat_model_text().lower()
     assert "who is asking, not what is asked" in text or "hides who is asking" in text
     assert "correlate timing" in text or "timing" in text
+
+
+# ---------------------------------------------------------------------------
+# records search/fetch/download honor network.tor
+# ---------------------------------------------------------------------------
+
+RECORDS_COMMANDS = [
+    ["records", "search", "acme", "-s", "fec"],
+    ["records", "search", "acme", "--all-sources"],
+    ["records", "fetch", "123", "-s", "documentcloud"],
+    ["records", "fetch", "7283224", "-s", "nara"],
+    ["records", "download", "68490", "-s", "muckrock"],
+]
+
+
+@pytest.fixture
+def tor_records(monkeypatch, isolated_data_dir):
+    """Tor on in config.json; records every adapter built and every HTTP request."""
+    import httpx
+
+    from openfoia.config import OpenFOIAConfig, save_config
+    from openfoia.records.base import RecordAdapter
+
+    cfg = OpenFOIAConfig()
+    cfg.network.tor = True
+    save_config(cfg)
+    monkeypatch.setenv("OPENFOIA_NARA_API_KEY", "k")
+
+    built: list[tuple[str, EgressPolicy]] = []
+    requests: list = []
+    original_init = RecordAdapter.__init__
+
+    def capture_init(self, *, egress=None):
+        original_init(self, egress=egress)
+        built.append((type(self).__name__, self._egress))
+
+    async def no_network(self, request):
+        requests.append(request.url)
+        raise httpx.ConnectError("network disabled in tests", request=request)
+
+    monkeypatch.setattr(RecordAdapter, "__init__", capture_init)
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", no_network)
+    return SimpleNamespace(built=built, requests=requests)
+
+
+def _tor_reachable(monkeypatch, up: bool):
+    async def _check(*a, **k):
+        return up
+
+    monkeypatch.setattr("openfoia.net.check_tor", _check)
+
+
+@pytest.mark.parametrize("args", RECORDS_COMMANDS, ids=lambda a: "-".join(a[1:2] + a[-1:]))
+def test_records_commands_build_adapters_on_tor(monkeypatch, tor_records, args):
+    _tor_reachable(monkeypatch, True)
+    r = runner.invoke(app, args)
+    assert tor_records.built, r.output
+    assert all(p.mode is EgressMode.TOR for _, p in tor_records.built), tor_records.built
+    assert "via Tor" in r.output
+
+
+@pytest.mark.parametrize("args", RECORDS_COMMANDS, ids=lambda a: "-".join(a[1:2] + a[-1:]))
+def test_records_commands_fail_closed_when_tor_down(monkeypatch, tor_records, args):
+    _tor_reachable(monkeypatch, False)
+    r = runner.invoke(app, args)
+    assert r.exit_code != 0
+    assert tor_records.requests == []
+    assert "not reachable" in r.output
+
+
+def test_all_sources_sends_cia_over_tor(monkeypatch, tor_records):
+    _tor_reachable(monkeypatch, True)
+    runner.invoke(app, ["records", "search", "acme", "--all-sources"])
+    cia = [p for name, p in tor_records.built if name == "CIAReadingRoomAdapter"]
+    assert cia and all(p.mode is EgressMode.TOR for p in cia)
+
+
+def test_get_adapter_uses_demo_key_over_tor_even_with_env_key(monkeypatch):
+    from openfoia.net import EgressMode, EgressPolicy
+    from openfoia.records import get_adapter
+
+    monkeypatch.setenv("OPENFOIA_GOVINFO_API_KEY", "personal-govinfo")
+    tor = EgressPolicy(mode=EgressMode.TOR)
+    assert get_adapter("govinfo", egress=tor, api_data_gov_key="personal")._api_key == "DEMO_KEY"
+    assert get_adapter("fec", egress=tor, api_data_gov_key="personal")._api_key == "DEMO_KEY"
+    direct = EgressPolicy()
+    assert get_adapter("fec", egress=direct, api_data_gov_key="personal")._api_key == "personal"

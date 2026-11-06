@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from ..net import EgressPolicy
     from .base import RecordAdapter
 
 # Adapter registry: source name -> adapter class
@@ -21,23 +22,34 @@ def register(name: str, adapter_cls: type[RecordAdapter]) -> None:
     _REGISTRY[name] = adapter_cls
 
 
-def get_adapter(name: str, *, api_data_gov_key: str | None = None) -> RecordAdapter:
+def get_adapter(
+    name: str,
+    *,
+    egress: EgressPolicy | None = None,
+    api_data_gov_key: str | None = None,
+) -> RecordAdapter:
     """Instantiate and return the adapter for the given source name.
 
+    *egress* routes its requests; None means DIRECT, so CLI callers must pass
+    the policy built from config.network or a configured Tor is bypassed.
+
     *api_data_gov_key* (config ``records.api_data_gov_key``) goes to the
-    api.data.gov sources; None leaves them on DEMO_KEY.
+    api.data.gov sources; None leaves them on DEMO_KEY. Over Tor the literal
+    DEMO_KEY is always used: a personal key identifies the user regardless of
+    route, and None would let GovInfo fall back to its env key.
 
     Raises KeyError if the source is not registered.
     """
-    from .base import DataGovAdapter
+    from .base import DEMO_KEY, DataGovAdapter
 
     if name not in _REGISTRY:
         available = ", ".join(sorted(_REGISTRY.keys()))
         raise KeyError(f"Unknown records source '{name}'. Available: {available}")
     cls = _REGISTRY[name]
     if issubclass(cls, DataGovAdapter):
-        return cls(api_key=api_data_gov_key)
-    return cls()
+        key = DEMO_KEY if egress is not None and egress.is_tor else api_data_gov_key
+        return cls(api_key=key, egress=egress)
+    return cls(egress=egress)
 
 
 def list_sources() -> list[str]:

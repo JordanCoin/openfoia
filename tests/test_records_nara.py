@@ -477,7 +477,7 @@ def test_objects_use_the_configured_tor_policy(monkeypatch):
     monkeypatch.setenv("OPENFOIA_NARA_API_KEY", "k")
     _patch_request(monkeypatch, _response([_hit_with_files()]), [])
     tor = EgressPolicy(mode=EgressMode.TOR)
-    monkeypatch.setattr(cli, "_cia_policy_or_exit", lambda: tor)
+    monkeypatch.setattr(cli, "_records_policy_or_exit", lambda: tor)
     seen: list = []
 
     async def fake_objects(self, entity, dest_dir):
