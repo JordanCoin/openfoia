@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -141,7 +142,7 @@ class ProPublicaNonprofitAdapter(RecordAdapter):
 
         try:
             async with egress_client(self._egress, timeout=15) as client:
-                resp = await client.get(f"{API_BASE}/organizations/{ein}.json")
+                resp = await client.get(f"{API_BASE}/organizations/{quote(ein, safe='')}.json")
                 if resp.status_code == 404:
                     return None
                 resp.raise_for_status()

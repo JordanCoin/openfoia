@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -152,7 +153,7 @@ class RegulationsGovAdapter(RecordAdapter):
         try:
             async with egress_client(self._egress, timeout=15) as client:
                 resp = await client.get(
-                    f"{API_BASE}/documents/{identifier}",
+                    f"{API_BASE}/documents/{quote(identifier, safe='')}",
                     params={"api_key": self._api_key},
                 )
                 if resp.status_code == 404:

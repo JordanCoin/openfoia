@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from urllib.parse import quote_plus
 
 import httpx
 
@@ -118,7 +119,7 @@ class FECAdapter(RecordAdapter):
                     entity_type="CONTRIBUTION",
                     name=contributor,
                     source="fec",
-                    source_url=f"https://www.fec.gov/data/receipts/?contributor_name={query}",
+                    source_url=f"https://www.fec.gov/data/receipts/?contributor_name={quote_plus(query)}",
                     identifiers={
                         "committee_id": committee.get("committee_id") or "",
                         "transaction_id": contrib.get("transaction_id") or "",

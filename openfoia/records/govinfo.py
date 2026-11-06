@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -203,7 +204,7 @@ class GovInfoAdapter(RecordAdapter):
         try:
             async with egress_client(self._egress, timeout=20) as client:
                 resp = await client.get(
-                    f"{API_BASE}/packages/{identifier}/summary",
+                    f"{API_BASE}/packages/{quote(identifier, safe='')}/summary",
                     headers={"X-Api-Key": self._api_key},
                 )
                 if resp.status_code == 404:

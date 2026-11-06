@@ -207,6 +207,8 @@ def test_egress_client_tor_mode_never_falls_back_to_direct_client(monkeypatch):
         raise ImportError("socksio not installed")
 
     monkeypatch.setattr(httpx, "AsyncClient", _tracking)
+    # The proxied retry transport is built before the client; track it the same way.
+    monkeypatch.setattr(httpx, "AsyncHTTPTransport", _tracking)
 
     policy = EgressPolicy(mode=EgressMode.TOR)
     with pytest.raises(TorUnavailableError):

@@ -37,6 +37,18 @@ def no_network(monkeypatch, request):
     monkeypatch.setattr(socket.socket, "connect_ex", _blocked)
 
 
+@pytest.fixture(autouse=True)
+def fast_egress(monkeypatch):
+    """Skip real retry backoff and per-host spacing; reset limiter state."""
+    from openfoia import net
+
+    async def _no_sleep(_delay):
+        return None
+
+    monkeypatch.setattr(net, "_sleep", _no_sleep)
+    monkeypatch.setattr(net, "_next_slot", {})
+
+
 def pytest_configure(config):
     config.addinivalue_line(
         "markers", "allow_network: test may open real outbound network connections"

@@ -18,6 +18,7 @@ import random
 import re
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import quote_plus
 
 from .matching import dedup_key
 from .models import EntityType
@@ -431,7 +432,7 @@ async def _check_muckrock(
                 entity_name=name,
                 match_type="fuzzy",
                 details=f"{result.total_results} FOIA requests in related search",
-                url=f"https://www.muckrock.com/foi/list/?q={name.replace(' ', '+')}",
+                url=f"https://www.muckrock.com/foi/list/?q={quote_plus(name)}",
             )
         )
 
@@ -575,7 +576,7 @@ async def _check_icij(name: str, entity_type: EntityType, data_dir: str) -> list
                                     entity_name=name,
                                     match_type="partial",
                                     details=f"ICIJ {csv_file.stem}: {val}",
-                                    url=f"https://offshoreleaks.icij.org/search?q={name.replace(' ', '+')}",
+                                    url=f"https://offshoreleaks.icij.org/search?q={quote_plus(name)}",
                                     extra={
                                         "jurisdiction": row.get("jurisdiction", ""),
                                         "source": csv_file.stem,
@@ -917,7 +918,7 @@ async def _check_opensanctions(
                 entity_name=name,
                 match_type="exact" if score > 0.9 else "fuzzy",
                 details=f"{result_name} — {'; '.join(detail_parts)}",
-                url=f"https://opensanctions.org/search/?q={name.replace(' ', '+')}",
+                url=f"https://opensanctions.org/search/?q={quote_plus(name)}",
                 extra={
                     "score": score,
                     "is_pep": is_pep,

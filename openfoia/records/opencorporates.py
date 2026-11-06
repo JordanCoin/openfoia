@@ -7,6 +7,7 @@ API docs: https://api.opencorporates.com/documentation/API-Reference
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 from ..net import egress_client
 from .base import AdapterRequestError, RecordAdapter, RecordEntity, SearchResult
@@ -78,7 +79,7 @@ class OpenCorporatesAdapter(RecordAdapter):
             RecordEntity if found, None otherwise.
         """
         async with egress_client(self._egress, timeout=15.0) as client:
-            response = await client.get(f"{API_BASE}/companies/{identifier}")
+            response = await client.get(f"{API_BASE}/companies/{quote(identifier)}")
             if response.status_code == 404:
                 return None
             response.raise_for_status()
