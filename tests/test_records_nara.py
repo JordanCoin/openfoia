@@ -295,7 +295,7 @@ def test_cli_search_without_key_exits_1_and_all_sources_skips(monkeypatch):
             return SearchResult(source="sec", query=query, total_results=1, entities=[])
 
     monkeypatch.setattr("openfoia.records.list_sources", lambda: ["nara", "sec"])
-    monkeypatch.setattr("openfoia.records.get_adapter", lambda source: Quiet())
+    monkeypatch.setattr("openfoia.records.get_adapter", lambda source, **_: Quiet())
     r = runner.invoke(app, ["records", "search", "x", "--all-sources"])
     assert r.exit_code == 0, r.output
     assert "skipped (no OPENFOIA_NARA_API_KEY)" in r.output and "sec" in r.output

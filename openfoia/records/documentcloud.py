@@ -145,7 +145,7 @@ class DocumentCloudAdapter(RecordAdapter):
                         "DocumentCloud rate limit hit (500/day anonymous). "
                         "Register at https://accounts.muckrock.com/ for unlimited access."
                     )
-                    logger.warning(msg)
+                    logger.info(msg)
                     return SearchResult(
                         source="documentcloud",
                         query=query,
@@ -157,7 +157,7 @@ class DocumentCloudAdapter(RecordAdapter):
                     )
                 if resp.status_code == 503:
                     msg = "DocumentCloud rate limit (10/sec) — slow down."
-                    logger.warning(msg)
+                    logger.info(msg)
                     return SearchResult(
                         source="documentcloud",
                         query=query,
@@ -174,7 +174,7 @@ class DocumentCloudAdapter(RecordAdapter):
                         "or region. Try the document in a browser, then use `docs ingest` "
                         "for local processing."
                     )
-                    logger.warning(msg)
+                    logger.info(msg)
                     return SearchResult(
                         source="documentcloud",
                         query=query,

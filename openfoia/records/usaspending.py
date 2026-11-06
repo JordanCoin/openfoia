@@ -98,7 +98,7 @@ class USASpendingAdapter(RecordAdapter):
                 )
                 if resp.status_code == 422:
                     msg = f"USAspending rejected query: {resp.text[:200]}"
-                    logger.warning(msg)
+                    logger.info(msg)
                     return SearchResult(
                         source="usaspending",
                         query=query,

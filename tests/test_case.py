@@ -47,7 +47,7 @@ def _fake_search(monkeypatch, total=3):
         async def search(self, query, **kwargs):
             return SearchResult(source="sec", query=query, total_results=total, entities=[])
 
-    monkeypatch.setattr("openfoia.records.get_adapter", lambda source: Adapter())
+    monkeypatch.setattr("openfoia.records.get_adapter", lambda source, **_: Adapter())
 
 
 def test_case_lifecycle_attaches_fetches_and_queries(monkeypatch, data_dir):
@@ -111,7 +111,7 @@ def test_failed_search_is_logged_without_a_result_count(monkeypatch):
         async def search(self, query, **kwargs):
             return SearchResult(source="sec", query=query, total_results=0, entities=[], error="x")
 
-    monkeypatch.setattr("openfoia.records.get_adapter", lambda source: Adapter())
+    monkeypatch.setattr("openfoia.records.get_adapter", lambda source, **_: Adapter())
     assert runner.invoke(app, ["records", "search", "PAS", "-s", "sec"]).exit_code == 1
 
     with get_session() as session:
