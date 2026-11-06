@@ -116,11 +116,21 @@ def test_personal_data_gov_key_is_withheld_over_tor(monkeypatch):
         seen["fec"] = api_key
         return None
 
+    async def fake_govinfo(name, etype, egress, api_key=None):
+        from openfoia.records.govinfo import GovInfoAdapter
+
+        seen["govinfo"] = GovInfoAdapter(api_key=api_key, egress=egress)._api_key
+        return None
+
     monkeypatch.setattr(crossref, "_check_fec", fake_fec)
+    monkeypatch.setattr(crossref, "_check_govinfo", fake_govinfo)
+    monkeypatch.setenv("OPENFOIA_GOVINFO_API_KEY", "personal-govinfo")
     tor = EgressPolicy(mode=EgressMode.TOR)
     sources = crossref._get_available_sources(egress=tor, api_data_gov_key="personal")
     asyncio.run(sources["fec"]("Acme", "ORGANIZATION"))
-    assert seen["fec"] is None
+    asyncio.run(sources["govinfo"]("Acme", "ORGANIZATION"))
+    assert seen["fec"] == "DEMO_KEY"
+    assert seen["govinfo"] == "DEMO_KEY"
 
     direct = EgressPolicy()
     sources = crossref._get_available_sources(egress=direct, api_data_gov_key="personal")
