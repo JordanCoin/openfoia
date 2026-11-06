@@ -10,7 +10,18 @@ exhaustive lists.
 
 ## [Unreleased]
 
+### Added
+
+- Every outbound request now retries GET/HEAD up to 3 times on HTTP 429/503,
+  connection errors and read timeouts (exponential backoff with jitter,
+  honoring `Retry-After` up to 30s), and is spaced to at most 10 requests per
+  second per host. Tor routing and fail-closed behavior are unchanged.
+
 ### Fixed
+
+- Entity names and record identifiers are now URL-encoded where URLs are
+  built by string formatting (crossref links, FEC receipts link, ProPublica,
+  OpenCorporates, Regulations.gov and GovInfo fetches).
 
 - DocumentCloud searches now distinguish Cloudflare or bot-block responses and
   uncertain read timeouts from ordinary API failures, with a browser and local

@@ -19,20 +19,98 @@ this module says so rather than claiming "anonymous."
 
 from __future__ import annotations
 
+import asyncio
 import enum
+import random
 import secrets
 import socket
+import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from email.utils import parsedate_to_datetime
+from typing import Any
 from urllib.parse import quote
 
-if TYPE_CHECKING:
-    import httpx
+import httpx
 
 # A common, non-identifying browser UA. This must NEVER mention "openfoia"
 # or a project URL — that would tell every server we talk to (and anyone
 # logging their traffic) that OpenFOIA made the request.
 DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0"
+
+
+MAX_ATTEMPTS = 3
+RETRY_STATUSES = frozenset({429, 503})
+RETRY_METHODS = frozenset({"GET", "HEAD"})
+MAX_RETRY_AFTER = 30.0  # longer server-requested waits go back to the adapter, not slept
+MIN_HOST_INTERVAL = 0.1  # 10 req/sec, DocumentCloud's documented limit
+
+_sleep = asyncio.sleep
+# ponytail: one process-global interval for every host; per-host limits when an API needs slower
+_next_slot: dict[str, float] = {}
+
+
+async def _throttle(host: str) -> None:
+    # The slot is reserved before any await, so concurrent tasks cannot race without a lock.
+    now = time.monotonic()
+    slot = max(now, _next_slot.get(host, 0.0))
+    _next_slot[host] = slot + MIN_HOST_INTERVAL
+    if slot > now:
+        await _sleep(slot - now)
+
+
+def _retry_after(response: httpx.Response) -> float | None:
+    value = response.headers.get("Retry-After")
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        pass
+    try:
+        return max(0.0, parsedate_to_datetime(value).timestamp() - time.time())
+    except (TypeError, ValueError):
+        return None
+
+
+def _backoff(attempt: int) -> float:
+    return 0.5 * 2 ** (attempt - 1) + random.uniform(0, 0.5)
+
+
+class RetryTransport(httpx.AsyncBaseTransport):
+    """Per-host spacing for every request; retries for idempotent ones.
+
+    GET/HEAD are retried on 429/503 and on ConnectError/ReadTimeout, up to
+    MAX_ATTEMPTS, honoring Retry-After. Other methods are sent once.
+    """
+
+    def __init__(self, inner: httpx.AsyncBaseTransport, max_attempts: int = MAX_ATTEMPTS):
+        self._inner = inner
+        self._max_attempts = max_attempts
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        attempts = self._max_attempts if request.method in RETRY_METHODS else 1
+        for attempt in range(1, attempts + 1):
+            await _throttle(request.url.host)
+            try:
+                response = await self._inner.handle_async_request(request)
+            except (httpx.ConnectError, httpx.ReadTimeout):
+                if attempt == attempts:
+                    raise
+                delay = _backoff(attempt)
+            else:
+                if response.status_code not in RETRY_STATUSES or attempt == attempts:
+                    return response
+                delay = _retry_after(response)
+                if delay is None:
+                    delay = _backoff(attempt)
+                elif delay > MAX_RETRY_AFTER:
+                    return response
+                await response.aclose()
+            await _sleep(delay)
+        raise AssertionError("unreachable: the last attempt returns or raises")
+
+    async def aclose(self) -> None:
+        await self._inner.aclose()
 
 
 class EgressMode(str, enum.Enum):
@@ -103,9 +181,9 @@ def egress_client(
     - The User-Agent is set to policy.user_agent unless the caller passes an
       explicit "User-Agent" in *headers* (some callers, e.g. SEC EDGAR, are
       required to send a descriptive UA identifying themselves).
+    - Every request goes through RetryTransport (per-host spacing, retries
+      for idempotent requests). A caller-supplied *transport* is wrapped too.
     """
-    import httpx
-
     policy = policy or EgressPolicy()
 
     merged_headers = {"User-Agent": policy.user_agent}
@@ -113,11 +191,23 @@ def egress_client(
         merged_headers.update(headers)
 
     if not policy.is_tor:
-        return httpx.AsyncClient(timeout=timeout, headers=merged_headers, **kwargs)
+        inner = kwargs.pop("transport", None) or httpx.AsyncHTTPTransport()
+        return httpx.AsyncClient(
+            transport=RetryTransport(inner), timeout=timeout, headers=merged_headers, **kwargs
+        )
 
     proxy_url = tor_proxy_url(policy, isolation_token=isolation_token)
     try:
-        return httpx.AsyncClient(proxy=proxy_url, timeout=timeout, headers=merged_headers, **kwargs)
+        # proxy= keeps env proxies from mounting; the "all://" mount then
+        # replaces the transport httpx built from it with the same proxy, wrapped.
+        proxied = RetryTransport(httpx.AsyncHTTPTransport(proxy=proxy_url))
+        return httpx.AsyncClient(
+            proxy=proxy_url,
+            mounts={"all://": proxied},
+            timeout=timeout,
+            headers=merged_headers,
+            **kwargs,
+        )
     except ImportError as exc:
         raise TorUnavailableError(
             "Tor egress requires the 'socksio' package, which is not installed. "
