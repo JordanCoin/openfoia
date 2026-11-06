@@ -497,7 +497,7 @@ canvas.addEventListener('mousemove', function(e) {
   else if (isPanning) { offsetX+=e.clientX-lastMX; offsetY+=e.clientY-lastMY; targetOX=offsetX; targetOY=offsetY; lastMX=e.clientX; lastMY=e.clientY; }
   else { canvas.style.cursor = findNodeAt(e.clientX,e.clientY) ? 'pointer' : 'grab'; }
 });
-canvas.addEventListener('mouseup', function() { isPanning=false; dragNode=null; canvas.classList.remove('grabbing'); });
+window.addEventListener('mouseup', function() { isPanning=false; dragNode=null; canvas.classList.remove('grabbing'); });
 
 canvas.addEventListener('click', function(e) {
   var n = findNodeAt(e.clientX,e.clientY);
