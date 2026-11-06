@@ -575,6 +575,23 @@ def test_all_sources_sends_cia_over_tor(monkeypatch, tor_records):
     assert cia and all(p.mode is EgressMode.TOR for p in cia)
 
 
+@pytest.mark.parametrize("cmd", ["search", "fetch"])
+def test_nara_over_tor_exits_without_sending_key(monkeypatch, tor_records, cmd):
+    _tor_reachable(monkeypatch, True)
+    r = runner.invoke(app, ["records", cmd, "7283224", "-s", "nara"])
+    assert r.exit_code == 1
+    assert tor_records.requests == []
+    assert "via Tor, real IP hidden, credentials withheld" in r.output
+    assert "would identify you" in " ".join(r.output.split())
+
+
+def test_all_sources_over_tor_skips_nara_and_says_credentials_withheld(monkeypatch, tor_records):
+    _tor_reachable(monkeypatch, True)
+    r = runner.invoke(app, ["records", "search", "acme", "--all-sources"])
+    assert "credentials withheld" in r.output
+    assert "skipped (personal key not sent over Tor)" in r.output
+
+
 def test_get_adapter_uses_demo_key_over_tor_even_with_env_key(monkeypatch):
     from openfoia.net import EgressMode, EgressPolicy
     from openfoia.records import get_adapter

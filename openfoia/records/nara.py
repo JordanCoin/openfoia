@@ -39,6 +39,10 @@ NO_KEY_MESSAGE = (
     f"NARA Catalog API requires a key. Email Catalog_API@nara.gov for a free one "
     f"(there is no signup form) and set {KEY_ENV} (or {KEY_ENV_ALIAS})."
 )
+TOR_KEY_MESSAGE = (
+    "NARA Catalog API needs your personal API key, which would identify you, so NARA is "
+    "not used over Tor. Turn off network.tor to query it directly."
+)
 PAGE_MAX = 100
 # Digital objects (scans, PDFs): the live API links them under the catalog host's
 # /medialive/ or /medialz/ paths (both seen 2026-10-20); older records point at
@@ -149,7 +153,9 @@ class NARAAdapter(RecordAdapter):
 
     def __init__(self, api_key: str | None = None, *, egress=None):
         super().__init__(egress=egress)
-        self._api_key = api_key or os.environ.get(KEY_ENV) or os.environ.get(KEY_ENV_ALIAS)
+        self._api_key = self._personal_credential(
+            api_key or os.environ.get(KEY_ENV) or os.environ.get(KEY_ENV_ALIAS)
+        )
 
     @property
     def has_key(self) -> bool:
@@ -157,7 +163,9 @@ class NARAAdapter(RecordAdapter):
 
     async def _get(self, params: dict[str, Any]) -> dict[str, Any]:
         if not self._api_key:
-            raise AdapterRequestError(NO_KEY_MESSAGE)
+            raise AdapterRequestError(
+                TOR_KEY_MESSAGE if self.credentials_withheld else NO_KEY_MESSAGE
+            )
         base = api_base()  # refuses to send the key anywhere but NARA or localhost
         _check_quota()
         await _throttle()

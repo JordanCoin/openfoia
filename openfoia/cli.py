@@ -5108,16 +5108,18 @@ def _records_search_all(
     sources = list_sources()
     policy = _records_policy_or_exit()
     data_gov_key = load_config().records.api_data_gov_key
+    adapters = {s: get_adapter(s, egress=policy, api_data_gov_key=data_gov_key) for s in sources}
 
     def say(msg: str) -> None:
         # Status goes to stderr in --json mode so stdout stays pure JSON lines.
         typer.echo(msg, err=json_lines)
 
     say(
-        f"Sending '{query}' to {len(sources)} services ({_route_note(policy)}): "
+        f"Sending '{query}' to {len(sources)} services "
+        f"({_route_note(policy, *adapters.values())}): "
         f"{', '.join(sources)}"
     )
-    if "nara" in sources and getattr(get_adapter("nara", egress=policy), "has_key", False):
+    if "nara" in sources and getattr(adapters["nara"], "has_key", False):
         from .records.nara import ATTRIBUTION
 
         say(
@@ -5130,8 +5132,10 @@ def _records_search_all(
             if kwargs.get(key) and source != owner:
                 return source, None, f"skipped ({key} filter not supported)"
         try:
-            adapter = get_adapter(source, egress=policy, api_data_gov_key=data_gov_key)
+            adapter = adapters[source]
             if source == "nara" and not adapter.has_key:
+                if getattr(adapter, "credentials_withheld", False):
+                    return source, None, "skipped (personal key not sent over Tor)"
                 return source, None, "skipped (no OPENFOIA_NARA_API_KEY)"
             result = await _search_one(adapter, source, query, limit, kwargs)
         except Exception as e:
@@ -5303,7 +5307,7 @@ def records_search(
     quiet = raw or json_lines
 
     if source != "cia":
-        typer.echo(f"Sending {query!r} to {source} ({_route_note(policy)}).", err=True)
+        typer.echo(f"Sending {query!r} to {source} ({_route_note(policy, adapter)}).", err=True)
     if source == "cia":
         notice = f"WARNING: This will send the query {query!r} to cia.gov ({_route_note(policy)})."
         if quiet:
@@ -5311,11 +5315,9 @@ def records_search(
         else:
             rprint(f"\n[yellow]{notice}[/yellow]")
     elif source == "nara":
-        from .records.nara import ATTRIBUTION, NO_KEY_MESSAGE
+        from .records.nara import ATTRIBUTION
 
-        if not adapter.has_key:
-            rprint(f"[red]{NO_KEY_MESSAGE}[/red]")
-            raise typer.Exit(1)
+        _nara_key_or_exit(adapter)
         typer.echo(
             f"Note: sending {query or '*'!r} to catalog.archives.gov with your API key "
             f"(counted against the 10,000/month quota). {ATTRIBUTION}",
@@ -5820,14 +5822,12 @@ def records_fetch(
     from .records import get_adapter
 
     policy = _records_policy_or_exit()
-    typer.echo(f"Fetching from {source} ({_route_note(policy)}).", err=True)
     adapter = get_adapter(source, egress=policy)
+    typer.echo(f"Fetching from {source} ({_route_note(policy, adapter)}).", err=True)
     if source == "nara":
-        from .records.nara import ATTRIBUTION, NO_KEY_MESSAGE
+        from .records.nara import ATTRIBUTION
 
-        if not adapter.has_key:
-            rprint(f"[red]{NO_KEY_MESSAGE}[/red]")
-            raise typer.Exit(1)
+        _nara_key_or_exit(adapter)
         typer.echo(
             "Note: fetching from catalog.archives.gov with your API key (one query per id, "
             f"counted against the 10,000/month quota). {ATTRIBUTION}",
@@ -5998,6 +5998,14 @@ def _ingest_nara_objects(entity, naid: str, results) -> int:
     return done
 
 
+def _nara_key_or_exit(adapter) -> None:
+    from .records.nara import NO_KEY_MESSAGE, TOR_KEY_MESSAGE
+
+    if not adapter.has_key:
+        rprint(f"[red]{TOR_KEY_MESSAGE if adapter.credentials_withheld else NO_KEY_MESSAGE}[/red]")
+        raise typer.Exit(1)
+
+
 def _records_policy_or_exit() -> EgressPolicy:
     """Egress policy from config.network.tor, fail-closed when Tor is configured but down."""
     from .config import load_config
@@ -6007,8 +6015,11 @@ def _records_policy_or_exit() -> EgressPolicy:
     return policy
 
 
-def _route_note(policy: EgressPolicy) -> str:
-    return "via Tor, real IP hidden" if policy.is_tor else "direct, real IP"
+def _route_note(policy: EgressPolicy, *adapters: Any) -> str:
+    note = "via Tor, real IP hidden" if policy.is_tor else "direct, real IP"
+    if any(getattr(a, "credentials_withheld", False) for a in adapters):
+        note += ", credentials withheld"
+    return note
 
 
 def _records_fetch_cia(identifier: str) -> None:
@@ -6099,8 +6110,8 @@ def records_download(
     from .records.muckrock import MuckRockAdapter
 
     policy = _records_policy_or_exit()
-    rprint(f"[dim]Contacting MuckRock ({_route_note(policy)}).[/dim]")
     adapter = MuckRockAdapter(egress=policy)
+    rprint(f"[dim]Contacting MuckRock ({_route_note(policy, adapter)}).[/dim]")
 
     # First fetch to show what we're downloading
     with Progress(

@@ -30,6 +30,16 @@ exhaustive lists.
 
 ### Fixed
 
+- With `network.tor: true`, personal credentials still went out with records
+  requests and told the server who was asking, even though the real IP was
+  hidden: `OPENFOIA_MUCKROCK_TOKEN`, `OPENFOIA_NARA_API_KEY` /
+  `CATALOG_API_KEY`, and `OPENFOIA_GOVINFO_API_KEY`. Over Tor, MuckRock now
+  sends no token, GovInfo (and fec, regulations) use the shared `DEMO_KEY`,
+  and NARA, which needs a personal key, is skipped: `records search -s nara`
+  and `records fetch -s nara` exit with an explanation, and `--all-sources`
+  lists it as skipped. The route line reads "via Tor, real IP hidden,
+  credentials withheld" when a credential was held back. Tor still does not
+  hide what you search for (#131).
 - `network.tor: true` was ignored by `records search -s <source>` (every source
   except cia), `records search --all-sources` (all sources, cia included),
   `records fetch -s documentcloud`, `records fetch -s nara` without
