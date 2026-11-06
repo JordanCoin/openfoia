@@ -338,32 +338,42 @@ graphData.edges.forEach(function(e) {
 });
 
 var nodeScale = Math.max(1, Math.sqrt(SIM_NODES.length / 15));
-var REPULSION = 5000 * nodeScale, ATTRACTION = 0.003, DAMPING = 0.85, CENTER_GRAVITY = 0.005, LINK_DISTANCE = 180 * nodeScale;
+var REPULSION = 5000 * nodeScale, ATTRACTION = 0.003, DAMPING = 0.6, CENTER_GRAVITY = 0.005, LINK_DISTANCE = 180 * nodeScale;
+// d3-style cooling: forces scale with alpha, which decays to ALPHA_MIN in ~300 ticks, then the loop stops.
+var alpha = 1, ALPHA_MIN = 0.001, ALPHA_DECAY = 1 - Math.pow(ALPHA_MIN, 1/300), ALPHA_REHEAT = 0.3;
 var selectedNode = null;
 
 function simulate() {
   var i,j,dx,dy,dist,force,fx,fy,a,b;
   for (i=0;i<SIM_NODES.length;i++) for (j=i+1;j<SIM_NODES.length;j++) {
     dx=SIM_NODES[j].x-SIM_NODES[i].x; dy=SIM_NODES[j].y-SIM_NODES[i].y;
-    dist=Math.sqrt(dx*dx+dy*dy)||1; force=REPULSION/(dist*dist);
+    dist=Math.sqrt(dx*dx+dy*dy)||1; force=REPULSION/(dist*dist)*alpha;
+    var minDist=SIM_NODES[i].radius+SIM_NODES[j].radius+16;
+    if (dist<minDist) force+=(minDist-dist)*0.5;
     fx=(dx/dist)*force; fy=(dy/dist)*force;
     SIM_NODES[i].vx-=fx; SIM_NODES[i].vy-=fy; SIM_NODES[j].vx+=fx; SIM_NODES[j].vy+=fy;
   }
   for (i=0;i<SIM_EDGES.length;i++) {
     a=SIM_NODES[SIM_EDGES[i].source]; b=SIM_NODES[SIM_EDGES[i].target];
     dx=b.x-a.x; dy=b.y-a.y; dist=Math.sqrt(dx*dx+dy*dy)||1;
-    force=(dist-LINK_DISTANCE)*ATTRACTION; fx=(dx/dist)*force; fy=(dy/dist)*force;
+    force=(dist-LINK_DISTANCE)*ATTRACTION*alpha; fx=(dx/dist)*force; fy=(dy/dist)*force;
     a.vx+=fx; a.vy+=fy; b.vx-=fx; b.vy-=fy;
   }
   for (i=0;i<SIM_NODES.length;i++) {
-    SIM_NODES[i].vx+=(W/2-SIM_NODES[i].x)*CENTER_GRAVITY;
-    SIM_NODES[i].vy+=(H/2-SIM_NODES[i].y)*CENTER_GRAVITY;
-    SIM_NODES[i].vx*=DAMPING; SIM_NODES[i].vy*=DAMPING;
-    SIM_NODES[i].x+=SIM_NODES[i].vx; SIM_NODES[i].y+=SIM_NODES[i].vy;
-    SIM_NODES[i].x=Math.max(SIM_NODES[i].radius,Math.min(W-SIM_NODES[i].radius,SIM_NODES[i].x));
-    SIM_NODES[i].y=Math.max(SIM_NODES[i].radius,Math.min(H-SIM_NODES[i].radius,SIM_NODES[i].y));
+    a=SIM_NODES[i];
+    if (a===dragNode) { a.vx=0; a.vy=0; continue; }
+    a.vx+=(W/2-a.x)*CENTER_GRAVITY*alpha;
+    a.vy+=(H/2-a.y)*CENTER_GRAVITY*alpha;
+    a.vx*=DAMPING; a.vy*=DAMPING;
+    a.x+=a.vx; a.y+=a.vy;
+    // Pin at the viewport edge instead of keeping velocity, so nodes stop rather than ricochet.
+    if (a.x<a.radius || a.x>W-a.radius) { a.x=Math.max(a.radius,Math.min(W-a.radius,a.x)); a.vx=0; }
+    if (a.y<a.radius || a.y>H-a.radius) { a.y=Math.max(a.radius,Math.min(H-a.radius,a.y)); a.vy=0; }
   }
+  alpha += (dragNode ? ALPHA_REHEAT - alpha : -alpha) * ALPHA_DECAY;
 }
+
+function reheat() { alpha = Math.max(alpha, ALPHA_REHEAT); wake(); }
 
 // Pan/zoom
 var offsetX=0, offsetY=0, scale=1, isPanning=false, lastMX=0, lastMY=0, dragNode=null;
@@ -478,7 +488,7 @@ function findNodeAt(sx,sy) {
 
 canvas.addEventListener('mousedown', function(e) {
   var n = findNodeAt(e.clientX,e.clientY);
-  if (n) { dragNode=n; return; }
+  if (n) { dragNode=n; reheat(); return; }
   isPanning=true; lastMX=e.clientX; lastMY=e.clientY;
   canvas.classList.add('grabbing');
 });
@@ -487,7 +497,7 @@ canvas.addEventListener('mousemove', function(e) {
   else if (isPanning) { offsetX+=e.clientX-lastMX; offsetY+=e.clientY-lastMY; targetOX=offsetX; targetOY=offsetY; lastMX=e.clientX; lastMY=e.clientY; }
   else { canvas.style.cursor = findNodeAt(e.clientX,e.clientY) ? 'pointer' : 'grab'; }
 });
-canvas.addEventListener('mouseup', function() { isPanning=false; dragNode=null; canvas.classList.remove('grabbing'); });
+window.addEventListener('mouseup', function() { isPanning=false; dragNode=null; canvas.classList.remove('grabbing'); });
 
 canvas.addEventListener('click', function(e) {
   var n = findNodeAt(e.clientX,e.clientY);
@@ -763,8 +773,16 @@ function showNodeInfo(node) {
   panel.style.display = 'block';
 }
 
+// The frame loop stops once cooled and nothing is animating; any interaction restarts it.
+var running = false;
+function wake() { if (!running) { running = true; requestAnimationFrame(draw); } }
+['mousemove','mousedown','mouseup','click','dblclick','wheel','keydown','input','change'].forEach(function(t) {
+  window.addEventListener(t, wake, true);
+});
+window.addEventListener('resize', reheat);
+
 function draw() {
-  simulate();
+  if (alpha >= ALPHA_MIN || dragNode) simulate();
   ctx.clearRect(0,0,W,H);
   ctx.save();
   ctx.translate(offsetX,offsetY);
@@ -826,7 +844,8 @@ function draw() {
   }
 
   ctx.restore();
-  requestAnimationFrame(draw);
+  if (alpha >= ALPHA_MIN || dragNode || animating) requestAnimationFrame(draw);
+  else running = false;
 }
 
 // Click background to deselect
@@ -844,7 +863,7 @@ document.addEventListener('keydown', function(e) {
   }
 });
 
-draw();
+wake();
 })();
 </script>
 </body>

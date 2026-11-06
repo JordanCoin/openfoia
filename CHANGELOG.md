@@ -12,6 +12,9 @@ exhaustive lists.
 
 ### Fixed
 
+- The entity graph now cools and settles instead of jittering forever: forces
+  decay over ~300 frames, the animation loop stops once settled, overlapping
+  nodes are pushed apart, and dragging a node reheats the layout (#58).
 - DocumentCloud searches now distinguish Cloudflare or bot-block responses and
   uncertain read timeouts from ordinary API failures, with a browser and local
   `docs ingest` fallback.
