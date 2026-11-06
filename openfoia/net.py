@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import enum
+import logging
 import random
 import secrets
 import socket
@@ -31,6 +32,7 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
+from httpx._utils import get_environment_proxies
 
 # A common, non-identifying browser UA. This must NEVER mention "openfoia"
 # or a project URL — that would tell every server we talk to (and anyone
@@ -44,8 +46,9 @@ RETRY_METHODS = frozenset({"GET", "HEAD"})
 MAX_RETRY_AFTER = 30.0  # longer server-requested waits go back to the adapter, not slept
 MIN_HOST_INTERVAL = 0.1  # 10 req/sec, DocumentCloud's documented limit
 
+logger = logging.getLogger(__name__)
 _sleep = asyncio.sleep
-# ponytail: one process-global interval for every host; per-host limits when an API needs slower
+# ponytail: per-host slots but one shared interval; per-API limits when an API needs slower
 _next_slot: dict[str, float] = {}
 
 
@@ -93,19 +96,29 @@ class RetryTransport(httpx.AsyncBaseTransport):
             await _throttle(request.url.host)
             try:
                 response = await self._inner.handle_async_request(request)
-            except (httpx.ConnectError, httpx.ReadTimeout):
+            except (httpx.ConnectError, httpx.ReadTimeout) as exc:
                 if attempt == attempts:
                     raise
+                reason = type(exc).__name__
                 delay = _backoff(attempt)
             else:
                 if response.status_code not in RETRY_STATUSES or attempt == attempts:
                     return response
+                reason = f"HTTP {response.status_code}"
                 delay = _retry_after(response)
                 if delay is None:
                     delay = _backoff(attempt)
                 elif delay > MAX_RETRY_AFTER:
                     return response
                 await response.aclose()
+            logger.info(
+                "Retrying %s after %s (attempt %d of %d) in %.1fs",
+                request.url.host,
+                reason,
+                attempt,
+                attempts,
+                delay,
+            )
             await _sleep(delay)
         raise AssertionError("unreachable: the last attempt returns or raises")
 
@@ -191,9 +204,17 @@ def egress_client(
         merged_headers.update(headers)
 
     if not policy.is_tor:
-        inner = kwargs.pop("transport", None) or httpx.AsyncHTTPTransport()
+        caller_transport = kwargs.pop("transport", None)
+        mounts: dict[str, httpx.AsyncBaseTransport] = {}
+        # Passing transport= turns off httpx's env-proxy handling, so the
+        # HTTP(S)_PROXY / ALL_PROXY / NO_PROXY mounts are rebuilt here, wrapped.
+        if caller_transport is None and kwargs.get("trust_env", True):
+            for pattern, url in get_environment_proxies().items():
+                inner = httpx.AsyncHTTPTransport(proxy=url) if url else httpx.AsyncHTTPTransport()
+                mounts[pattern] = RetryTransport(inner)
+        default = RetryTransport(caller_transport or httpx.AsyncHTTPTransport())
         return httpx.AsyncClient(
-            transport=RetryTransport(inner), timeout=timeout, headers=merged_headers, **kwargs
+            transport=default, mounts=mounts, timeout=timeout, headers=merged_headers, **kwargs
         )
 
     proxy_url = tor_proxy_url(policy, isolation_token=isolation_token)

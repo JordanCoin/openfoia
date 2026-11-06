@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import socket
+import threading
 
 import httpx
 import pytest
@@ -112,6 +114,61 @@ def test_per_host_spacing(monkeypatch):
 
     asyncio.run(go())
     assert sleeps == pytest.approx([net.MIN_HOST_INTERVAL, 2 * net.MIN_HOST_INTERVAL])
+
+
+@pytest.fixture
+def proxy_listener(monkeypatch):
+    """A local fake HTTP proxy; yields (url, received request lines)."""
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"):
+        monkeypatch.delenv(name, raising=False)
+        monkeypatch.delenv(name.lower(), raising=False)
+    server = socket.create_server(("127.0.0.1", 0))
+    server.settimeout(2)
+    received: list[bytes] = []
+
+    def serve():
+        try:
+            conn, _ = server.accept()
+        except OSError:
+            return
+        with conn:
+            received.append(conn.recv(4096).split(b"\r\n", 1)[0])
+            conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    yield f"http://127.0.0.1:{server.getsockname()[1]}", received
+    server.close()
+    thread.join(timeout=5)
+
+
+@pytest.mark.allow_network
+def test_direct_mode_honors_env_proxy(monkeypatch, proxy_listener):
+    url, received = proxy_listener
+    monkeypatch.setenv("HTTP_PROXY", url)
+    monkeypatch.setenv("HTTPS_PROXY", url)
+
+    async def go():
+        async with egress_client(None) as client:
+            return await client.get("http://127.0.0.1:1/x")
+
+    assert asyncio.run(go()).status_code == 200
+    assert received == [b"GET http://127.0.0.1:1/x HTTP/1.1"]
+
+
+@pytest.mark.allow_network
+def test_direct_mode_honors_no_proxy(monkeypatch, proxy_listener):
+    url, received = proxy_listener
+    monkeypatch.setenv("HTTP_PROXY", url)
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1")
+
+    async def go():
+        async with egress_client(None) as client:
+            return await client.get("http://127.0.0.1:1/x")
+
+    with pytest.raises(httpx.ConnectError):
+        asyncio.run(go())
+    assert received == []
 
 
 def test_tor_mode_keeps_socks_proxy_under_retry():

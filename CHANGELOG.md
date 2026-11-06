@@ -15,7 +15,8 @@ exhaustive lists.
 - Every outbound request now retries GET/HEAD up to 3 times on HTTP 429/503,
   connection errors and read timeouts (exponential backoff with jitter,
   honoring `Retry-After` up to 30s), and is spaced to at most 10 requests per
-  second per host. Tor routing and fail-closed behavior are unchanged.
+  second per host. Tor routing, fail-closed behavior and environment proxies
+  (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`) work as before.
 
 ### Fixed
 
