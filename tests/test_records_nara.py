@@ -470,12 +470,13 @@ def test_existing_file_counts_as_present_despite_placeholder_size(tmp_path, monk
     assert [status for _, _, status in out] == ["present"]
 
 
-def test_objects_use_the_configured_tor_policy(monkeypatch):
+def test_objects_over_tor_exit_before_the_keyed_fetch(monkeypatch):
     from openfoia import cli
     from openfoia.net import EgressMode, EgressPolicy
 
     monkeypatch.setenv("OPENFOIA_NARA_API_KEY", "k")
-    _patch_request(monkeypatch, _response([_hit_with_files()]), [])
+    calls: list = []
+    _patch_request(monkeypatch, _response([_hit_with_files()]), calls)
     tor = EgressPolicy(mode=EgressMode.TOR)
     monkeypatch.setattr(cli, "_records_policy_or_exit", lambda: tor)
     seen: list = []
@@ -486,8 +487,8 @@ def test_objects_use_the_configured_tor_policy(monkeypatch):
 
     monkeypatch.setattr(NARAAdapter, "download_objects", fake_objects)
     r = runner.invoke(app, ["records", "fetch", "7283224", "-s", "nara", "--objects"])
-    assert r.exit_code == 0, r.output
-    assert seen == [tor] and "via Tor" in r.output
+    assert r.exit_code == 1, r.output
+    assert calls == [] and seen == [] and "not used over Tor" in " ".join(r.output.split())
 
 
 def test_ingest_persists_each_file_before_a_later_one_dies(monkeypatch, tmp_path):

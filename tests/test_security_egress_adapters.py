@@ -303,3 +303,78 @@ def test_sec_edgar_ua_wins_through_the_real_egress_client_header_merge(monkeypat
 
     assert seen["user_agent"] == SEC_DEFAULT_USER_AGENT
     assert seen["user_agent"] != DEFAULT_USER_AGENT
+
+
+# ---------------------------------------------------------------------------
+# #131: no personal credential leaves the machine over Tor
+# ---------------------------------------------------------------------------
+
+TOR = EgressPolicy(mode=EgressMode.TOR)
+
+
+def _capture_requests(monkeypatch, module, body: dict) -> list[httpx.Request]:
+    """Swap *module*.egress_client for a DIRECT client on a MockTransport.
+
+    The adapter picks its credential before any client exists, so a direct
+    mock client shows exactly what the Tor client would have sent.
+    """
+    sent: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return httpx.Response(200, json=body)
+
+    def fake_egress_client(policy=None, *, timeout=15.0, isolation_token=None, **kw):
+        return egress_client(None, timeout=timeout, transport=httpx.MockTransport(handler))
+
+    monkeypatch.setattr(module, "egress_client", fake_egress_client)
+    return sent
+
+
+def _credentials(request: httpx.Request) -> set:
+    found = {request.headers.get(h) for h in ("authorization", "x-api-key")}
+    found.add(request.url.params.get("api_key"))
+    return found - {None, "DEMO_KEY"}
+
+
+@pytest.mark.parametrize("policy, leaked", [(TOR, set()), (EgressPolicy(), {"Token tok-131"})])
+def test_muckrock_token_withheld_over_tor(monkeypatch, policy, leaked):
+    import openfoia.records.muckrock as muckrock_mod
+
+    monkeypatch.setenv("OPENFOIA_MUCKROCK_TOKEN", "tok-131")
+    sent = _capture_requests(monkeypatch, muckrock_mod, {"count": 0, "results": []})
+    adapter = MuckRockAdapter(egress=policy)
+    asyncio.run(adapter.fetch("1"))
+    assert sent and all(_credentials(r) == leaked for r in sent)
+    assert adapter.credentials_withheld is policy.is_tor
+
+
+@pytest.mark.parametrize("policy, leaked", [(TOR, set()), (EgressPolicy(), {"gov-131"})])
+def test_govinfo_env_key_withheld_over_tor(monkeypatch, policy, leaked):
+    import openfoia.records.govinfo as govinfo_mod
+
+    monkeypatch.setenv("OPENFOIA_GOVINFO_API_KEY", "gov-131")
+    sent = _capture_requests(monkeypatch, govinfo_mod, {"count": 0, "results": []})
+    asyncio.run(GovInfoAdapter(api_key=None, egress=policy).search("Acme"))
+    assert sent and all(_credentials(r) == leaked for r in sent)
+    if policy.is_tor:
+        assert sent[0].headers["x-api-key"] == "DEMO_KEY"
+
+
+@pytest.mark.parametrize("policy, leaked", [(TOR, set()), (EgressPolicy(), {"nara-131"})])
+def test_nara_key_withheld_over_tor(monkeypatch, tmp_path, policy, leaked):
+    import openfoia.records.base as base_mod
+    import openfoia.records.nara as nara_mod
+
+    monkeypatch.setenv("OPENFOIA_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OPENFOIA_NARA_API_KEY", "nara-131")
+    monkeypatch.setattr(nara_mod, "_throttle", lambda: asyncio.sleep(0))
+    sent = _capture_requests(monkeypatch, base_mod, {"body": {"hits": {"hits": []}}})
+    adapter = NARAAdapter(egress=policy)
+    assert adapter.has_key is not policy.is_tor
+    result = asyncio.run(adapter.search("Acme"))
+    assert all(_credentials(r) == leaked for r in sent)
+    if policy.is_tor:
+        assert sent == [] and "not used over Tor" in result.error
+    else:
+        assert sent and result.error is None
