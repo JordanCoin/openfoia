@@ -295,7 +295,7 @@ def test_cli_search_without_key_exits_1_and_all_sources_skips(monkeypatch):
             return SearchResult(source="sec", query=query, total_results=1, entities=[])
 
     monkeypatch.setattr("openfoia.records.list_sources", lambda: ["nara", "sec"])
-    monkeypatch.setattr("openfoia.records.get_adapter", lambda source: Quiet())
+    monkeypatch.setattr("openfoia.records.get_adapter", lambda source, **_: Quiet())
     r = runner.invoke(app, ["records", "search", "x", "--all-sources"])
     assert r.exit_code == 0, r.output
     assert "skipped (no OPENFOIA_NARA_API_KEY)" in r.output and "sec" in r.output
@@ -477,7 +477,7 @@ def test_objects_use_the_configured_tor_policy(monkeypatch):
     monkeypatch.setenv("OPENFOIA_NARA_API_KEY", "k")
     _patch_request(monkeypatch, _response([_hit_with_files()]), [])
     tor = EgressPolicy(mode=EgressMode.TOR)
-    monkeypatch.setattr(cli, "_cia_policy_or_exit", lambda: tor)
+    monkeypatch.setattr(cli, "_records_policy_or_exit", lambda: tor)
     seen: list = []
 
     async def fake_objects(self, entity, dest_dir):

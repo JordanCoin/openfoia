@@ -5100,13 +5100,17 @@ def _records_search_all(
     from .records import get_adapter, list_sources
 
     sources = list_sources()
+    policy = _records_policy_or_exit()
 
     def say(msg: str) -> None:
         # Status goes to stderr in --json mode so stdout stays pure JSON lines.
         typer.echo(msg, err=json_lines)
 
-    say(f"Sending '{query}' to {len(sources)} services: {', '.join(sources)}")
-    if "nara" in sources and getattr(get_adapter("nara"), "has_key", False):
+    say(
+        f"Sending '{query}' to {len(sources)} services ({_route_note(policy)}): "
+        f"{', '.join(sources)}"
+    )
+    if "nara" in sources and getattr(get_adapter("nara", egress=policy), "has_key", False):
         from .records.nara import ATTRIBUTION
 
         say(
@@ -5119,7 +5123,7 @@ def _records_search_all(
             if kwargs.get(key) and source != owner:
                 return source, None, f"skipped ({key} filter not supported)"
         try:
-            adapter = get_adapter(source)
+            adapter = get_adapter(source, egress=policy)
             if source == "nara" and not adapter.has_key:
                 return source, None, "skipped (no OPENFOIA_NARA_API_KEY)"
             result = await _search_one(adapter, source, query, limit, kwargs)
@@ -5283,15 +5287,14 @@ def records_search(
         rprint(f"[red]Unknown source '{source}'. Available: {', '.join(available)}[/red]")
         raise typer.Exit(1)
 
-    adapter = get_adapter(source)
+    policy = _records_policy_or_exit()
+    adapter = get_adapter(source, egress=policy)
     # Pipe-safe modes: stdout carries only JSON, so no spinner or Rich markup.
     quiet = raw or json_lines
 
+    if source != "cia":
+        typer.echo(f"Sending {query!r} to {source} ({_route_note(policy)}).", err=True)
     if source == "cia":
-        from .records.cia import CIAReadingRoomAdapter
-
-        policy = _cia_policy_or_exit()
-        adapter = CIAReadingRoomAdapter(egress=policy)
         notice = f"WARNING: This will send the query {query!r} to cia.gov ({_route_note(policy)})."
         if quiet:
             typer.echo(notice, err=True)
@@ -5806,7 +5809,9 @@ def records_fetch(
     from .models import Request as RequestModel
     from .records import get_adapter
 
-    adapter = get_adapter(source)
+    policy = _records_policy_or_exit()
+    typer.echo(f"Fetching from {source} ({_route_note(policy)}).", err=True)
+    adapter = get_adapter(source, egress=policy)
     if source == "nara":
         from .records.nara import ATTRIBUTION, NO_KEY_MESSAGE
 
@@ -5819,10 +5824,6 @@ def records_fetch(
             err=True,
         )
         if list_objects or objects:
-            from .records.nara import NARAAdapter
-
-            policy = _cia_policy_or_exit()  # fails closed when Tor is configured but down
-            adapter = NARAAdapter(egress=policy)
             _records_nara_objects(
                 adapter, ids, download=objects, as_json=as_json, route=_route_note(policy)
             )
@@ -5987,7 +5988,7 @@ def _ingest_nara_objects(entity, naid: str, results) -> int:
     return done
 
 
-def _cia_policy_or_exit() -> EgressPolicy:
+def _records_policy_or_exit() -> EgressPolicy:
     """Egress policy from config.network.tor, fail-closed when Tor is configured but down."""
     from .config import load_config
 
@@ -6015,7 +6016,7 @@ def _records_fetch_cia(identifier: str) -> None:
         rprint(f"[red]{e}[/red]")
         raise typer.Exit(1) from None
 
-    policy = _cia_policy_or_exit()
+    policy = _records_policy_or_exit()
     rprint(
         f"\n[yellow]WARNING: This will send the identifier {identifier!r} to cia.gov "
         f"({_route_note(policy)}).[/yellow]"
@@ -6087,7 +6088,9 @@ def records_download(
 
     from .records.muckrock import MuckRockAdapter
 
-    adapter = MuckRockAdapter()
+    policy = _records_policy_or_exit()
+    rprint(f"[dim]Contacting MuckRock ({_route_note(policy)}).[/dim]")
+    adapter = MuckRockAdapter(egress=policy)
 
     # First fetch to show what we're downloading
     with Progress(

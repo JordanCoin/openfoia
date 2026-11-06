@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from ..net import EgressPolicy
     from .base import RecordAdapter
 
 # Adapter registry: source name -> adapter class
@@ -21,15 +22,18 @@ def register(name: str, adapter_cls: type[RecordAdapter]) -> None:
     _REGISTRY[name] = adapter_cls
 
 
-def get_adapter(name: str) -> RecordAdapter:
+def get_adapter(name: str, *, egress: EgressPolicy | None = None) -> RecordAdapter:
     """Instantiate and return the adapter for the given source name.
+
+    *egress* routes its requests; None means DIRECT, so CLI callers must pass
+    the policy built from config.network or a configured Tor is bypassed.
 
     Raises KeyError if the source is not registered.
     """
     if name not in _REGISTRY:
         available = ", ".join(sorted(_REGISTRY.keys()))
         raise KeyError(f"Unknown records source '{name}'. Available: {available}")
-    return _REGISTRY[name]()
+    return _REGISTRY[name](egress=egress)
 
 
 def list_sources() -> list[str]:
