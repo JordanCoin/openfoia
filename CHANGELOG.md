@@ -17,13 +17,19 @@ exhaustive lists.
   honoring `Retry-After` up to 30s), and is spaced to at most 10 requests per
   second per host. Tor routing, fail-closed behavior and environment proxies
   (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`) work as before.
+- `--csv PATH` (`-` for stdout) on `records search`, `request list`,
+  `analyze extract`, `crossref` and `deadlines list` writes the table's columns
+  as CSV for spreadsheets. Cells that would run as a spreadsheet formula are
+  prefixed with `'` (#53).
 
 ### Fixed
 
+- The entity graph now cools and settles instead of jittering forever: forces
+  decay over ~300 frames, the animation loop stops once settled, overlapping
+  nodes are pushed apart, and dragging a node reheats the layout (#58).
 - Entity names and record identifiers are now URL-encoded where URLs are
   built by string formatting (crossref links, FEC receipts link, ProPublica,
   OpenCorporates, Regulations.gov and GovInfo fetches).
-
 - DocumentCloud searches now distinguish Cloudflare or bot-block responses and
   uncertain read timeouts from ordinary API failures, with a browser and local
   `docs ingest` fallback.
