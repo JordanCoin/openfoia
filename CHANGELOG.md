@@ -10,6 +10,13 @@ exhaustive lists.
 
 ## [Unreleased]
 
+### Added
+
+- `--csv PATH` (`-` for stdout) on `records search`, `request list`,
+  `analyze extract`, `crossref` and `deadlines list` writes the table's columns
+  as CSV for spreadsheets. Cells that would run as a spreadsheet formula are
+  prefixed with `'` (#53).
+
 ### Fixed
 
 - The entity graph now cools and settles instead of jittering forever: forces

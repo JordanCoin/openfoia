@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import csv
+import functools
 import json
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -523,6 +526,60 @@ def serve(
 
 console = Console()
 
+CSV_HELP = "Write the table as CSV to this file ('-' for stdout)"
+_csv_stdout = None  # the real stdout while a `--csv -` command prints everything else to stderr
+
+
+def _csv_stdout_safe(func):
+    """With `--csv -`, route the command's other output to stderr so stdout is only CSV."""
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        global _csv_stdout
+        if kwargs.get("csv_path") != "-":
+            return func(*args, **kwargs)
+        _csv_stdout = sys.stdout
+        try:
+            with contextlib.redirect_stdout(sys.stderr):
+                return func(*args, **kwargs)
+        finally:
+            _csv_stdout = None
+
+    return wrapper
+
+
+def _csv_cell(v: str) -> str:
+    """Make one upstream value safe for a spreadsheet and a terminal.
+
+    Drops control characters (terminal escape injection via `cat file.csv`) and
+    prefixes formula triggers so a cell like =HYPERLINK(...) never executes.
+    A bare "-" placeholder is left alone.
+    """
+    v = "".join(ch for ch in v if ch.isprintable() or ch in " \t")
+    if v != "-" and v.lstrip(" \t")[:1] in ("=", "+", "-", "@"):
+        return "'" + v
+    return v
+
+
+def _emit_table(table: Table, csv_path: str | None) -> None:
+    """Print a Rich table, or write its columns and rows as CSV (csv_path '-' = stdout)."""
+    if not csv_path:
+        console.print(table)
+        return
+    columns = [
+        [_csv_cell(c.plain if isinstance(c, Text) else str(c)) for c in col.cells]
+        for col in table.columns
+    ]
+    rows = [list(row) for row in zip(*columns, strict=True)]
+    header = [_csv_cell(str(col.header)) for col in table.columns]
+    if csv_path == "-":
+        csv.writer(_csv_stdout or sys.stdout).writerows([header, *rows])
+        return
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        csv.writer(f).writerows([header, *rows])
+    rprint(f"[green]Wrote {len(rows)} rows to {csv_path}[/green]")
+
+
 # Subcommands
 request_app = typer.Typer(help="Manage FOIA requests")
 docs_app = typer.Typer(help="Process documents")
@@ -826,10 +883,12 @@ def request_new(
 
 
 @request_app.command("list")
+@_csv_stdout_safe
 def request_list(
     status: str | None = typer.Option(None, "--status", "-s", help="Filter by status"),
     agency: str | None = typer.Option(None, "--agency", "-a", help="Filter by agency"),
     limit: int = typer.Option(20, "--limit", "-n", help="Maximum results"),
+    csv_path: str | None = typer.Option(None, "--csv", help=CSV_HELP),
 ):
     """List FOIA requests."""
     from .db import get_db_path, get_session
@@ -867,7 +926,7 @@ def request_list(
         table = Table(title=f"FOIA Requests ({len(requests)} results)")
         table.add_column("Request #", style="cyan")
         table.add_column("Agency")
-        table.add_column("Subject")
+        table.add_column("Subject", max_width=43, no_wrap=True, overflow="ellipsis")
         table.add_column("Status")
         table.add_column("Sent")
         table.add_column("Days")
@@ -888,13 +947,13 @@ def request_list(
             table.add_row(
                 r.request_number,
                 r.agency.abbreviation or r.agency.name,
-                r.subject[:40] + "..." if len(r.subject) > 40 else r.subject,
-                f"[{color}]{r.status.value}[/{color}]",
+                r.subject,
+                Text(r.status.value, style=color),
                 sent_str,
                 days,
             )
 
-        console.print(table)
+        _emit_table(table, csv_path)
 
 
 @request_app.command("status")
@@ -3246,6 +3305,7 @@ def campaign_progress(
 
 
 @analyze_app.command("extract")
+@_csv_stdout_safe
 def analyze_extract(
     document_id: str = typer.Argument(..., help="Document ID to analyze"),
     output: Path | None = typer.Option(None, "--output", "-o", help="Output file"),
@@ -3262,6 +3322,7 @@ def analyze_extract(
         help="Force one backend: gliner, spacy, regex (never call an LLM) or llm. "
         "Errors if it is not installed or reachable.",
     ),
+    csv_path: str | None = typer.Option(None, "--csv", help=CSV_HELP),
 ):
     """Extract entities from a document.
 
@@ -3432,7 +3493,7 @@ def analyze_extract(
                 f"{ent.confidence:.0%}",
             )
 
-        console.print(table)
+        _emit_table(table, csv_path)
 
         if output:
             import json as json_mod
@@ -4440,8 +4501,10 @@ def _parse_day(text: str | None, flag: str) -> datetime | None:
 
 
 @deadline_app.command("list")
+@_csv_stdout_safe
 def deadline_list(
     show_all: bool = typer.Option(False, "--all", help="Include completed/closed requests"),
+    csv_path: str | None = typer.Option(None, "--csv", help=CSV_HELP),
 ):
     """Show every clock a requester must not miss, overdue first.
 
@@ -4464,12 +4527,7 @@ def deadline_list(
             return
         from .clocks import is_overdue
 
-        overdue = [r for r in rows if is_overdue(r[2], _utcnow())]
-        upcoming = [r for r in rows if not is_overdue(r[2], _utcnow())]
-        for title, style, group in (("OVERDUE", "red", overdue), ("UPCOMING", "yellow", upcoming)):
-            if not group:
-                continue
-            rprint(f"\n[bold {style}]{title} ({len(group)})[/bold {style}]")
+        def clock_table(group) -> Table:
             table = Table()
             table.add_column("Request #", style="cyan")
             table.add_column("Agency")
@@ -4483,20 +4541,39 @@ def deadline_list(
                     r.agency.abbreviation or r.agency.name,
                     kind,
                     when.strftime("%Y-%m-%d"),
-                    _days_left(when),
+                    Text.from_markup(_days_left(when)),
                     law,
                 )
-            console.print(table)
-        if no_clock:
-            rprint(f"\n[bold]NO STATUTORY DEADLINE ({len(no_clock)})[/bold]")
+            return table
+
+        if csv_path:
+            # One sheet: rows are sorted by due date, so overdue clocks come first.
+            table = clock_table(rows)
             for r, law in no_clock:
-                rprint(
-                    f"  {r.request_number}  {r.agency.abbreviation or r.agency.name}  "
-                    f"[yellow]{NO_CLOCK}[/yellow]  [dim]{law}[/dim]"
+                table.add_row(
+                    r.request_number, r.agency.abbreviation or r.agency.name, NO_CLOCK, "", "", law
                 )
-        if unsent:
-            rprint(f"\n[dim]{len(unsent)} draft/unsent requests (no clock running)[/dim]")
-        rprint("")
+            _emit_table(table, csv_path)
+        else:
+            overdue = [r for r in rows if is_overdue(r[2], _utcnow())]
+            upcoming = [r for r in rows if not is_overdue(r[2], _utcnow())]
+            for title, style, group in (
+                ("OVERDUE", "red", overdue),
+                ("UPCOMING", "yellow", upcoming),
+            ):
+                if group:
+                    rprint(f"\n[bold {style}]{title} ({len(group)})[/bold {style}]")
+                    console.print(clock_table(group))
+            if no_clock:
+                rprint(f"\n[bold]NO STATUTORY DEADLINE ({len(no_clock)})[/bold]")
+                for r, law in no_clock:
+                    rprint(
+                        f"  {r.request_number}  {r.agency.abbreviation or r.agency.name}  "
+                        f"[yellow]{NO_CLOCK}[/yellow]  [dim]{law}[/dim]"
+                    )
+            if unsent:
+                rprint(f"\n[dim]{len(unsent)} draft/unsent requests (no clock running)[/dim]")
+            rprint("")
         session.query(RequestModel).count()  # keep the session's pending due_date fills
 
 
@@ -5092,6 +5169,7 @@ def _records_search_all(
 
 
 @records_app.command("search")
+@_csv_stdout_safe
 def records_search(
     query: str = typer.Argument(
         "", help="Search term (company name, keyword, etc.); optional with --ancestor"
@@ -5136,6 +5214,7 @@ def records_search(
         False, "--all", help="nara: walk every page (one quota-counted query per 100 hits)"
     ),
     max_hits: int = typer.Option(1000, "--max", help="nara: stop --all after this many hits"),
+    csv_path: str | None = typer.Option(None, "--csv", help=CSV_HELP),
 ):
     """Search public records databases.
 
@@ -5166,6 +5245,7 @@ def records_search(
         openfoia records search "PAS" --all-sources
         openfoia records search "PAS" -s documentcloud --rank child,school,gifted
         openfoia records search -s nara --ancestor 7283224 --all --max 500 --json
+        openfoia records search "Acme Corp" -s sec --csv results.csv
     """
     import asyncio
     import math
@@ -5177,6 +5257,9 @@ def records_search(
         raise typer.Exit(1)
     if not query and not ancestor:
         rprint("[red]Give a search term (or --ancestor <NAID> with -s nara).[/red]")
+        raise typer.Exit(1)
+    if csv_path and (raw or json_lines or all_sources):
+        rprint("[red]--csv cannot be combined with --raw, --json or --all-sources.[/red]")
         raise typer.Exit(1)
     kwargs: dict[str, Any] = {}
     if ancestor:
@@ -5268,15 +5351,17 @@ def records_search(
             rprint(f"[red]{msg}[/red]")
         if result.entities:
             _print_search_result(
-                result, source, query, limit, raw, json_lines, filing_type, keywords
+                result, source, query, limit, raw, json_lines, filing_type, keywords, csv_path
             )
         raise typer.Exit(1)
 
-    _print_search_result(result, source, query, limit, raw, json_lines, filing_type, keywords)
+    _print_search_result(
+        result, source, query, limit, raw, json_lines, filing_type, keywords, csv_path
+    )
 
 
 def _print_search_result(
-    result, source, query, limit, raw, json_lines, filing_type, rank=None
+    result, source, query, limit, raw, json_lines, filing_type, rank=None, csv_path=None
 ) -> None:
     if rank:
         result.entities = _rank(result.entities, rank)
@@ -5320,13 +5405,13 @@ def _print_search_result(
     if rank:
         table = Table(expand=True)
         table.add_column("Score", width=5, justify="right")
-        table.add_column("ID", style="dim", width=10)
+        table.add_column("ID", style="dim", width=10, no_wrap=True, overflow="crop")
         table.add_column("Title", style="cyan", ratio=2)
         table.add_column("Snippet", ratio=3, style="yellow")
         for e in entities:
             c = _compact_result(e)
-            table.add_row(str(c["score"]), (c["id"] or "-")[:10], e.name, c["snippet"][:120])
-        console.print(table)
+            table.add_row(str(c["score"]), c["id"] or "-", e.name, c["snippet"][:120])
+        _emit_table(table, csv_path)
         rprint(f"\n[dim]Showing {len(entities)} of {result.total_results} results.[/dim]")
         return
 
@@ -5350,12 +5435,12 @@ def _print_search_result(
                 types_str,
                 (e.extra_data.get("completed") or e.extra_data.get("submitted") or "-")[:10],
             )
-        console.print(table)
+        _emit_table(table, csv_path)
         rprint("\n[dim]Download documents: openfoia records download <ID> --source muckrock[/dim]")
 
     elif source == "documentcloud":
         table = Table(expand=True)
-        table.add_column("ID", style="dim", width=10)
+        table.add_column("ID", style="dim", width=10, no_wrap=True, overflow="crop")
         table.add_column("Title", style="cyan", ratio=2)
         table.add_column("Pages", width=5)
         table.add_column("Source", width=15)
@@ -5369,13 +5454,13 @@ def _print_search_result(
                 else (highlights[0] if highlights else "-")
             )
             table.add_row(
-                e.identifiers.get("documentcloud_id", "-")[:10],
+                e.identifiers.get("documentcloud_id", "-"),
                 e.name,
                 str(e.extra_data.get("pages") or "-"),
                 e.extra_data.get("source", "-") or "-",
                 highlight_str,
             )
-        console.print(table)
+        _emit_table(table, csv_path)
         rprint("\n[dim]Fetch full text: openfoia records fetch <ID> --source documentcloud[/dim]")
 
     elif source == "usaspending":
@@ -5394,7 +5479,7 @@ def _print_search_result(
                 e.extra_data.get("award_type", "-") or "-",
                 (e.extra_data.get("description") or "-")[:80],
             )
-        console.print(table)
+        _emit_table(table, csv_path)
         rprint("\n[dim]View on USAspending.gov: click award URLs in the table[/dim]")
 
     elif source == "nonprofits":
@@ -5411,7 +5496,7 @@ def _print_search_result(
                 e.extra_data.get("location", "-") or "-",
                 e.extra_data.get("subsection", "-") or "-",
             )
-        console.print(table)
+        _emit_table(table, csv_path)
         rprint("\n[dim]View details: openfoia records fetch <EIN> --source nonprofits[/dim]")
 
     elif source == "govinfo":
@@ -5428,7 +5513,7 @@ def _print_search_result(
                 e.extra_data.get("government_author", "-") or "-",
                 e.extra_data.get("date_issued", "-") or "-",
             )
-        console.print(table)
+        _emit_table(table, csv_path)
 
     elif source == "fec":
         table = Table(expand=True)
@@ -5444,7 +5529,7 @@ def _print_search_result(
                 e.extra_data.get("committee_name", "-") or "-",
                 (e.extra_data.get("date") or "-")[:10],
             )
-        console.print(table)
+        _emit_table(table, csv_path)
         rprint("\n[dim]View on FEC.gov: openfoia records fetch <name> --source fec[/dim]")
 
     elif source == "regulations":
@@ -5461,7 +5546,7 @@ def _print_search_result(
                 e.extra_data.get("document_type", "-") or "-",
                 e.extra_data.get("posted_date", "-") or "-",
             )
-        console.print(table)
+        _emit_table(table, csv_path)
 
     elif source == "opencorporates":
         table = Table()
@@ -5486,7 +5571,7 @@ def _print_search_result(
                 e.extra_data.get("company_type", "-"),
                 officer_str,
             )
-        console.print(table)
+        _emit_table(table, csv_path)
 
     elif source == "sec":
         table = Table()
@@ -5504,7 +5589,7 @@ def _print_search_result(
                 e.identifiers.get("cik", "-"),
                 e.source_url or "-",
             )
-        console.print(table)
+        _emit_table(table, csv_path)
 
     else:
         # Generic table for any future adapter
@@ -5516,7 +5601,7 @@ def _print_search_result(
 
         for e in entities:
             table.add_row(e.name, e.entity_type, e.source, e.jurisdiction or "-")
-        console.print(table)
+        _emit_table(table, csv_path)
 
     rprint(f"\n[dim]Showing {len(entities)} of {result.total_results} results.[/dim]")
 
@@ -6754,6 +6839,7 @@ def case_export(
 
 
 @app.command()
+@_csv_stdout_safe
 def crossref(
     request_id: str | None = typer.Option(
         None, "--request", "-r", help="Cross-ref entities from a specific request"
@@ -6788,6 +6874,9 @@ def crossref(
         help="Route lookups through Tor to hide your IP from these APIs "
         "(default: config, see 'openfoia egress-status')",
     ),
+    csv_path: str | None = typer.Option(
+        None, "--csv", help="Write one row per hit as CSV to this file ('-' for stdout)"
+    ),
 ):
     """Cross-reference extracted entities against external databases.
 
@@ -6804,6 +6893,7 @@ def crossref(
         openfoia crossref --sources opensanctions-local --opensanctions-data ./os/
         openfoia crossref --ftm results.ftm.json    # export as FollowTheMoney
         openfoia crossref --tor                     # hide your IP from the APIs
+        openfoia crossref --csv hits.csv            # one row per hit, for spreadsheets
     """
     from .config import load_config
     from .crossref import OFFLINE_SOURCES, crossref_entities
@@ -7009,6 +7099,25 @@ def crossref(
             )
         else:
             rprint("\n  [green]No cross-reference hits found.[/green]")
+
+    if csv_path:
+        hits = Table()
+        for column in ("Entity", "Type", "Source", "Match", "Details", "URL"):
+            hits.add_column(column)
+        for result in report.results:
+            for hit in result.hits:
+                hits.add_row(
+                    result.entity_name,
+                    result.entity_type,
+                    hit.source,
+                    hit.match_type,
+                    hit.details,
+                    hit.url or "",
+                )
+        _emit_table(hits, csv_path)
+        if source_errors:
+            rprint("[yellow]CSV is incomplete: some sources errored (see above).[/yellow]")
+            raise typer.Exit(1)
 
     # Export as FollowTheMoney
     if ftm:
