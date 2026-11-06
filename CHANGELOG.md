@@ -10,6 +10,12 @@ exhaustive lists.
 
 ## [Unreleased]
 
+### Fixed
+
+- DocumentCloud searches now distinguish Cloudflare or bot-block responses and
+  uncertain read timeouts from ordinary API failures, with a browser and local
+  `docs ingest` fallback.
+
 ## [4.7.0] - 2026-10-23
 
 ### Added
