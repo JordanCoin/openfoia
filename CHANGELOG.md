@@ -33,8 +33,9 @@ exhaustive lists.
 - With `network.tor: true`, personal credentials still went out with records
   requests and told the server who was asking, even though the real IP was
   hidden: `OPENFOIA_MUCKROCK_TOKEN`, `OPENFOIA_NARA_API_KEY` /
-  `CATALOG_API_KEY`, and `OPENFOIA_GOVINFO_API_KEY`. Over Tor, MuckRock now
-  sends no token, GovInfo (and fec, regulations) use the shared `DEMO_KEY`,
+  `CATALOG_API_KEY`, `OPENFOIA_GOVINFO_API_KEY`, and the crossref
+  `OPENFOIA_OPENSANCTIONS_API_KEY`. Over Tor, MuckRock and OpenSanctions now
+  send no key, GovInfo (and fec, regulations) use the shared `DEMO_KEY`,
   and NARA, which needs a personal key, is skipped: `records search -s nara`
   and `records fetch -s nara` exit with an explanation, and `--all-sources`
   lists it as skipped. The route line reads "via Tor, real IP hidden,
