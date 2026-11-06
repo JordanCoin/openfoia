@@ -27,6 +27,7 @@ def test_emit_table_writes_csv_and_defuses_formulas(tmp_path):
     table.add_column("Status")
     table.add_row('=HYPERLINK("http://x")', Text("sent", style="cyan"))
     table.add_row("Acme, Inc.", "-")
+    table.add_row("  -1+cmd|' /C calc'!A0", "\x1b]0;owned\x07ok\x1b[31m")
     out = tmp_path / "t.csv"
 
     _emit_table(table, str(out))
@@ -36,6 +37,7 @@ def test_emit_table_writes_csv_and_defuses_formulas(tmp_path):
             ["Name", "Status"],
             ['\'=HYPERLINK("http://x")', "sent"],
             ["Acme, Inc.", "-"],
+            ["'  -1+cmd|' /C calc'!A0", "]0;ownedok[31m"],
         ]
 
 

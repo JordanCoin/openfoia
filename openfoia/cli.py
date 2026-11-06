@@ -548,20 +548,30 @@ def _csv_stdout_safe(func):
     return wrapper
 
 
+def _csv_cell(v: str) -> str:
+    """Make one upstream value safe for a spreadsheet and a terminal.
+
+    Drops control characters (terminal escape injection via `cat file.csv`) and
+    prefixes formula triggers so a cell like =HYPERLINK(...) never executes.
+    A bare "-" placeholder is left alone.
+    """
+    v = "".join(ch for ch in v if ch.isprintable() or ch in " \t")
+    if v != "-" and v.lstrip(" \t")[:1] in ("=", "+", "-", "@"):
+        return "'" + v
+    return v
+
+
 def _emit_table(table: Table, csv_path: str | None) -> None:
     """Print a Rich table, or write its columns and rows as CSV (csv_path '-' = stdout)."""
     if not csv_path:
         console.print(table)
         return
     columns = [
-        [c.plain if isinstance(c, Text) else str(c) for c in col.cells] for col in table.columns
+        [_csv_cell(c.plain if isinstance(c, Text) else str(c)) for c in col.cells]
+        for col in table.columns
     ]
-    # Upstream records data opened in a spreadsheet must not run as a formula.
-    rows = [
-        ["'" + v if v[:1] in ("=", "+", "-", "@", "\t", "\r") and v != "-" else v for v in row]
-        for row in zip(*columns, strict=True)
-    ]
-    header = [str(col.header) for col in table.columns]
+    rows = [list(row) for row in zip(*columns, strict=True)]
+    header = [_csv_cell(str(col.header)) for col in table.columns]
     if csv_path == "-":
         csv.writer(_csv_stdout or sys.stdout).writerows([header, *rows])
         return
@@ -7105,6 +7115,9 @@ def crossref(
                     hit.url or "",
                 )
         _emit_table(hits, csv_path)
+        if source_errors:
+            rprint("[yellow]CSV is incomplete: some sources errored (see above).[/yellow]")
+            raise typer.Exit(1)
 
     # Export as FollowTheMoney
     if ftm:
