@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import csv
 import json
 
 import pytest
+from rich.table import Table
+from rich.text import Text
 from typer.testing import CliRunner
 
-from openfoia.cli import app
+from openfoia.cli import _emit_table, app
 from openfoia.records import list_sources
 from openfoia.records.base import RecordEntity, SearchResult
 
@@ -16,6 +19,54 @@ from openfoia.records.base import RecordEntity, SearchResult
 def _isolated_data_dir(tmp_path, monkeypatch):
     """Searches log to the active case, so never touch the real data dir."""
     monkeypatch.setenv("OPENFOIA_DATA_DIR", str(tmp_path / "data"))
+
+
+def test_emit_table_writes_csv_and_defuses_formulas(tmp_path):
+    table = Table()
+    table.add_column("Name")
+    table.add_column("Status")
+    table.add_row('=HYPERLINK("http://x")', Text("sent", style="cyan"))
+    table.add_row("Acme, Inc.", "-")
+    out = tmp_path / "t.csv"
+
+    _emit_table(table, str(out))
+
+    with open(out, newline="", encoding="utf-8") as f:
+        assert list(csv.reader(f)) == [
+            ["Name", "Status"],
+            ['\'=HYPERLINK("http://x")', "sent"],
+            ["Acme, Inc.", "-"],
+        ]
+
+
+def test_records_search_csv_to_stdout_is_only_csv(monkeypatch):
+    class Adapter:
+        async def search(self, query, **kwargs):
+            return SearchResult(
+                source="sec",
+                query=query,
+                total_results=1,
+                entities=[
+                    RecordEntity(
+                        entity_type="ORGANIZATION",
+                        name="Uranium Energy Corp",
+                        source="sec",
+                        source_url="https://sec.gov/x",
+                        identifiers={"cik": "0001334933"},
+                        extra_data={"filing_type": "10-K", "filing_date": "2024-10-01"},
+                    )
+                ],
+            )
+
+    monkeypatch.setattr("openfoia.records.get_adapter", lambda source: Adapter())
+
+    result = CliRunner().invoke(app, ["records", "search", "Uranium", "-s", "sec", "--csv", "-"])
+
+    assert result.exit_code == 0, result.output
+    assert list(csv.reader(result.stdout.splitlines())) == [
+        ["Company", "Filing", "Date", "CIK", "URL"],
+        ["Uranium Energy Corp", "10-K", "2024-10-01", "0001334933", "https://sec.gov/x"],
+    ]
 
 
 def test_records_search_raw_is_parseable_json_without_terminal_output(monkeypatch):
