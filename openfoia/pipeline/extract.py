@@ -199,8 +199,12 @@ _ORG_SUFFIXES = {
 _NER_TYPES = {EntityType.PERSON, EntityType.ORGANIZATION, EntityType.LOCATION}
 
 _MAX_MENTION_LEN = 80
-# A period ending a lowercase word of 2+ letters; "U.S." and "Dr." don't count, "Inc." does once
-_SENTENCE_PERIOD = re.compile(r"[a-z]{2,}\.(?=\s|$)")
+# A period after 2+ lowercase letters ends a sentence unless the word is an abbreviation
+_SENTENCE_PERIOD = re.compile(r"[a-z]{2}\.$")
+_ABBREVIATIONS = _ORG_SUFFIXES | {
+    "mr", "mrs", "ms", "dr", "rev", "jr", "sr", "st", "hon", "prof", "gen", "sgt", "lt", "col",
+    "capt", "dept", "div", "assn", "bros", "intl", "natl", "govt", "ave", "blvd", "no", "vs",
+}  # fmt: skip
 # One plausible name token in any script: "U.S.", "AT&T", "O'Brien", "Smith-Jones", "Müller"
 _NAME_TOKEN = re.compile(r"^[^\W_]+(?:[.&'\u2019\-][^\W_]+)*\.?['\u2019]?$")
 
@@ -248,13 +252,17 @@ def _mention_score(m: Mention) -> float:
         return 0.0
 
     words = s.split()
-    sentence_periods = len(_SENTENCE_PERIOD.findall(s))
-    if sentence_periods > 1 or (s.endswith(".") and sentence_periods and len(words) >= 6):
+    sentence_ends = [
+        i
+        for i, w in enumerate(words)
+        if _SENTENCE_PERIOD.search(w) and w.rstrip(".").lower() not in _ABBREVIATIONS
+    ]
+    if len(sentence_ends) > 1 or (sentence_ends == [len(words) - 1] and len(words) >= 6):
         return 0.0
 
     garbled = 0
     if m.entity_type in _NER_TYPES:
-        garbled = sum(1 for w in words if not _NAME_TOKEN.match(w.strip(',;:()"')))
+        garbled = sum(1 for w in words if w != "&" and not _NAME_TOKEN.match(w.strip(',;:()"')))
         if garbled >= 2:
             return 0.0
 
@@ -285,9 +293,15 @@ def _mention_score(m: Mention) -> float:
         base -= 0.45
     if garbled:
         base -= 0.30
-    if sum(1 for c in s if not c.isalnum() and not c.isspace()) / len(s) > 0.25:
+    if (
+        m.entity_type in _NER_TYPES
+        and sum(1 for c in s if not c.isalnum() and not c.isspace()) / len(s) > 0.25
+    ):
         base -= 0.50
-    if m.entity_type == EntityType.PERSON and len(words) > 5:
+    if (
+        m.entity_type == EntityType.PERSON
+        and sum(w.rstrip(".").lower() not in _ABBREVIATIONS for w in words) > 5
+    ):
         base -= 0.40
 
     return max(0.0, min(0.99, base))
@@ -788,18 +802,28 @@ def _find_entity_match(text: str, entities: list[ExtractedEntity]) -> ExtractedE
 # ---------------------------------------------------------------------------
 
 
-# "8b", "1.5b", "qwen3:8b"; the lookbehind skips MoE tags like "8x7b"
-_PARAM_COUNT = re.compile(r"(?<![\dx.])(\d+(?:\.\d+)?)b\b", re.IGNORECASE)
+# "8b", "1.5b", "270m"; the lookbehind skips MoE tags like "8x7b"
+_PARAM_COUNT = re.compile(r"(?<![\dx.])(\d+(?:\.\d+)?)([bm])\b", re.IGNORECASE)
 _KNOWN_SMALL_MODELS = ("tinyllama", "smollm", "phi3", "phi4-mini", "llama3.2")
+# qwen3:8b runs away on the full prompt (truncated JSON even with think off and 8000 tokens)
+_COMPACT_FAMILIES = ("qwen3",)
 _COMPACT_TYPES = ("PERSON", "ORGANIZATION", "LOCATION", "DATE", "MONEY")
 
 
-def _is_compact_model(model: str | None) -> bool:
-    """True for models of 8B parameters or fewer; unknown sizes get the full prompt."""
+def _is_compact_model(model: str | None, setting: str | bool = "auto") -> bool:
+    """Whether to use the compact prompt. setting is ai.compact_prompt: auto, true or false.
+
+    auto: models under 8B parameters and the qwen3 family; unknown sizes get the full prompt.
+    """
+    choice = str(setting).lower()
+    if choice in ("true", "false"):
+        return choice == "true"
     name = (model or "").lower()
+    if any(name.startswith(f) for f in _COMPACT_FAMILIES):
+        return True
     m = _PARAM_COUNT.search(name)
     if m:
-        return float(m.group(1)) <= 8
+        return m.group(2) == "m" or float(m.group(1)) < 8
     return any(tag in name for tag in _KNOWN_SMALL_MODELS)
 
 
@@ -1041,6 +1065,7 @@ class EntityExtractor:
         self.base_url = base_url or cfg.ai.base_url
         self.temperature = cfg.ai.extraction_temperature
         self.max_tokens = cfg.ai.extraction_max_tokens
+        self.compact_prompt = cfg.ai.compact_prompt
         self.entity_config = cfg.entities
         self._backend: str | None = None  # resolved lazily
 
@@ -1356,7 +1381,11 @@ Return JSON: {{"keep": [{{"raw_text": "...", "confidence": 0.95, "corrected": ".
         self, text: str, context: str | None, page_number: int | None
     ) -> dict[str, Any]:
         prompt = _build_extraction_prompt(
-            text, context, page_number, self.entity_config, compact=_is_compact_model(self.model)
+            text,
+            context,
+            page_number,
+            self.entity_config,
+            compact=_is_compact_model(self.model, self.compact_prompt),
         )
 
         if self.provider == "ollama":
