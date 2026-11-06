@@ -21,6 +21,12 @@ exhaustive lists.
   `analyze extract`, `crossref` and `deadlines list` writes the table's columns
   as CSV for spreadsheets. Cells that would run as a spreadsheet formula are
   prefixed with `'` (#53).
+- One api.data.gov key for `fec`, `govinfo` and `regulations` in `records search`
+  and `crossref`: `OPENFOIA_API_DATA_GOV_KEY` or `records._api_data_gov_key` in
+  config.json (the shared `DEMO_KEY` stays the default). Errors from these
+  sources no longer echo the key. `network.max_attempts`
+  (`OPENFOIA_NETWORK_MAX_ATTEMPTS`, default 3, 1 disables retry) sets the retry
+  count for commands that read `network` config (#56).
 
 ### Fixed
 

@@ -573,3 +573,15 @@ def test_all_sources_sends_cia_over_tor(monkeypatch, tor_records):
     runner.invoke(app, ["records", "search", "acme", "--all-sources"])
     cia = [p for name, p in tor_records.built if name == "CIAReadingRoomAdapter"]
     assert cia and all(p.mode is EgressMode.TOR for p in cia)
+
+
+def test_get_adapter_uses_demo_key_over_tor_even_with_env_key(monkeypatch):
+    from openfoia.net import EgressMode, EgressPolicy
+    from openfoia.records import get_adapter
+
+    monkeypatch.setenv("OPENFOIA_GOVINFO_API_KEY", "personal-govinfo")
+    tor = EgressPolicy(mode=EgressMode.TOR)
+    assert get_adapter("govinfo", egress=tor, api_data_gov_key="personal")._api_key == "DEMO_KEY"
+    assert get_adapter("fec", egress=tor, api_data_gov_key="personal")._api_key == "DEMO_KEY"
+    direct = EgressPolicy()
+    assert get_adapter("fec", egress=direct, api_data_gov_key="personal")._api_key == "personal"

@@ -34,7 +34,7 @@ def test_crossref_reports_a_failed_source_without_hiding_successful_hits(monkeyp
     monkeypatch.setattr(
         crossref_mod,
         "_get_available_sources",
-        lambda icij_data_dir, egress, opensanctions_data_dir=None: {
+        lambda *_args: {
             "broken": failing_checker,
             "working": matching_checker,
         },
@@ -73,7 +73,7 @@ def test_crossref_reports_rate_limit_as_an_incomplete_source(monkeypatch):
     monkeypatch.setattr(
         crossref_mod,
         "_get_available_sources",
-        lambda icij_data_dir, egress, opensanctions_data_dir=None: {
+        lambda *_args: {
             "limited": rate_limited_checker,
             "working": working_checker,
         },
@@ -160,9 +160,7 @@ def test_partially_failed_source_reports_error_and_keeps_its_hits(monkeypatch):
     monkeypatch.setattr(
         crossref_mod,
         "_get_available_sources",
-        lambda icij_data_dir, egress, opensanctions_data_dir=None: {
-            "icij": partially_failing_checker
-        },
+        lambda *_args: {"icij": partially_failing_checker},
     )
     monkeypatch.setattr(asyncio, "sleep", no_sleep)
 

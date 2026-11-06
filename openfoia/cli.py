@@ -588,7 +588,11 @@ agency_app = typer.Typer(help="Manage agencies")
 jurisdiction_app = typer.Typer(help="Which public-records law applies: federal FOIA or a state act")
 analyze_app = typer.Typer(help="Analyze documents")
 template_app = typer.Typer(help="Request templates")
-records_app = typer.Typer(help="Search public records")
+records_app = typer.Typer(
+    help="Search public records. fec, govinfo and regulations share the rate-limited "
+    "DEMO_KEY unless you set a free api.data.gov key: OPENFOIA_API_DATA_GOV_KEY, or "
+    '"records": {"_api_data_gov_key": "..."} in config.json.'
+)
 
 entities_app = typer.Typer(help="Manage custom entity types")
 deadline_app = typer.Typer(help="Track FOIA deadlines")
@@ -4671,6 +4675,7 @@ def _egress_policy_from(config, *, tor: bool | None = None) -> EgressPolicy:
         tor_host=config.network.tor_host,
         tor_port=config.network.tor_port,
         isolate_streams=config.network.isolate_streams,
+        max_attempts=config.network.max_attempts,
     )
 
 
@@ -5097,10 +5102,12 @@ def _records_search_all(
 ) -> None:
     import asyncio
 
+    from .config import load_config
     from .records import get_adapter, list_sources
 
     sources = list_sources()
     policy = _records_policy_or_exit()
+    data_gov_key = load_config().records.api_data_gov_key
 
     def say(msg: str) -> None:
         # Status goes to stderr in --json mode so stdout stays pure JSON lines.
@@ -5123,7 +5130,7 @@ def _records_search_all(
             if kwargs.get(key) and source != owner:
                 return source, None, f"skipped ({key} filter not supported)"
         try:
-            adapter = get_adapter(source, egress=policy)
+            adapter = get_adapter(source, egress=policy, api_data_gov_key=data_gov_key)
             if source == "nara" and not adapter.has_key:
                 return source, None, "skipped (no OPENFOIA_NARA_API_KEY)"
             result = await _search_one(adapter, source, query, limit, kwargs)
@@ -5254,6 +5261,7 @@ def records_search(
     import asyncio
     import math
 
+    from .config import load_config
     from .records import get_adapter, list_sources
 
     if (ancestor or all_pages) and source != "nara":
@@ -5288,7 +5296,9 @@ def records_search(
         raise typer.Exit(1)
 
     policy = _records_policy_or_exit()
-    adapter = get_adapter(source, egress=policy)
+    adapter = get_adapter(
+        source, egress=policy, api_data_gov_key=load_config().records.api_data_gov_key
+    )
     # Pipe-safe modes: stdout carries only JSON, so no spinner or Rich markup.
     quiet = raw or json_lines
 
@@ -7050,6 +7060,7 @@ def crossref(
                 on_progress=_progress,
                 allow_network=True,  # user was warned and confirmed above
                 egress=policy,
+                api_data_gov_key=cfg.records.api_data_gov_key,
             )
         )
     except TorUnavailableError:

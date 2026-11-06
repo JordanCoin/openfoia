@@ -88,7 +88,7 @@ class RetryTransport(httpx.AsyncBaseTransport):
 
     def __init__(self, inner: httpx.AsyncBaseTransport, max_attempts: int = MAX_ATTEMPTS):
         self._inner = inner
-        self._max_attempts = max_attempts
+        self._max_attempts = max(1, max_attempts)
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         attempts = self._max_attempts if request.method in RETRY_METHODS else 1
@@ -146,6 +146,7 @@ class EgressPolicy:
     tor_port: int = 9050
     isolate_streams: bool = True  # unique SOCKS creds -> separate Tor circuit
     user_agent: str = DEFAULT_USER_AGENT
+    max_attempts: int = MAX_ATTEMPTS  # RetryTransport attempts; 1 disables retry
 
     @property
     def is_tor(self) -> bool:
@@ -211,8 +212,10 @@ def egress_client(
         if caller_transport is None and kwargs.get("trust_env", True):
             for pattern, url in get_environment_proxies().items():
                 inner = httpx.AsyncHTTPTransport(proxy=url) if url else httpx.AsyncHTTPTransport()
-                mounts[pattern] = RetryTransport(inner)
-        default = RetryTransport(caller_transport or httpx.AsyncHTTPTransport())
+                mounts[pattern] = RetryTransport(inner, policy.max_attempts)
+        default = RetryTransport(
+            caller_transport or httpx.AsyncHTTPTransport(), policy.max_attempts
+        )
         return httpx.AsyncClient(
             transport=default, mounts=mounts, timeout=timeout, headers=merged_headers, **kwargs
         )
@@ -221,7 +224,7 @@ def egress_client(
     try:
         # proxy= keeps env proxies from mounting; the "all://" mount then
         # replaces the transport httpx built from it with the same proxy, wrapped.
-        proxied = RetryTransport(httpx.AsyncHTTPTransport(proxy=proxy_url))
+        proxied = RetryTransport(httpx.AsyncHTTPTransport(proxy=proxy_url), policy.max_attempts)
         return httpx.AsyncClient(
             proxy=proxy_url,
             mounts={"all://": proxied},
