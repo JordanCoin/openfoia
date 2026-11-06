@@ -3,7 +3,8 @@
 Every federal proposed rule gets public comments. Who's commenting tells
 you who's trying to influence policy. Search documents, comments, and dockets.
 
-Uses the Regulations.gov API v4. DEMO_KEY works, free key at api.data.gov.
+Uses the Regulations.gov API v4. DEMO_KEY works; for higher limits set an api.data.gov key
+(OPENFOIA_API_DATA_GOV_KEY or records._api_data_gov_key, see DataGovAdapter).
 API docs: https://open.gsa.gov/api/regulationsgov/
 """
 
@@ -15,15 +16,15 @@ from urllib.parse import quote
 
 import httpx
 
-from ..net import EgressPolicy, egress_client
-from .base import RecordAdapter, RecordEntity, SearchResult
+from ..net import egress_client
+from .base import DataGovAdapter, RecordEntity, SearchResult
 
 logger = logging.getLogger(__name__)
 
 API_BASE = "https://api.regulations.gov/v4"
 
 
-class RegulationsGovAdapter(RecordAdapter):
+class RegulationsGovAdapter(DataGovAdapter):
     """Search federal rulemaking documents and public comments.
 
     Usage::
@@ -33,10 +34,6 @@ class RegulationsGovAdapter(RecordAdapter):
     """
 
     source_name = "regulations"
-
-    def __init__(self, api_key: str | None = None, *, egress: EgressPolicy | None = None):
-        super().__init__(egress=egress)
-        self._api_key = api_key or "DEMO_KEY"
 
     async def search(
         self,
@@ -71,7 +68,7 @@ class RegulationsGovAdapter(RecordAdapter):
                     msg = (
                         "Regulations.gov rate limit. Get a free key at https://api.data.gov/signup/"
                     )
-                    logger.warning(msg)
+                    logger.info(msg)
                     return SearchResult(
                         source="regulations",
                         query=query,
@@ -96,7 +93,7 @@ class RegulationsGovAdapter(RecordAdapter):
                 error=msg,
             )
         except Exception as e:
-            msg = f"Regulations.gov search failed: {e}"
+            msg = f"Regulations.gov search failed: {self._redact(e)}"
             logger.warning(msg)
             return SearchResult(
                 source="regulations",
@@ -161,7 +158,7 @@ class RegulationsGovAdapter(RecordAdapter):
                 resp.raise_for_status()
                 data = resp.json()
         except Exception as e:
-            logger.warning("Regulations.gov fetch failed for %s: %s", identifier, e)
+            logger.warning("Regulations.gov fetch failed for %s: %s", identifier, self._redact(e))
             return None
 
         doc = data.get("data", {})

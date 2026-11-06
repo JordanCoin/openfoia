@@ -171,6 +171,7 @@ async def crossref_entities(
     allow_network: bool = False,
     egress: EgressPolicy | None = None,
     opensanctions_data_dir: str | None = None,
+    api_data_gov_key: str | None = None,
 ) -> CrossRefReport:
     """Cross-reference extracted entities against all available sources.
 
@@ -193,6 +194,8 @@ async def crossref_entities(
             allow_network — allow_network gates WHETHER to contact remote
             sources at all; egress governs HOW (direct vs Tor). Defaults to
             a plain DIRECT policy.
+        api_data_gov_key: Key for govinfo, fec and regulations (config
+            records.api_data_gov_key); None uses the shared DEMO_KEY.
 
     Returns:
         CrossRefReport with all hits
@@ -202,7 +205,9 @@ async def crossref_entities(
     """
     import asyncio
 
-    available_sources = _get_available_sources(icij_data_dir, egress, opensanctions_data_dir)
+    available_sources = _get_available_sources(
+        icij_data_dir, egress, opensanctions_data_dir, api_data_gov_key
+    )
     if sources:
         available_sources = {k: v for k, v in available_sources.items() if k in sources}
 
@@ -328,6 +333,7 @@ def _get_available_sources(
     icij_data_dir: str | None = None,
     egress: EgressPolicy | None = None,
     opensanctions_data_dir: str | None = None,
+    api_data_gov_key: str | None = None,
 ) -> dict[str, Any]:
     """Discover which cross-reference sources are available.
 
@@ -363,13 +369,15 @@ def _get_available_sources(
     sources["nonprofits"] = lambda name, etype: _check_nonprofits(name, etype, egress)
 
     # GovInfo — court opinions, congressional reports, Federal Register (DEMO_KEY)
-    sources["govinfo"] = lambda name, etype: _check_govinfo(name, etype, egress)
+    sources["govinfo"] = lambda name, etype: _check_govinfo(name, etype, egress, api_data_gov_key)
 
     # FEC — campaign finance contributions (DEMO_KEY)
-    sources["fec"] = lambda name, etype: _check_fec(name, etype, egress)
+    sources["fec"] = lambda name, etype: _check_fec(name, etype, egress, api_data_gov_key)
 
     # Regulations.gov — federal rulemaking documents (DEMO_KEY)
-    sources["regulations"] = lambda name, etype: _check_regulations(name, etype, egress)
+    sources["regulations"] = lambda name, etype: _check_regulations(
+        name, etype, egress, api_data_gov_key
+    )
 
     # OpenSanctions API — keyed by OPENFOIA_OPENSANCTIONS_API_KEY when set
     sources["opensanctions"] = lambda name, etype: _check_opensanctions(name, etype, egress)
@@ -598,12 +606,15 @@ async def _check_icij(name: str, entity_type: EntityType, data_dir: str) -> list
 
 
 async def _check_fec(
-    name: str, entity_type: EntityType, egress: EgressPolicy | None = None
+    name: str,
+    entity_type: EntityType,
+    egress: EgressPolicy | None = None,
+    api_key: str | None = None,
 ) -> list[CrossRefHit]:
     """Search FEC for campaign finance contributions involving this entity."""
     from .records.fec import FECAdapter
 
-    adapter = FECAdapter(egress=egress)
+    adapter = FECAdapter(api_key, egress=egress)
     try:
         result = await adapter.search(name, page_size=5)
         _check_rate_limit(result)
@@ -635,12 +646,15 @@ async def _check_fec(
 
 
 async def _check_regulations(
-    name: str, entity_type: EntityType, egress: EgressPolicy | None = None
+    name: str,
+    entity_type: EntityType,
+    egress: EgressPolicy | None = None,
+    api_key: str | None = None,
 ) -> list[CrossRefHit]:
     """Search Regulations.gov for federal rulemaking mentioning this entity."""
     from .records.regulations import RegulationsGovAdapter
 
-    adapter = RegulationsGovAdapter(egress=egress)
+    adapter = RegulationsGovAdapter(api_key, egress=egress)
     try:
         result = await adapter.search(name, page_size=5)
         _check_rate_limit(result)
@@ -674,12 +688,15 @@ async def _check_regulations(
 
 
 async def _check_govinfo(
-    name: str, entity_type: EntityType, egress: EgressPolicy | None = None
+    name: str,
+    entity_type: EntityType,
+    egress: EgressPolicy | None = None,
+    api_key: str | None = None,
 ) -> list[CrossRefHit]:
     """Search GovInfo for court opinions, congressional reports, and federal rules."""
     from .records.govinfo import GovInfoAdapter
 
-    adapter = GovInfoAdapter(egress=egress)
+    adapter = GovInfoAdapter(api_key, egress=egress)
     try:
         result = await adapter.search(name, page_size=5)
         _check_rate_limit(result)

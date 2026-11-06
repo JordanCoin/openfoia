@@ -60,7 +60,7 @@ def test_records_search_csv_to_stdout_is_only_csv(monkeypatch):
                 ],
             )
 
-    monkeypatch.setattr("openfoia.records.get_adapter", lambda source: Adapter())
+    monkeypatch.setattr("openfoia.records.get_adapter", lambda source, **_: Adapter())
 
     result = CliRunner().invoke(app, ["records", "search", "Uranium", "-s", "sec", "--csv", "-"])
 
@@ -90,7 +90,7 @@ def test_records_search_raw_is_parseable_json_without_terminal_output(monkeypatc
                 ],
             )
 
-    monkeypatch.setattr("openfoia.records.get_adapter", lambda source: Adapter())
+    monkeypatch.setattr("openfoia.records.get_adapter", lambda source, **_: Adapter())
 
     result = CliRunner().invoke(
         app,
@@ -137,7 +137,7 @@ def test_records_search_raw_reports_source_errors_instead_of_empty_json(monkeypa
                 error="AdapterRequestError: HTTP 503",
             )
 
-    monkeypatch.setattr("openfoia.records.get_adapter", lambda source: Adapter())
+    monkeypatch.setattr("openfoia.records.get_adapter", lambda source, **_: Adapter())
 
     result = CliRunner().invoke(
         app,
@@ -166,7 +166,7 @@ def test_records_search_raw_round_trips_non_ascii_names(monkeypatch):
                 ],
             )
 
-    monkeypatch.setattr("openfoia.records.get_adapter", lambda source: Adapter())
+    monkeypatch.setattr("openfoia.records.get_adapter", lambda source, **_: Adapter())
 
     result = CliRunner().invoke(
         app,
@@ -184,7 +184,7 @@ def test_records_search_raw_keeps_crashes_off_stdout(monkeypatch):
         async def search(self, query, **kwargs):
             raise RuntimeError("boom")
 
-    monkeypatch.setattr("openfoia.records.get_adapter", lambda source: Adapter())
+    monkeypatch.setattr("openfoia.records.get_adapter", lambda source, **_: Adapter())
 
     result = CliRunner().invoke(
         app,
@@ -218,7 +218,7 @@ def _rank_adapter(monkeypatch):
                 ],
             )
 
-    monkeypatch.setattr("openfoia.records.get_adapter", lambda source: Adapter())
+    monkeypatch.setattr("openfoia.records.get_adapter", lambda source, **_: Adapter())
 
 
 def test_records_search_rank_scores_and_sorts(monkeypatch):

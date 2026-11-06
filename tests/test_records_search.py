@@ -29,7 +29,7 @@ def test_typed_sec_empty_search_reports_scope_and_coverage_limit(monkeypatch):
             assert kwargs == {"filing_type": "F-3"}
             return SearchResult(source="sec", query=query, total_results=0, entities=[])
 
-    monkeypatch.setattr("openfoia.records.get_adapter", lambda source: Adapter())
+    monkeypatch.setattr("openfoia.records.get_adapter", lambda source, **_: Adapter())
 
     result = CliRunner().invoke(
         app,
@@ -51,7 +51,7 @@ def test_non_sec_empty_search_keeps_existing_message(monkeypatch):
         async def search(self, query, **kwargs):
             return SearchResult(source="opencorporates", query=query, total_results=0, entities=[])
 
-    monkeypatch.setattr("openfoia.records.get_adapter", lambda source: Adapter())
+    monkeypatch.setattr("openfoia.records.get_adapter", lambda source, **_: Adapter())
 
     result = CliRunner().invoke(
         app,
@@ -97,7 +97,7 @@ def test_documentcloud_limit_above_25_pages_through_results(monkeypatch):
                 source="documentcloud", query=query, total_results=230, entities=ents
             )
 
-    monkeypatch.setattr("openfoia.records.get_adapter", lambda source: Adapter())
+    monkeypatch.setattr("openfoia.records.get_adapter", lambda source, **_: Adapter())
 
     result = CliRunner().invoke(
         app, ["records", "search", "PAS", "-s", "documentcloud", "-n", "250", "--json"]
@@ -241,7 +241,7 @@ def test_all_sources_reports_each_source_status(monkeypatch):
 
     monkeypatch.setattr("openfoia.records.list_sources", lambda: ["govinfo", "muckrock", "sec"])
     monkeypatch.setattr(
-        "openfoia.records.get_adapter", lambda s: Broken() if s == "muckrock" else Ok()
+        "openfoia.records.get_adapter", lambda s, **_: Broken() if s == "muckrock" else Ok()
     )
 
     result = CliRunner().invoke(app, ["records", "search", "PAS", "--all-sources"])
@@ -269,7 +269,7 @@ def test_documentcloud_failed_page_keeps_earlier_pages(monkeypatch):
                 source="documentcloud", query=query, total_results=500, entities=ents
             )
 
-    monkeypatch.setattr("openfoia.records.get_adapter", lambda source: Adapter())
+    monkeypatch.setattr("openfoia.records.get_adapter", lambda source, **_: Adapter())
 
     result = CliRunner().invoke(
         app, ["records", "search", "PAS", "-s", "documentcloud", "-n", "300", "--json"]
@@ -286,7 +286,7 @@ def test_all_sources_exits_nonzero_when_every_source_fails(monkeypatch):
             raise AdapterRequestError("down")
 
     monkeypatch.setattr("openfoia.records.list_sources", lambda: ["muckrock"])
-    monkeypatch.setattr("openfoia.records.get_adapter", lambda s: Broken())
+    monkeypatch.setattr("openfoia.records.get_adapter", lambda s, **_: Broken())
 
     result = CliRunner().invoke(app, ["records", "search", "PAS", "--all-sources"])
 

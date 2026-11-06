@@ -4,7 +4,8 @@ Congressional bills, court opinions, Federal Register rules, GAO reports,
 congressional hearings, CFR, and more. 50+ collections, millions of documents.
 
 Uses the GovInfo API v2. Requires a free API key from api.data.gov
-(DEMO_KEY works for testing). Rate limit: 1,200 req/min.
+(DEMO_KEY works for testing; set OPENFOIA_API_DATA_GOV_KEY or
+records._api_data_gov_key, see DataGovAdapter). Rate limit: 1,200 req/min.
 API docs: https://api.govinfo.gov/docs/
 GitHub:   https://github.com/usgpo/api
 """
@@ -18,7 +19,7 @@ from urllib.parse import quote
 import httpx
 
 from ..net import EgressPolicy, egress_client
-from .base import RecordAdapter, RecordEntity, SearchResult
+from .base import DataGovAdapter, RecordEntity, SearchResult
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ COLLECTION_LABELS = {
 }
 
 
-class GovInfoAdapter(RecordAdapter):
+class GovInfoAdapter(DataGovAdapter):
     """Search documents from all three branches of the US government.
 
     Court opinions, congressional reports, Federal Register rules, GAO reports,
@@ -62,23 +63,10 @@ class GovInfoAdapter(RecordAdapter):
     source_name = "govinfo"
 
     def __init__(self, api_key: str | None = None, *, egress: EgressPolicy | None = None):
-        """Initialize. Without *api_key*, OPENFOIA_GOVINFO_API_KEY is used, else DEMO_KEY.
-
-        DEMO_KEY is shared and rate-limited; get a free key at https://api.data.gov/signup/
-        """
+        """Initialize. Without *api_key*, OPENFOIA_GOVINFO_API_KEY is used, else DEMO_KEY."""
         import os
 
-        super().__init__(egress=egress)
-        self._api_key = api_key or os.environ.get("OPENFOIA_GOVINFO_API_KEY") or "DEMO_KEY"
-
-    def _redact(self, err: object) -> str:
-        """Error text with the key removed, wherever httpx or a URL may have put it."""
-        import re
-
-        text = re.sub(r"api_key=[^&\s'\"]+", "api_key=<redacted>", str(err))
-        if self._api_key and self._api_key != "DEMO_KEY":
-            text = text.replace(self._api_key, "<redacted>")
-        return text
+        super().__init__(api_key or os.environ.get("OPENFOIA_GOVINFO_API_KEY"), egress=egress)
 
     async def search(
         self,
@@ -118,7 +106,7 @@ class GovInfoAdapter(RecordAdapter):
                         "bad key. Get a free key at https://api.data.gov/signup/ and set "
                         "OPENFOIA_GOVINFO_API_KEY."
                     )
-                    logger.warning(msg)
+                    logger.info(msg)
                     return SearchResult(
                         source="govinfo",
                         query=query,

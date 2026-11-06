@@ -249,3 +249,27 @@ class RecordAdapter(ABC):
             RecordEntity if found, None otherwise.
         """
         ...
+
+
+DEMO_KEY = "DEMO_KEY"
+
+
+class DataGovAdapter(RecordAdapter):
+    """Base for api.data.gov sources (fec, govinfo, regulations), which share one key.
+
+    Without an explicit *api_key* these use the shared, rate-limited DEMO_KEY. Get a
+    free key at https://api.data.gov/signup/ and set OPENFOIA_API_DATA_GOV_KEY, or
+    ``"records": {"_api_data_gov_key": "..."}`` in config.json. The key is tied to the
+    email you signed up with, so it identifies you to api.data.gov even over Tor.
+    """
+
+    def __init__(self, api_key: str | None = None, *, egress: EgressPolicy | None = None):
+        super().__init__(egress=egress)
+        self._api_key = api_key or DEMO_KEY
+
+    def _redact(self, err: object) -> str:
+        """Error text with the key removed, wherever httpx or a URL may have put it."""
+        text = re.sub(r"api_key=[^&\s'\"]+", "api_key=<redacted>", str(err))
+        if self._api_key != DEMO_KEY:
+            text = text.replace(self._api_key, "<redacted>")
+        return text

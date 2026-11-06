@@ -181,6 +181,16 @@ class NetworkConfig:
     tor_port: int = 9050
     # Unique SOCKS credentials per request -> a fresh Tor circuit each time.
     isolate_streams: bool = True
+    # Attempts per idempotent request on 429/503/connect errors; 1 disables retry.
+    max_attempts: int = 3
+
+
+@dataclass
+class RecordsConfig:
+    """Public records adapters (openfoia/records)."""
+
+    # One api.data.gov key for fec, govinfo and regulations. None = shared DEMO_KEY.
+    api_data_gov_key: str | None = None
 
 
 @dataclass
@@ -196,6 +206,7 @@ class OpenFOIAConfig:
     encryption: EncryptionConfig = field(default_factory=EncryptionConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
     network: NetworkConfig = field(default_factory=NetworkConfig)
+    records: RecordsConfig = field(default_factory=RecordsConfig)
 
     # Data directory — override with OPENFOIA_DATA_DIR env var for portable / air-gapped installs
     data_dir: Path = field(
@@ -337,6 +348,13 @@ def _merge_config(config: OpenFOIAConfig, data: dict[str, Any]) -> OpenFOIAConfi
         config.network.tor_host = net.get("tor_host", config.network.tor_host)
         config.network.tor_port = net.get("tor_port", config.network.tor_port)
         config.network.isolate_streams = net.get("isolate_streams", config.network.isolate_streams)
+        config.network.max_attempts = net.get("max_attempts", config.network.max_attempts)
+
+    if "records" in data:
+        rec = data["records"]
+        config.records.api_data_gov_key = rec.get("api_data_gov_key") or rec.get(
+            "_api_data_gov_key"
+        )
 
     return config
 
@@ -418,6 +436,15 @@ def _apply_env_overrides(config: OpenFOIAConfig, prefix: str) -> OpenFOIAConfig:
             config.network.tor_port = int(v)
         except ValueError:
             print(f"Warning: {prefix}TOR_PORT={v!r} is not a valid integer, ignoring")
+    if v := os.environ.get(f"{prefix}NETWORK_MAX_ATTEMPTS"):
+        try:
+            config.network.max_attempts = int(v)
+        except ValueError:
+            print(f"Warning: {prefix}NETWORK_MAX_ATTEMPTS={v!r} is not a valid integer, ignoring")
+
+    # Records
+    if v := os.environ.get(f"{prefix}API_DATA_GOV_KEY"):
+        config.records.api_data_gov_key = v
 
     return config
 
@@ -426,6 +453,7 @@ def _apply_env_overrides(config: OpenFOIAConfig, prefix: str) -> OpenFOIAConfig:
 _SECRET_KEY_MARKERS = (
     "password",
     "api_key",
+    "api_data_gov_key",
     "apikey",
     "token",
     "secret",
@@ -496,6 +524,7 @@ def save_config(config: OpenFOIAConfig, config_path: Path | str | None = None) -
             "tor_host": config.network.tor_host,
             "tor_port": config.network.tor_port,
             "isolate_streams": config.network.isolate_streams,
+            "max_attempts": config.network.max_attempts,
         },
     }
 

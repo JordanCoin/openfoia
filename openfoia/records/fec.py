@@ -3,7 +3,8 @@
 Who donated to whom. PAC spending. Candidate financials. Contribution
 records going back decades. This is how you follow the political money.
 
-Uses the OpenFEC API v1. DEMO_KEY works, free key at api.data.gov for higher limits.
+Uses the OpenFEC API v1. DEMO_KEY works; for higher limits set an api.data.gov key
+(OPENFOIA_API_DATA_GOV_KEY or records._api_data_gov_key, see DataGovAdapter).
 API docs: https://api.open.fec.gov/developers/
 """
 
@@ -15,15 +16,15 @@ from urllib.parse import quote_plus
 
 import httpx
 
-from ..net import EgressPolicy, egress_client
-from .base import RecordAdapter, RecordEntity, SearchResult
+from ..net import egress_client
+from .base import DataGovAdapter, RecordEntity, SearchResult
 
 logger = logging.getLogger(__name__)
 
 API_BASE = "https://api.open.fec.gov/v1"
 
 
-class FECAdapter(RecordAdapter):
+class FECAdapter(DataGovAdapter):
     """Search FEC campaign finance data — candidates, committees, contributions.
 
     Usage::
@@ -34,10 +35,6 @@ class FECAdapter(RecordAdapter):
     """
 
     source_name = "fec"
-
-    def __init__(self, api_key: str | None = None, *, egress: EgressPolicy | None = None):
-        super().__init__(egress=egress)
-        self._api_key = api_key or "DEMO_KEY"
 
     async def search(
         self,
@@ -66,7 +63,7 @@ class FECAdapter(RecordAdapter):
                 )
                 if resp.status_code == 429:
                     msg = "FEC rate limit hit. Get a free key at https://api.data.gov/signup/"
-                    logger.warning(msg)
+                    logger.info(msg)
                     return SearchResult(
                         source="fec",
                         query=query,
@@ -91,7 +88,7 @@ class FECAdapter(RecordAdapter):
                 error=msg,
             )
         except Exception as e:
-            msg = f"FEC search failed: {e}"
+            msg = f"FEC search failed: {self._redact(e)}"
             logger.warning(msg)
             return SearchResult(
                 source="fec",
@@ -163,7 +160,7 @@ class FECAdapter(RecordAdapter):
                     return None
                 data = resp.json()
         except Exception as e:
-            logger.warning("FEC candidate search failed for %s: %s", identifier, e)
+            logger.warning("FEC candidate search failed for %s: %s", identifier, self._redact(e))
             return None
 
         results = data.get("results", [])

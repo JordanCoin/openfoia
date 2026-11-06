@@ -21,15 +21,23 @@ def register(name: str, adapter_cls: type[RecordAdapter]) -> None:
     _REGISTRY[name] = adapter_cls
 
 
-def get_adapter(name: str) -> RecordAdapter:
+def get_adapter(name: str, *, api_data_gov_key: str | None = None) -> RecordAdapter:
     """Instantiate and return the adapter for the given source name.
+
+    *api_data_gov_key* (config ``records.api_data_gov_key``) goes to the
+    api.data.gov sources; None leaves them on DEMO_KEY.
 
     Raises KeyError if the source is not registered.
     """
+    from .base import DataGovAdapter
+
     if name not in _REGISTRY:
         available = ", ".join(sorted(_REGISTRY.keys()))
         raise KeyError(f"Unknown records source '{name}'. Available: {available}")
-    return _REGISTRY[name]()
+    cls = _REGISTRY[name]
+    if issubclass(cls, DataGovAdapter):
+        return cls(api_key=api_data_gov_key)
+    return cls()
 
 
 def list_sources() -> list[str]:
