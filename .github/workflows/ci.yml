@@ -82,3 +82,40 @@ jobs:
 
       - name: Full suite with encryption enabled
         run: python -m pytest tests/ -v -k "not gliner and not spacy and not LLM and not benchmark"
+
+  # The graph page only means something once a browser draws it. These tests
+  # skip without Playwright and Chromium, so this job installs both, uses the
+  # runner's own Chrome (no browser download), and fails if any test skips
+  # rather than looking green while testing nothing.
+  graph-rendered:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install fonts for the Arabic, Hebrew and CJK label checks
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q fonts-dejavu-core fonts-noto-cjk
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]" playwright
+
+      - name: Rendered graph tests
+        env:
+          OPENFOIA_TEST_CHROMIUM: /usr/bin/google-chrome
+        run: |
+          test -x "$OPENFOIA_TEST_CHROMIUM" || { echo "::error::No Chrome at $OPENFOIA_TEST_CHROMIUM"; exit 1; }
+          "$OPENFOIA_TEST_CHROMIUM" --version
+          python -m pytest tests/test_graph_rendered.py -v -rs | tee rendered.log
+          if grep -q "SKIPPED" rendered.log; then
+            echo "::error::Rendered graph tests skipped; they must run in this job."
+            exit 1
+          fi
