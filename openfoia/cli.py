@@ -169,6 +169,10 @@ def init(
             "Duress passphrase", hide_input=True, confirmation_prompt=True
         )
 
+    if duress_password and duress_password == password:
+        rprint("[bold red]Error: duress password must differ from the real password.[/bold red]")
+        raise typer.Exit(1)
+
     db_path = get_db_path(password=password)
 
     if (password or duress_password) and not has_sqlcipher():
@@ -181,14 +185,27 @@ def init(
         rprint(f"[cyan]Database already exists:[/cyan] {db_path}")
         rprint("[dim]Use --force to re-initialize (WARNING: loses data)[/dim]")
 
+        if duress_password:
+            # Adding a decoy to an existing database: setup_duress_mode refuses
+            # unless that database is already encrypted.
+            _setup_duress_or_exit(duress_password)
+            return
+
         # Show stats
         from .db import get_session
         from .models import Agency, Document, Request
 
-        with get_session(password=password) as session:
-            agency_count = session.query(Agency).count()
-            request_count = session.query(Request).count()
-            doc_count = session.query(Document).count()
+        try:
+            with get_session(password=password) as session:
+                agency_count = session.query(Agency).count()
+                request_count = session.query(Request).count()
+                doc_count = session.query(Document).count()
+        except Exception:
+            rprint(
+                "[dim]Could not read it (encrypted? set OPENFOIA_DB_PASSWORD, "
+                "or pass --encrypt to be asked for the passphrase).[/dim]"
+            )
+            return
 
         rprint("\n[cyan]Current data:[/cyan]")
         rprint(f"  Agencies: {agency_count}")
@@ -196,9 +213,27 @@ def init(
         rprint(f"  Documents: {doc_count}")
         return
 
-    if force and db_path.exists():
-        rprint("[yellow]Removing existing database...[/yellow]")
-        db_path.unlink()
+    if duress_password and not password:
+        # An encrypted decoy next to a plaintext real database points an
+        # examiner straight at the readable investigation. Refuse before
+        # touching anything.
+        rprint(
+            "[bold red]Error: duress mode needs the real database encrypted too.[/bold red]\n"
+            "[red]Nothing was created. Re-run with both:[/red] openfoia init --encrypt --duress"
+        )
+        raise typer.Exit(1)
+
+    if force:
+        removed = _shred_all_db_files(data_dir)
+        if removed:
+            rprint("[yellow]Removed (overwritten) the existing database files:[/yellow]")
+            for name in removed:
+                rprint(f"  [yellow]{name}[/yellow]")
+            rprint(
+                f"[yellow]Files under {data_dir} (ingested documents, exports, config) were "
+                "not removed. Use 'openfoia purge --secure' to remove everything.[/yellow]"
+            )
+        db_path = get_db_path(password=password)
 
     rprint(f"[cyan]Data directory:[/cyan] {data_dir}")
     rprint(f"[cyan]Database:[/cyan] {db_path}")
@@ -219,23 +254,54 @@ def init(
 
     # Duress mode setup
     if duress_password:
-        from .security import setup_duress_mode
-
-        if duress_password == password:
-            rprint(
-                "[bold red]Error: duress password must differ from the real password.[/bold red]"
-            )
-            raise typer.Exit(1)
-
-        decoy_path = setup_duress_mode(duress_password)
-        rprint("[green]✓ Duress mode configured[/green]")
-        rprint(f"[dim]  Decoy database: {decoy_path}[/dim]")
-        rprint(
-            "[dim]  When the duress password is used, the decoy DB is opened transparently.[/dim]"
-        )
+        _setup_duress_or_exit(duress_password)
 
     rprint("\n[bold green]✓ Initialization complete![/bold green]")
     rprint("[dim]Run 'openfoia serve' to start the web interface.[/dim]\n")
+
+
+def _setup_duress_or_exit(duress_password: str) -> None:
+    """Configure the decoy profile, or explain why not and exit 1."""
+    from .security import DuressSetupError, setup_duress_mode
+
+    try:
+        decoy_path = setup_duress_mode(duress_password)
+    except (DuressSetupError, RuntimeError) as exc:
+        rprint(f"[bold red]Duress mode NOT configured:[/bold red] {exc}")
+        raise typer.Exit(1) from None
+    rprint("[green]✓ Duress mode configured (both profiles checked: encrypted on disk)[/green]")
+    rprint(f"[dim]  Decoy database: {decoy_path}[/dim]")
+    rprint("[dim]  When the duress password is used, the decoy DB is opened transparently.[/dim]")
+    rprint("[dim]  It is a decoy, not deniability: see docs/THREAT_MODEL.md.[/dim]")
+
+
+def _shred_all_db_files(data_dir: Path) -> list[str]:
+    """Overwrite and delete every database file (all profiles, with WAL/SHM/journal).
+
+    ``init --force`` used to plain-unlink just the one database, leaving its
+    blocks recoverable, its -wal/-shm sidecars in place, and (with duress mode
+    set up) the other profile next to a fresh data.db, which tells an examiner
+    which file was the decoy.
+    """
+    from .db import _DB_SIDECAR_SUFFIXES
+    from .security import _PROFILE_SLOTS, secure_delete_file
+
+    removed: list[str] = []
+    for base in ("data.db", *_PROFILE_SLOTS):
+        for suffix in ("", *_DB_SIDECAR_SUFFIXES):
+            candidate = data_dir / f"{base}{suffix}"
+            if not candidate.exists():
+                continue
+            report = secure_delete_file(candidate)
+            if report.survived:
+                rprint(
+                    f"[bold red]Could not remove {candidate}; nothing was re-initialized.[/bold red]"
+                )
+                raise typer.Exit(1)
+            if report.unlinked_only:
+                rprint(f"[yellow]{candidate} was deleted but could not be overwritten.[/yellow]")
+            removed.append(candidate.name)
+    return removed
 
 
 # === Server Command ===
@@ -606,6 +672,9 @@ def _emit_table(table: Table, csv_path: str | None) -> None:
     if csv_path == "-":
         csv.writer(_csv_stdout or sys.stdout).writerows([header, *rows])
         return
+    from .exports import record_export
+
+    record_export(csv_path)
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         csv.writer(f).writerows([header, *rows])
     rprint(f"[green]Wrote {len(rows)} rows to {csv_path}[/green]")
@@ -685,14 +754,14 @@ def encrypt(
 ):
     """Encrypt an existing plaintext database with SQLCipher (AES-256).
 
-    Creates an encrypted copy of the current database and swaps it in place.
-    A backup of the original plaintext database is saved as data.db.bak.
+    Creates an encrypted copy of the current database, checks it, shreds the
+    plaintext original and its WAL/journal files in place, and swaps the copy
+    in. No plaintext backup is kept.
 
     Requires pysqlcipher3: pip install 'openfoia[encryption]'
 
     Examples:
-        openfoia db encrypt --password SECRET
-        openfoia db encrypt   # will prompt for password
+        openfoia db encrypt   # prompts for the passphrase (keeps it out of shell history)
     """
     from .db import encrypt_database, get_db_path, has_sqlcipher
 
@@ -1924,6 +1993,9 @@ def docs_ocr(
 
     # Output
     if output:
+        from .exports import record_export
+
+        record_export(output)
         output.write_text(result.text)
         rprint(f"\n[green]Text saved to {output}[/green]")
     else:
@@ -3180,6 +3252,9 @@ def template_generate(
 
     # Output
     if output:
+        from .exports import record_export
+
+        record_export(output)
         output.write_text(letter)
         rprint(f"[green]✓ Request saved to {output}[/green]")
     else:
@@ -3851,6 +3926,9 @@ def analyze_extract(
         if output:
             import json as json_mod
 
+            from .exports import record_export
+
+            record_export(output)
             output.write_text(
                 json_mod.dumps(
                     [
@@ -4023,8 +4101,12 @@ def analyze_graph(
     name: str | None = typer.Option(
         None, "--name", "-n", help="Save as named graph (stored in ~/.openfoia/graphs/)"
     ),
-    output: Path = typer.Option(
-        "graph.json", "--output", "-o", help="Output file for JSON (ignored if --name is set)"
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Output file for JSON (default: exports/graph.json in the data directory; "
+        "ignored if --name is set)",
     ),
     view: bool = typer.Option(
         False, "--view", "-v", help="Open interactive HTML visualization in browser"
@@ -4201,8 +4283,12 @@ def analyze_graph(
             json_path = graphs_dir / f"{safe_name}.json"
             html_path = graphs_dir / f"{safe_name}.html"
         else:
-            json_path = output
-            html_path = output.with_suffix(".html")
+            from .exports import record_export, resolve_output
+
+            json_path = resolve_output(output, "graph.json")
+            html_path = json_path.with_suffix(".html")
+            if view:
+                record_export(html_path)
 
         json_path.write_text(json_mod.dumps(graph_data, indent=2))
 
@@ -4877,10 +4963,17 @@ def entities_import(
 
 @entities_app.command("export")
 def entities_export(
-    output: Path = typer.Option("entity_types.csv", "--output", "-o", help="Output CSV file"),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Output CSV file (default: exports/entity_types.csv in the data directory)",
+    ),
 ):
     """Export custom entity types to a CSV file."""
     import csv
+
+    from .exports import resolve_output
 
     _, data = _load_config_data()
     custom_types = data.get("entities", {}).get("custom_types", [])
@@ -4889,6 +4982,7 @@ def entities_export(
         rprint("[dim]No custom entity types to export.[/dim]")
         return
 
+    output = resolve_output(output, "entity_types.csv")
     with open(output, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["name", "pattern", "description"])
@@ -5309,28 +5403,41 @@ def purge(
 ):
     """Remove all OpenFOIA data.
 
-    Removes the database, all ingested documents, exports, config,
-    and the entire ~/.openfoia/ directory. This cannot be undone.
+    Removes the whole data directory (database, ingested documents, exports,
+    config) and the files you exported outside it with --output. This cannot
+    be undone.
 
     For situations where you need everything off this machine, now.
 
     \b
     Modes:
-      openfoia purge --yes          Fast delete (rm -rf). Not forensic.
+      openfoia purge --yes          Fast delete (unlink). Not forensic.
       openfoia purge --secure       Overwrite all files 3x, scrub shell history.
       openfoia purge --secure --fill  Also fill free space with random data.
     """
+    import os
     import shutil
 
+    from rich.markup import escape
+
+    from openfoia.exports import recorded_exports
     from openfoia.security import (
+        LIVE_SHELL_HISTORY_NOTE,
+        ShredReport,
         clear_shell_history,
         fill_free_space,
-        get_decoy_db_path,
         print_ssd_warning,
         secure_delete_dir,
+        secure_delete_file,
     )
 
     from .db import get_data_dir as _get_data_dir
+
+    def path_line(style: str, path: object, note: str = "") -> None:
+        # Paths are printed whole (no wrapping mid-name) and never read as
+        # markup, so the user can copy exactly what is left on disk.
+        tail = f" {escape(note)}" if note else ""
+        console.print(f"  [{style}]{escape(str(path))}[/{style}]{tail}", soft_wrap=True)
 
     data_dir = _get_data_dir()
 
@@ -5342,22 +5449,43 @@ def purge(
         rprint("[red]--fill requires --secure.[/red]")
         raise typer.Exit(1)
 
-    decoy_path = get_decoy_db_path()
-    has_decoy = decoy_path.exists()
+    # Exports the user wrote outside the data directory (recorded when written).
+    outside = [p for p in recorded_exports() if p.exists() or p.is_symlink()]
 
     if not confirm:
         rprint("\n[bold red]This will permanently destroy:[/bold red]")
-        rprint(f"  [red]{data_dir}/data.db[/red]     — all requests, entities, tracking")
-        if has_decoy:
-            rprint(f"  [red]{data_dir}/profile_*.db[/red] — all database profiles")
-        rprint(f"  [red]{data_dir}/docs/[/red]       — all ingested documents")
-        rprint(f"  [red]{data_dir}/exports/[/red]    — all generated reports")
-        rprint(f"  [red]{data_dir}/config.json[/red] — your configuration")
-        rprint(f"\n  [bold red]Everything in {data_dir}[/bold red]")
+        for db_file in sorted(data_dir.glob("*.db")):
+            path_line("red", db_file)
+        for sub, what in (
+            ("docs", "ingested documents"),
+            ("web", "archived web pages"),
+            ("exports", "exports and downloads"),
+            ("graphs", "saved graphs"),
+        ):
+            if (data_dir / sub).exists():
+                path_line("red", f"{data_dir / sub}/", f"— {what}")
+        if (data_dir / "config.json").exists():
+            path_line("red", data_dir / "config.json", "— configuration and credentials")
+        rprint("\n  [bold red]Everything in:[/bold red]")
+        path_line("bold red", data_dir)
+        if outside:
+            rprint(f"\n[bold red]And {len(outside)} file(s) you exported outside it:[/bold red]")
+            for p in outside:
+                path_line("red", p)
+        rprint(
+            "\n[yellow]Not removed:[/yellow] the original files you ingested, copies you "
+            "made or moved yourself, browser history and caches, swap, and OS indexes."
+        )
 
         if secure:
             rprint("\n[yellow]Secure mode: files will be overwritten 3x with random data.[/yellow]")
             print_ssd_warning()
+        else:
+            rprint(
+                "\n[yellow]Fast mode: files are unlinked, not overwritten; their contents "
+                "may be recoverable from the disk. Shell history is not touched. "
+                "Use --secure for that.[/yellow]"
+            )
         if fill:
             rprint(
                 "[yellow]Fill mode: free disk space will be overwritten. This may take a long time.[/yellow]"
@@ -5370,18 +5498,28 @@ def purge(
             rprint("[dim]Aborted.[/dim]")
             raise typer.Exit(0)
 
+    report = ShredReport()
     if secure:
         print_ssd_warning()
         rprint("[bold]Secure-deleting all files (3-pass overwrite)...[/bold]")
-        count = secure_delete_dir(data_dir)
-        rprint(f"[green]{count} file(s) securely deleted.[/green]")
+        try:
+            report.merge(secure_delete_dir(data_dir))
+            for p in outside:
+                report.merge(secure_delete_file(p))
+        finally:
+            # Scrub history even if deletion went wrong: those lines name the
+            # subjects of the investigation.
+            rprint("[bold]Scrubbing shell history...[/bold]")
+            modified = clear_shell_history()
+            if modified:
+                rprint(f"[green]Cleaned {len(modified)} history file(s):[/green]")
+                for hist in modified:
+                    path_line("green", hist)
+            else:
+                rprint("[dim]No shell history entries found.[/dim]")
+            rprint(f"[yellow]{LIVE_SHELL_HISTORY_NOTE}[/yellow]")
 
-        rprint("[bold]Scrubbing shell history...[/bold]")
-        modified = clear_shell_history()
-        if modified:
-            rprint(f"[green]Cleaned {len(modified)} history file(s): {', '.join(modified)}[/green]")
-        else:
-            rprint("[dim]No shell history entries found.[/dim]")
+        rprint(f"[green]{len(report.shredded)} file(s) overwritten and deleted.[/green]")
 
         if fill:
             rprint(
@@ -5391,13 +5529,49 @@ def purge(
             fill_free_space(fill_dir)
             rprint("[green]Free space filled and cleaned up.[/green]")
     else:
-        shutil.rmtree(data_dir)
+        shutil.rmtree(data_dir, ignore_errors=True)
+        for p in outside:
+            try:
+                p.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                report.survived.append((str(p), exc.strerror or str(exc)))
+        if data_dir.exists():
+            for root, _dirs, files in os.walk(data_dir):
+                for name in files:
+                    report.survived.append((str(Path(root) / name), "could not be removed"))
 
-    rprint(f"\n[green]Data directory removed: {data_dir}[/green]")
+    if report.unlinked_only:
+        rprint(
+            f"\n[bold red]{len(report.unlinked_only)} file(s) were deleted but NOT "
+            "overwritten; their contents may still be recoverable:[/bold red]"
+        )
+        for p, why in report.unlinked_only:
+            path_line("red", p, f"({why})")
+    if report.survived:
+        rprint(
+            f"\n[bold red]{len(report.survived)} file(s) could NOT be removed and are "
+            "still on disk:[/bold red]"
+        )
+        for p, why in report.survived:
+            path_line("red", p, f"({why})")
+
+    if data_dir.exists():
+        rprint("\n[bold red]Data directory NOT fully removed:[/bold red]")
+        path_line("bold red", data_dir)
+    else:
+        rprint("\n[green]Data directory removed:[/green]")
+        path_line("green", data_dir)
     rprint(
         "[dim]Note: swap files, filesystem journals, browser caches, and OS-level caches are NOT affected.[/dim]"
     )
     rprint("[dim]For maximum safety, use full-disk encryption.[/dim]\n")
+    if not report.ok:
+        rprint(
+            "[bold red]Purge incomplete: remove or overwrite the files above yourself.[/bold red]"
+        )
+        raise typer.Exit(1)
 
 
 # === Web Ingest Command ===
@@ -5480,6 +5654,9 @@ def ingest_url(
     console.print(table)
 
     if output:
+        from .exports import record_export
+
+        record_export(output)
         output.write_text(result.text)
         rprint(f"\n[green]Text saved to {output}[/green]")
 
@@ -6899,7 +7076,12 @@ def _records_fetch_federalregister(adapter, doc_id: str) -> tuple[str, str | Non
 def records_download(
     request_id: str = typer.Argument(..., help="MuckRock request ID"),
     source: str = typer.Option("muckrock", "--source", "-s", help="Data source"),
-    output: Path = typer.Option("./downloads", "--output", "-o", help="Output directory"),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Output directory (default: exports/downloads in the data directory)",
+    ),
     ingest: bool = typer.Option(
         False, "--ingest", help="Auto-ingest downloaded files into OpenFOIA"
     ),
@@ -6942,6 +7124,10 @@ def records_download(
         rprint(f"[red]Request {_safe(request_id)} not found on MuckRock.[/red]")
         raise typer.Exit(1)
 
+    from .exports import exports_dir, record_export
+
+    if output is None:
+        output = exports_dir("downloads")
     files = entity.extra_data.get("files", [])
     rprint(f"\n[bold cyan]{_safe(entity.name)}[/bold cyan]")
     rprint(f"  Status: {_safe(entity.status)}")
@@ -6974,6 +7160,7 @@ def records_download(
     rprint(f"\n[green]{len(downloaded)} file(s) downloaded to {_safe(output)}/[/green]")
 
     for path in downloaded:
+        record_export(path)
         rprint(f"  {_safe(path)}")
 
     # Auto-ingest if requested
@@ -7678,6 +7865,9 @@ def case_export(
         text = safe_text("\n".join(lines) + "\n", multiline=True)
 
     if output:
+        from .exports import record_export
+
+        record_export(output)
         output.write_text(text)
         rprint(
             f"[green]Exported to {_safe(output)}[/green] [dim](plaintext, outside the database)[/dim]"
@@ -8163,6 +8353,9 @@ def crossref(
                 or any(status != "checked" for status in getattr(r, "source_statuses", {}).values())
             ],
         }
+        from .exports import record_export
+
+        record_export(output)
         output.write_text(json.dumps(report_data, indent=2))
         rprint(f"\n[green]Report saved to {_safe(output)}[/green]")
 
@@ -8172,7 +8365,12 @@ def crossref(
 
 @analyze_app.command("export")
 def analyze_export(
-    output: Path = typer.Option("entities.ftm.json", "--output", "-o", help="Output file path"),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Output file path (default: exports/entities.ftm.json in the data directory)",
+    ),
     request_id: str | None = typer.Option(
         None, "--request", "-r", help="Export from specific request"
     ),
@@ -8246,6 +8444,9 @@ def analyze_export(
             for lnk in links
         ]
 
+    from .exports import resolve_output
+
+    output = resolve_output(output, "entities.ftm.json")
     count = export_ftm(entities, relationships, output)
     rprint(f"[green]Exported {count} entities to {output} (FollowTheMoney format)[/green]")
     rprint("[dim]Compatible with Aleph, OpenAleph, OpenSanctions, and ICIJ tools.[/dim]")

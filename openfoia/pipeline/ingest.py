@@ -39,6 +39,33 @@ _OCR_HINT = (
 _ocr_hint_shown = False
 
 
+def private_dest_dir(storage_path: Path, doc_id: str) -> Path:
+    """The owner-only (0700) directory a stored copy of *doc_id* goes in."""
+    from ..db import _ensure_private_dir
+
+    _ensure_private_dir(storage_path)
+    _ensure_private_dir(storage_path / doc_id[:2])
+    return _ensure_private_dir(storage_path / doc_id[:2] / doc_id[2:4])
+
+
+def _make_private(path: Path) -> None:
+    """Stored copies are owner read/write (0600) whatever the original's mode.
+
+    ``shutil.copy2`` used to carry a read-only original's 0444 over, and a
+    read-only stored copy is one that ``purge --secure`` could not overwrite.
+    """
+    import os
+
+    if os.name != "nt":
+        os.chmod(path, 0o600)
+
+
+def _copy_private(src: Path, dest: Path) -> None:
+    """Copy contents only (no mode, owner or timestamps), then make it 0600."""
+    shutil.copyfile(src, dest)
+    _make_private(dest)
+
+
 class DocumentIngester:
     """Ingest documents from various sources into the system."""
 
@@ -48,7 +75,7 @@ class DocumentIngester:
         max_file_size_mb: int = 100,
     ):
         self.storage_path = Path(storage_path)
-        self.storage_path.mkdir(parents=True, exist_ok=True)
+        self.storage_path.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.max_file_size = max_file_size_mb * 1024 * 1024
 
     async def ingest_file(
@@ -80,11 +107,10 @@ class DocumentIngester:
         checksum = await self._calculate_checksum(file_path)
 
         # Copy to storage
-        dest_dir = self.storage_path / doc_id[:2] / doc_id[2:4]
-        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_dir = private_dest_dir(self.storage_path, doc_id)
         dest_path = dest_dir / f"{doc_id}{file_path.suffix}"
 
-        await asyncio.to_thread(shutil.copy2, file_path, dest_path)
+        await asyncio.to_thread(_copy_private, file_path, dest_path)
 
         # Strip metadata from the stored copy
         stripped_info: dict[str, Any] = {}
@@ -146,11 +172,11 @@ class DocumentIngester:
 
         # Save to storage
         suffix = Path(filename).suffix
-        dest_dir = self.storage_path / doc_id[:2] / doc_id[2:4]
-        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_dir = private_dest_dir(self.storage_path, doc_id)
         dest_path = dest_dir / f"{doc_id}{suffix}"
 
         await asyncio.to_thread(dest_path.write_bytes, content)
+        _make_private(dest_path)
 
         # Get page count for PDFs
         page_count = None
