@@ -291,6 +291,46 @@ to get per-page text. CREST numbers (`CIA-RDP...`) are picked out of the
 document title or text when present. The export is plaintext outside the
 encrypted database.
 
+### Searching by meaning (optional, experimental)
+
+`docs grep` finds the words you type. A page that says "funds transferred to a
+sibling of the city executive" never matches "payments to the mayor's
+brother". `docs grep --semantic` ranks pages by similarity of meaning instead.
+It is an optional extra and runs on this machine:
+
+```bash
+openfoia install-extras semantic        # model2vec + sqlite-vec, ~90 MB (PyPI)
+openfoia docs embed-model               # asks first, then ~31 MB from huggingface.co, once
+openfoia docs embed                     # embed stored pages, offline (~1.4 ms a page)
+openfoia docs grep --semantic "payments to the mayor's brother"
+openfoia docs embed --status            # what is indexed, which search path runs
+```
+
+- **One network action.** `docs embed-model` is the only step that goes
+  online, and it says what it sends before asking: your IP address (the Tor
+  exit's with `--tor`) and which model files you fetch, nothing from your
+  documents. Files are pinned and hash-checked, and stored in the data
+  directory's `models/` (portable mode respected). Embedding and searching are
+  offline; `grep --semantic` embeds any new pages itself before searching.
+- **Models.** `potion-base-8M` (English, default, ~150 MB RAM),
+  `potion-retrieval-32M` (English, ~131 MB, ~350 MB RAM),
+  `potion-multilingual-128M` (101 languages, 531 MB, ~1.9 GB peak RAM: too
+  much for many cheap laptops). Pick one with `--model`. Keyword `docs grep`
+  already works in every language.
+- **Read the results; do not count them.** Every page gets a score, best first,
+  one passage per page. On our generated 1,000-page test set the default model
+  put a reworded passage in its top 10 for 3 of 10 queries, where keyword grep
+  found none of them; words that appear in the query still pull unrelated pages
+  up. It finds leads; it cannot tell you a document is not there. Exact names
+  and numbers: use plain `docs grep`.
+- **Search path.** sqlite-vec when it loads (it does inside an encrypted
+  database); otherwise numpy brute force, for example on macOS's system
+  Python, which cannot load SQLite extensions. The command says which ran.
+- **Safety.** Embeddings can leak the text they came from. They are stored in
+  the database (encrypted with it), deleted with their page or document, and
+  removed by `openfoia docs embed --drop` or `purge`. See
+  [Threat Model](THREAT_MODEL.md#semantic-search-embeddings).
+
 ---
 
 ## Extracting entities

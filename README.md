@@ -105,6 +105,16 @@ are kept as a single page (`docs show` flags this when the source page count is 
 (some SQLCipher builds), `docs grep` does a plain substring search instead and
 prints a notice.
 
+Optional and experimental: `docs grep --semantic "payments to the mayor's
+brother"` ranks pages by meaning, so a page that says "funds transferred to a
+sibling of the city executive" can still turn up. It needs
+`openfoia install-extras semantic` and a one-time model download
+(`openfoia docs embed-model`, ~31 MB, asks first); after that it is offline.
+It finds leads, not proof of absence: on our test set it surfaced 3 of 10
+reworded passages in the top 10. See
+[the guide](docs/GUIDE.md#searching-by-meaning-optional-experimental) and
+[the measurements](docs/benchmarks/semantic-search.md).
+
 Entity extraction picks the best backend it finds. On a local model the LLM
 validation step can take minutes per document. To skip it, force a local
 backend with `openfoia analyze extract <id> --tier gliner` (or `spacy`,

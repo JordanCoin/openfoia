@@ -53,9 +53,15 @@ documentcloud = ["documentcloud>=4.0.0"]
 # made the encryption feature effectively unreachable. Both drivers are
 # supported at runtime, so an existing pysqlcipher3 install keeps working.
 encryption = ["sqlcipher3-binary>=0.5.0"]
+# Offline semantic search (docs grep --semantic). model2vec: static embeddings,
+# CPU only, pulls numpy + tokenizers (~90MB installed). sqlite-vec is pre-1.0,
+# hence the upper bound; without it (or where Python cannot load SQLite
+# extensions, e.g. macOS system Python) search falls back to numpy. The model
+# itself is a separate, explicit download: openfoia docs embed-model.
+semantic = ["model2vec>=0.4.0,<1", "sqlite-vec>=0.1.6,<0.2"]
 # Everything
 all = [
-    "openfoia[ocr,fax,mail,cloud-ai,ner,tor,browser,email-files,encryption]",
+    "openfoia[ocr,fax,mail,cloud-ai,ner,tor,browser,email-files,encryption,semantic]",
 ]
 # Development
 dev = [

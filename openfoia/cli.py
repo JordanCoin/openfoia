@@ -219,7 +219,9 @@ def init(
 @app.command("install-extras")
 def install_extras(
     extra: str = typer.Argument(
-        ..., help="Extra to install: ner, ocr, fax, mail, cloud-ai, tor, browser, encryption, all"
+        ...,
+        help="Extra to install: ner, ocr, fax, mail, cloud-ai, tor, browser, encryption, "
+        "semantic, all",
     ),
 ):
     """Install optional features after the initial setup.
@@ -231,6 +233,7 @@ def install_extras(
         openfoia install-extras ocr          # Tesseract OCR support
         openfoia install-extras cloud-ai     # Anthropic + OpenAI
         openfoia install-extras encryption   # SQLCipher encrypted database
+        openfoia install-extras semantic     # offline search by meaning (docs grep --semantic)
         openfoia install-extras all          # everything
     """
     import subprocess
@@ -246,6 +249,7 @@ def install_extras(
         "tor",
         "browser",
         "encryption",
+        "semantic",
         "all",
     }
     if extra not in valid:
@@ -262,6 +266,7 @@ def install_extras(
         "tor": "~1MB",
         "browser": "~50MB (+ playwright install after)",
         "encryption": "~5MB (also needs system libsqlcipher-dev)",
+        "semantic": "~90MB (model2vec, tokenizers, numpy, sqlite-vec; the model is a separate download)",
         "all": "~2.5GB total",
     }
 
@@ -295,6 +300,11 @@ def install_extras(
         elif extra == "encryption":
             rprint(
                 "[dim]Also install system package: apt install libsqlcipher-dev (Linux) or brew install sqlcipher (macOS)[/dim]"
+            )
+        elif extra == "semantic":
+            rprint(
+                "[dim]Next, download the embedding model once (asks first; ~31 MB from "
+                "huggingface.co): openfoia docs embed-model[/dim]"
             )
     else:
         rprint(f"[red]Install failed. Try manually: pip install 'openfoia[{extra}]'[/red]")
@@ -2084,7 +2094,9 @@ def docs_grep(
     context: int = typer.Option(
         200, "--context", "-C", help="Characters shown each side of a match"
     ),
-    limit: int = typer.Option(50, "--limit", "-n", help="Maximum passages"),
+    limit: int | None = typer.Option(
+        None, "--limit", "-n", help="Maximum passages (default 50; 10 with --semantic)"
+    ),
     doc: list[str] | None = typer.Option(
         None, "--doc", help="Only this document id or prefix (repeatable)"
     ),
@@ -2100,6 +2112,15 @@ def docs_grep(
     all_docs: bool = typer.Option(
         False, "--all-docs", help="Search every document, not only the active case's"
     ),
+    semantic: bool = typer.Option(
+        False,
+        "--semantic",
+        help="Rank pages by meaning instead of matching words (optional extra: "
+        "openfoia install-extras semantic). Offline once the model is downloaded.",
+    ),
+    model: str | None = typer.Option(
+        None, "--model", help="Embedding model for --semantic (see docs embed-model --list)"
+    ),
 ):
     """Keyword-in-context search over every stored page, fully offline.
 
@@ -2110,10 +2131,19 @@ def docs_grep(
     Uses the local SQLite FTS5 index; if this SQLite build has no FTS5
     (some SQLCipher builds) it falls back to a plain substring scan.
 
+    With --semantic, pages are ranked by similarity of meaning to the query
+    ("payments to the mayor's brother" can find "funds transferred to a
+    sibling of the city executive"), one passage per page, best first, with a
+    score. Every page gets a score, so the last results may be unrelated: read
+    them, do not count them. Pages not yet embedded are embedded first, on
+    this machine. Needs the optional extra and a one-time model download
+    (openfoia docs embed-model).
+
     Examples:
         openfoia docs grep Hocking
         openfoia docs grep '"school board" OR WISC' --context 80
         openfoia docs grep 'NEAR(contract audit, 15)' --doc 3f2a --json
+        openfoia docs grep --semantic "payments to the mayor's brother"
     """
     from .cases import active_case_id_in_db
     from .db import get_session
@@ -2133,13 +2163,22 @@ def docs_grep(
             if not doc_ids:
                 typer.echo("No matches (no documents in the active case; --all-docs).")
                 return
-        hits, engine = search_pages(
-            session, query, context=context, limit=limit, document_ids=doc_ids
-        )
+        why_not_vec = ""
+        if semantic:
+            limit = limit or 10
+            hits, engine, why_not_vec = _semantic_grep(session, query, limit, doc_ids, model)
+        else:
+            limit = limit or 50
+            hits, engine = search_pages(
+                session, query, context=context, limit=limit, document_ids=doc_ids
+            )
 
     notice = {
         "like": "FTS5 is not available in this SQLite build; using a plain substring scan.",
         "fts5-literal": "Query is not valid FTS5 syntax; searched it as an exact phrase.",
+        "sqlite-vec": "Semantic search: cosine similarity in SQLite (sqlite-vec).",
+        "numpy": "Semantic search: brute-force cosine in numpy"
+        + (f" (sqlite-vec not used: {why_not_vec})." if why_not_vec else "."),
     }.get(engine)
     if notice:
         typer.echo(f"Note: {notice}", err=True)
@@ -2183,18 +2222,259 @@ def docs_grep(
         typer.echo(json.dumps(out, indent=2, ensure_ascii=False))
         return
     if not hits:
-        typer.echo("No matches.")
+        typer.echo("No matches." + (" (no embedded pages to search)" if semantic else ""))
         return
     for h in hits:
         body = Text(h.passage)
-        body.stylize("bold yellow", h.match_start, h.match_end)
         star = "" if h.pages_are_real else "*"
-        console.print(Text(f"{h.document_id[:8]}  {h.title}  p.{h.page}{star}", style="cyan"))
+        head = f"{h.document_id[:8]}  {h.title}  p.{h.page}{star}"
+        if semantic:
+            head += f"  score {h.score:.2f}"
+        else:
+            body.stylize("bold yellow", h.match_start, h.match_end)
+        console.print(Text(head, style="cyan"))
         console.print(body)
         console.print()
     typer.echo(f"{len(hits)} passage(s)" + (" (limit reached)" if len(hits) >= limit else ""))
     if not all(h.pages_are_real for h in hits):
         typer.echo(f"* {SINGLE_PAGE_CAVEAT}")
+
+
+def _semantic_grep(session, query: str, limit: int, doc_ids, model: str | None):
+    """Embed any pages not yet indexed (offline), then rank by meaning."""
+    from .semantic import (
+        SemanticUnavailable,
+        count_missing,
+        embed_missing,
+        load_embedder,
+        semantic_search,
+    )
+
+    try:
+        embedder = load_embedder(model)
+        missing, _ = count_missing(session, embedder.name, doc_ids)
+        if missing:
+            typer.echo(f"Embedding {missing} page(s) not yet indexed, on this machine...", err=True)
+            embed_missing(session, embedder, document_ids=doc_ids)
+        return semantic_search(session, query, embedder, limit=limit, document_ids=doc_ids)
+    except SemanticUnavailable as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from None
+
+
+@docs_app.command("embed-model")
+def docs_embed_model(
+    name: str | None = typer.Argument(None, help="Model to download (default potion-base-8M)"),
+    list_models: bool = typer.Option(False, "--list", help="List known models and exit"),
+    verify: bool = typer.Option(
+        False, "--verify", help="Re-check the SHA-256 of a downloaded model; no network"
+    ),
+    tor: bool | None = typer.Option(
+        None, "--tor/--no-tor", help="Route the download through Tor; default is network.tor"
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Do not ask before downloading"),
+):
+    """Download the embedding model for docs grep --semantic. Network, once.
+
+    The only network action of semantic search. Fetches pinned files at a
+    pinned revision from huggingface.co, checks each file's SHA-256, and
+    stores them in the data directory (models/, portable mode respected),
+    not in a shared cache. Hugging Face sees your IP address (the Tor exit
+    node's with --tor) and which model you fetch. Nothing from your documents
+    or searches is sent. After this, embedding and search run offline.
+
+    \b
+    Models:
+      potion-base-8M            English, ~31 MB, ~150 MB RAM (default)
+      potion-retrieval-32M      English, tuned for search, ~131 MB, ~350 MB RAM
+      potion-multilingual-128M  101 languages, ~531 MB, ~1.9 GB peak RAM
+    """
+    from .semantic import (
+        DEFAULT_MODEL,
+        INSTALL_HINT,
+        MODELS,
+        SemanticUnavailable,
+        download_model,
+        download_url,
+        extra_status,
+        get_spec,
+        model_installed,
+        model_path,
+        verify_model,
+    )
+
+    if list_models:
+        for spec in MODELS.values():
+            state = "downloaded" if model_installed(spec.name) else "not downloaded"
+            typer.echo(
+                f"{spec.name:26} {spec.download_bytes / 1e6:6.0f} MB  {spec.languages:14} "
+                f"{state}  ({spec.about})"
+            )
+        return
+
+    name = name or DEFAULT_MODEL
+    try:
+        spec = get_spec(name)
+    except SemanticUnavailable as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from None
+
+    if verify:
+        problems = verify_model(name)
+        if problems:
+            for p in problems:
+                typer.echo(f"  {p}", err=True)
+            typer.echo(f"{name} is not intact. Download it again: openfoia docs embed-model {name}")
+            raise typer.Exit(1)
+        typer.echo(f"{name}: every file matches its pinned SHA-256.")
+        return
+
+    if model_installed(name):
+        typer.echo(f"{name} is already downloaded: {model_path(name)}")
+        typer.echo("Check it with --verify. No network request was made.")
+        return
+
+    from .config import load_config
+    from .net import TorUnavailableError
+
+    policy = _egress_policy_from(load_config(), tor=tor)
+    route = (
+        "through Tor; Hugging Face sees the exit node's IP, not yours"
+        if policy.is_tor
+        else "directly; Hugging Face sees your IP address"
+    )
+    mb = spec.download_bytes / 1e6
+    rprint("[bold yellow]Network request[/bold yellow]")
+    rprint(f"  Downloads {spec.name} ({mb:.0f} MB) from huggingface.co {route}.")
+    rprint("  Sent: which model files you fetch. Nothing from your documents or searches.")
+    rprint(f"  Pinned revision {spec.revision[:12]}; every file's SHA-256 is checked.")
+    rprint(f"  Saved to: {model_path(name)}")
+    if not extra_status()["model2vec"]:
+        rprint(f"[yellow]model2vec is not installed yet; also run: {INSTALL_HINT}[/yellow]")
+    if not yes and not typer.confirm("Download now?", default=False):
+        rprint("[dim]Cancelled. Nothing was sent.[/dim]")
+        raise typer.Exit(1)
+
+    _check_tor_or_exit(policy)
+    for fname in spec.files:
+        rprint(f"  [dim]{download_url(spec, fname)}[/dim]")
+    with Progress() as progress:
+        tasks: dict[str, Any] = {}
+
+        def _tick(fname: str, got: int, total: int) -> None:
+            if fname not in tasks:
+                tasks[fname] = progress.add_task(fname, total=total)
+            progress.update(tasks[fname], completed=got)
+
+        try:
+            folder = download_model(name, policy, _tick)
+        except TorUnavailableError:
+            _report_tor_unavailable()
+        except Exception as e:
+            rprint(f"[red]Download failed: {e}[/red]")
+            raise typer.Exit(1) from None
+    rprint(f"[green]Downloaded and verified {name}[/green] -> {folder}")
+    rprint("[dim]Next: openfoia docs embed (offline), then docs grep --semantic.[/dim]")
+
+
+@docs_app.command("embed")
+def docs_embed(
+    model: str | None = typer.Option(None, "--model", help="Embedding model to use"),
+    status: bool = typer.Option(False, "--status", help="Show what is indexed; embed nothing"),
+    rebuild: bool = typer.Option(False, "--rebuild", help="Re-embed every page for this model"),
+    drop: bool = typer.Option(
+        False, "--drop", help="Delete stored embeddings (all models, or --model's)"
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Do not ask before --drop"),
+    as_json: bool = typer.Option(False, "--json", help="Print --status as JSON"),
+):
+    """Embed stored pages for docs grep --semantic. Offline.
+
+    Embeds every page that has text and no embedding yet, on this machine
+    with the downloaded model. docs grep --semantic does this too before
+    searching; run it ahead of time for a large collection. Embeddings are
+    stored in the database next to the page text (encrypted with it when the
+    database is) and deleted with their page.
+
+    \b
+    Examples:
+        openfoia docs embed               # index whatever is new
+        openfoia docs embed --status      # what is indexed, which search path runs
+        openfoia docs embed --drop        # remove every stored embedding
+    """
+    from .db import get_session
+    from .semantic import (
+        INSTALL_HINT,
+        SemanticUnavailable,
+        drop_vectors,
+        embed_missing,
+        extra_status,
+        index_status,
+        load_embedder,
+        load_sqlite_vec,
+    )
+
+    _open_docs_db()
+    if status:
+        with get_session() as session:
+            st = index_status(session)
+            vec_ok, why = load_sqlite_vec(session.connection())
+        extras = extra_status()
+        out = {
+            **st.to_dict(),
+            "extra": extras,
+            "search_path": "sqlite-vec" if vec_ok else "numpy",
+            "sqlite_vec_unavailable": why or None,
+        }
+        if as_json:
+            typer.echo(json.dumps(out, indent=2))
+            return
+        typer.echo(f"Pages with text: {st.pages_with_text}")
+        if not st.by_model:
+            typer.echo("Embedded: none")
+        for m, d in st.by_model.items():
+            typer.echo(
+                f"Embedded with {m}: {d['pages']} page(s), {d['chunks']} chunk(s), "
+                f"{d['bytes'] / 1e6:.1f} MB of vectors"
+            )
+        typer.echo(
+            f"model2vec: {'installed' if extras['model2vec'] else 'missing'}; "
+            f"sqlite-vec: {'installed' if extras['sqlite_vec'] else 'missing'}; "
+            f"models downloaded: {', '.join(extras['models']) or 'none'}"
+        )
+        typer.echo("Search path: " + ("sqlite-vec" if vec_ok else f"numpy brute force ({why})"))
+        if not extras["model2vec"]:
+            typer.echo(f"Install with: {INSTALL_HINT}")
+        return
+
+    if drop:
+        target = f"{model}'s" if model else "all"
+        if not yes and not typer.confirm(
+            f"Delete {target} stored embeddings? Page text is kept.", default=False
+        ):
+            raise typer.Exit(1)
+        with get_session() as session:
+            n = drop_vectors(session.connection(), model)
+        typer.echo(f"Deleted {n} embedding row(s).")
+        return
+
+    try:
+        embedder = load_embedder(model)
+    except SemanticUnavailable as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from None
+    with get_session() as session:
+        if rebuild:
+            drop_vectors(session.connection(), embedder.name)
+            session.commit()
+        with Progress() as progress:
+            task = progress.add_task(f"Embedding with {embedder.name}", total=None)
+            n = embed_missing(
+                session,
+                embedder,
+                progress=lambda done, total: progress.update(task, completed=done, total=total),
+            )
+    typer.echo(f"Embedded {n} page(s) with {embedder.name}." if n else "Nothing new to embed.")
 
 
 # === Agency Commands ===
