@@ -41,6 +41,8 @@ exhaustive lists.
   lists it as skipped. The route line reads "via Tor, real IP hidden,
   credentials withheld" when a credential was held back. Tor still does not
   hide what you search for (#131).
+- A DocumentCloud `auth_token` passed to the adapter is withheld over Tor
+  too. Nothing passes one today; this closes the gap before something does.
 - Local models under 8B and the qwen3 family now get a short extraction
   prompt (core entity types, no relationships; override with
   `ai.compact_prompt: true|false` or `OPENFOIA_AI_COMPACT_PROMPT`), and

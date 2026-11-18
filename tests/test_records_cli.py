@@ -90,6 +90,8 @@ def test_records_search_csv_no_results_overwrites_stale_file(monkeypatch, tmp_pa
 
     assert result.exit_code == 0, result.output
     assert out.read_text().splitlines() == ["Company,Filing,Date,CIK,URL"]
+    # The empty-SEC notice and the table footer must not both print the count.
+    assert result.output.count("Showing 0 of") == 1
 
 
 def test_records_search_csv_keeps_full_usaspending_description(monkeypatch):

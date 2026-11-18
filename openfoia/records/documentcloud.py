@@ -111,6 +111,9 @@ class DocumentCloudAdapter(RecordAdapter):
         """
         super().__init__(egress=egress)
         self._headers: dict[str, str] = {}
+        # The token is tied to a MuckRock account: withheld over Tor like every
+        # other personal credential (#131).
+        auth_token = self._personal_credential(auth_token)
         if auth_token:
             self._headers["Authorization"] = f"Bearer {auth_token}"
 

@@ -378,3 +378,14 @@ def test_nara_key_withheld_over_tor(monkeypatch, tmp_path, policy, leaked):
         assert sent == [] and "not used over Tor" in result.error
     else:
         assert sent and result.error is None
+
+
+@pytest.mark.parametrize("policy, leaked", [(TOR, set()), (EgressPolicy(), {"Bearer dc-131"})])
+def test_documentcloud_token_withheld_over_tor(monkeypatch, policy, leaked):
+    import openfoia.records.documentcloud as documentcloud_mod
+
+    sent = _capture_requests(monkeypatch, documentcloud_mod, {"count": 0, "results": []})
+    adapter = DocumentCloudAdapter(auth_token="dc-131", egress=policy)
+    asyncio.run(adapter.search("Acme"))
+    assert sent and all(_credentials(r) == leaked for r in sent)
+    assert adapter.credentials_withheld is policy.is_tor

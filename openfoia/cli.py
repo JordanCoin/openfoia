@@ -5410,7 +5410,8 @@ def _print_search_result(
             rprint(
                 f"[yellow]{source} returned {result.total_results} total results for '{query}'.[/yellow]"
             )
-            rprint(f"[dim]Showing 0 of {result.total_results} results.[/dim]")
+            if not csv_path:  # with --csv the shared footer below prints it
+                rprint(f"[dim]Showing 0 of {result.total_results} results.[/dim]")
             if filing_type:
                 rprint(f"[dim]Applied SEC filing type filter: {filing_type}[/dim]")
             rprint(
