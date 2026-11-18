@@ -278,6 +278,17 @@ exhaustive lists.
   while the job that tags and publishes (the only one that can write)
   installs nothing and acts on the commit that was tested. CI's token is
   read-only too. See `docs/RELEASING.md`.
+- Download URLs from records APIs are checked more strictly. Numeric host
+  spellings of internal addresses (`2130706433`, `127.1`, `0x7f000001`,
+  `0177.0.0.1`), `localhost.` with a trailing dot, `.local`/`.internal` names,
+  IPv4-mapped and NAT64 IPv6 forms and every address that is not globally
+  routable (including carrier-grade NAT, 100.64.0.0/10) are refused. In direct
+  mode the hostname is also resolved before the download and refused if any
+  address is not public. In Tor mode nothing is resolved locally (that would
+  leak the name outside Tor); there, protection against a name that points at
+  an internal address relies on the Tor exit relay's exit policy. Downloads
+  do not follow redirects. A DNS answer that changes between the check and the
+  download (DNS rebinding) is not prevented.
 
 ## [4.7.0] - 2026-10-23
 

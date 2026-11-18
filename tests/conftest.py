@@ -70,6 +70,25 @@ def restore_cache_env():
             os.environ[var] = value
 
 
+#: What fake_download_dns answers for every name (a public address).
+FAKE_PUBLIC_ADDRESS = "93.184.215.14"
+
+
+@pytest.fixture(autouse=True)
+def fake_download_dns(monkeypatch):
+    """Answer the records download-target DNS check without a real lookup.
+
+    records.base resolves a download's hostname in DIRECT mode; a test must
+    not do real DNS. Tests of that check monkeypatch base._getaddrinfo again.
+    """
+    from openfoia.records import base
+
+    def _resolve(host, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (FAKE_PUBLIC_ADDRESS, 0))]
+
+    monkeypatch.setattr(base, "_getaddrinfo", _resolve)
+
+
 def pytest_configure(config):
     config.addinivalue_line(
         "markers", "allow_network: test may open real outbound network connections"

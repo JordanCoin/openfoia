@@ -462,7 +462,6 @@ def test_a12_sec_user_agent_is_not_tool_unique(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@audit("A13 validate_download_url accepts loopback/internal spellings")
 @pytest.mark.parametrize(
     "url",
     [
