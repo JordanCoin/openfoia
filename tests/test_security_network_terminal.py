@@ -393,6 +393,31 @@ def test_download_url_accepts_public_hosts(url):
     assert validate_download_url(url) == url
 
 
+@pytest.mark.parametrize(
+    "host,expected",
+    [
+        ("2130706433", "127.0.0.1"),
+        ("127.1", "127.0.0.1"),
+        ("0x7f000001", "127.0.0.1"),
+        ("0177.0.0.1", "127.0.0.1"),
+        ("10.1", "10.0.0.1"),
+        ("192.168.257", "192.168.1.1"),
+        ("134744072", "8.8.8.8"),
+        ("256.1.1.1", None),
+        ("1.2.3.4.5", None),
+        ("example", None),
+    ],
+)
+def test_numeric_hosts_are_read_like_inet_aton(host, expected):
+    """The same reading glibc's resolver gives, so the check sees the real target."""
+    from openfoia.records.base import _inet_aton, validate_download_url
+
+    got = _inet_aton(host)
+    assert (str(got) if got else None) == expected
+    if expected == "8.8.8.8":
+        validate_download_url(f"https://{host}/")  # a public address in another spelling
+
+
 def _fake_dns(monkeypatch, address):
     from openfoia.records import base
 
