@@ -187,16 +187,19 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
             )
             total_pages = session.query(func.coalesce(func.sum(Document.page_count), 0)).scalar()
 
-            total_entities = session.query(func.count(Entity.id)).scalar() or 0
+            from .extraction_runs import current_entity_clause
+
+            current = current_entity_clause()
+            total_entities = session.query(func.count(Entity.id)).filter(current).scalar() or 0
             people = (
                 session.query(func.count(Entity.id))
-                .filter(Entity.entity_type == EntityType.PERSON)
+                .filter(current, Entity.entity_type == EntityType.PERSON)
                 .scalar()
                 or 0
             )
             orgs = (
                 session.query(func.count(Entity.id))
-                .filter(Entity.entity_type == EntityType.ORGANIZATION)
+                .filter(current, Entity.entity_type == EntityType.ORGANIZATION)
                 .scalar()
                 or 0
             )
@@ -501,10 +504,11 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
     ):
         """Search entities."""
         from .db import get_session
+        from .extraction_runs import current_entities
         from .models import Entity, EntityType
 
         with get_session() as session:
-            q = session.query(Entity)
+            q = current_entities(session.query(Entity))
 
             if query:
                 search = f"%{query}%"
@@ -585,10 +589,11 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
     ):
         """Get entity relationship graph."""
         from .db import get_session
+        from .extraction_runs import current_entities
         from .models import Document, Entity, entity_links
 
         with get_session() as session:
-            q = session.query(Entity)
+            q = current_entities(session.query(Entity))
 
             if request_ids:
                 ids = [rid.strip() for rid in request_ids.split(",")]

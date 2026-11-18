@@ -3337,7 +3337,9 @@ def campaign_progress(
 def analyze_extract(
     document_id: str = typer.Argument(..., help="Document ID to analyze"),
     output: Path | None = typer.Option(None, "--output", "-o", help="Output file"),
-    force: bool = typer.Option(False, "--force", help="Re-extract even if already done"),
+    force: bool = typer.Option(
+        False, "--force", help="Re-extract even if already done (earlier runs are kept)"
+    ),
     model: str | None = typer.Option(
         None, "--model", "-m", help="LLM model (e.g. llama3.1:8b, llama3.2:3b)"
     ),
@@ -3351,11 +3353,21 @@ def analyze_extract(
         "Errors if it is not installed or reachable.",
     ),
     csv_path: str | None = typer.Option(None, "--csv", help=CSV_HELP),
+    prefer_run: str | None = typer.Option(
+        None,
+        "--prefer-run",
+        help="Use this earlier run's entities for the document (see 'analyze runs'). "
+        "Extracts nothing.",
+    ),
 ):
     """Extract entities from a document.
 
     Pipeline: regex + NER → merge → LLM validation (if available).
     Use --ensemble to run ALL NER backends (GLiNER + spaCy) together.
+
+    Each extraction is stored as a run. --force adds a new run and keeps the
+    earlier ones; graphs, crossref, exports and search use the newest run
+    unless --prefer-run picks another. List runs with 'openfoia analyze runs'.
 
     The LLM step can take minutes per document on a local model. To skip it,
     pass --tier gliner (or spacy/regex), or set OPENFOIA_AI_PROVIDER=none,
@@ -3363,7 +3375,8 @@ def analyze_extract(
     file or in OPENFOIA_ANTHROPIC_API_KEY / OPENFOIA_OPENAI_API_KEY.
     """
     from .db import get_db_path, get_session
-    from .models import Document, Entity
+    from .extraction_runs import describe_extraction, record_run, resolve_run, set_current_run
+    from .models import Document, utcnow
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -3381,6 +3394,21 @@ def analyze_extract(
             rprint(f"[red]Document '{document_id}' not found.[/red]")
             raise typer.Exit(1)
 
+        if prefer_run:
+            run = resolve_run(session, doc.id, prefer_run)
+            if run is None:
+                rprint(
+                    f"[red]No single run '{prefer_run}' for this document. "
+                    f"List them: openfoia analyze runs {doc.id[:8]}[/red]"
+                )
+                raise typer.Exit(1)
+            set_current_run(session, run)
+            rprint(
+                f"[green]Using run {run.id[:8]} ({run.backend}, {run.entity_count} entities) "
+                f"for {doc.filename}.[/green]"
+            )
+            return
+
         if not doc.extracted_text:
             rprint("[yellow]Document has no extracted text. Run OCR first:[/yellow]")
             rprint(f"[dim]openfoia docs ocr {doc.file_path}[/dim]")
@@ -3388,25 +3416,10 @@ def analyze_extract(
 
         if doc.entities_extracted and not force:
             rprint(
-                "[yellow]Entities already extracted for this document. Use --force to re-extract.[/yellow]"
+                "[yellow]Entities already extracted for this document. Use --force to "
+                "re-extract (earlier runs are kept).[/yellow]"
             )
             return
-
-        if doc.entities_extracted and force:
-            # Remove entity links first (FK constraint), then entities
-            existing_ids = [
-                e.id for e in session.query(Entity).filter(Entity.document_id == doc.id).all()
-            ]
-            if existing_ids:
-                from .models import entity_links as el_table
-
-                session.execute(
-                    el_table.delete().where(
-                        el_table.c.source_id.in_(existing_ids)
-                        | el_table.c.target_id.in_(existing_ids)
-                    )
-                )
-            session.query(Entity).filter(Entity.document_id == doc.id).delete()
 
         rprint(f"[cyan]Extracting entities from {doc.filename}...[/cyan]")
 
@@ -3437,6 +3450,7 @@ def analyze_extract(
             rprint("[dim]Or run a local LLM: ollama pull llama3.2:3b[/dim]")
             rprint("")
 
+        started_at = utcnow()
         try:
             result = asyncio.run(extractor.extract(doc.extracted_text, ensemble=ensemble))
         except BackendUnavailableError as e:
@@ -3447,68 +3461,31 @@ def analyze_extract(
             rprint("[dim]Ensure AI provider is configured: openfoia config --init[/dim]")
             raise typer.Exit(1) from None
 
+        # The run row is written first; its entities and links reference it.
+        run, rels_saved = record_run(
+            session,
+            doc,
+            result,
+            started_at=started_at,
+            **describe_extraction(extractor, result.metadata, ensemble),
+        )
+
         if not result.entities:
-            rprint("[yellow]No entities found in document.[/yellow]")
+            rprint(f"[yellow]No entities found in document (run {run.id[:8]}).[/yellow]")
+            if doc.entities_extracted:
+                rprint(
+                    "[dim]Earlier runs are kept. Go back to one: openfoia analyze extract "
+                    f"{doc.id[:8]} --prefer-run <run>[/dim]"
+                )
             if csv_path:
                 _emit_table(Table("Type", "Entity", "Confidence"), csv_path)
             return
 
-        # Save entities to database
-        from uuid import uuid4
-
-        from .models import entity_links
-
-        entity_id_map: dict[str, str] = {}  # normalized_text.lower() -> entity.id
-
-        for ent in result.entities:
-            eid = str(uuid4())
-            entity_id_map[ent.normalized_text.lower()] = eid
-            entity = Entity(
-                id=eid,
-                document_id=doc.id,
-                entity_type=ent.entity_type,
-                raw_text=ent.raw_text,
-                normalized_text=ent.normalized_text,
-                confidence=ent.confidence,
-                context=ent.context,
-                page_number=ent.page_number,
-            )
-            session.add(entity)
-
-        # Flush entities so FKs exist before inserting links
-        session.flush()
-
-        # Save relationships to entity_links
-        rels_saved = 0
-        for rel in result.relationships:
-            src = (rel.get("source") or "").lower()
-            tgt = (rel.get("target") or "").lower()
-            src_id = entity_id_map.get(src)
-            tgt_id = entity_id_map.get(tgt)
-            if not src_id or not tgt_id or src_id == tgt_id:
-                # Try substring match
-                for key, eid in entity_id_map.items():
-                    if not src_id and src in key:
-                        src_id = eid
-                    if not tgt_id and tgt in key:
-                        tgt_id = eid
-            if src_id and tgt_id and src_id != tgt_id:
-                try:
-                    session.execute(
-                        entity_links.insert().values(
-                            source_id=src_id,
-                            target_id=tgt_id,
-                            link_type=rel.get("relation", "related_to"),
-                        )
-                    )
-                    rels_saved += 1
-                except Exception:
-                    pass  # duplicate link, skip
-
         doc.entities_extracted = True
 
         rprint(
-            f"[green]Extracted {len(result.entities)} entities, {rels_saved} relationships[/green]"
+            f"[green]Extracted {len(result.entities)} entities, {rels_saved} relationships "
+            f"(run {run.id[:8]}, {run.backend})[/green]"
         )
 
         table = Table(title="Extracted Entities")
@@ -3542,6 +3519,95 @@ def analyze_extract(
                 )
             )
             rprint(f"\n[green]Entities saved to {output}[/green]")
+
+
+@analyze_app.command("runs")
+@_csv_stdout_safe
+def analyze_runs(
+    document_id: str = typer.Argument(..., help="Document ID (or prefix)"),
+    prune: bool = typer.Option(
+        False,
+        "--prune",
+        help="Delete every run except the one in use, with their entities and relationships, "
+        "and any other entities of the document that are not in use",
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the --prune confirmation"),
+    csv_path: str | None = typer.Option(None, "--csv", help=CSV_HELP),
+):
+    """List a document's entity extraction runs, oldest first.
+
+    The run marked current is the one graphs, crossref, exports and search
+    use: the newest, unless 'analyze extract <doc> --prefer-run <run>' picked
+    another. --prune deletes the others and every entity of the document
+    that is not in the current run.
+
+    Examples:
+        openfoia analyze runs 3f2a
+        openfoia analyze extract 3f2a --prefer-run 9c41
+        openfoia analyze runs 3f2a --prune
+    """
+    from .db import get_session
+    from .extraction_runs import prune_runs, runs_for_document
+    from .models import Document
+
+    _require_db()
+    with get_session() as session:
+        doc = (
+            session.query(Document)
+            .filter((Document.id == document_id) | (Document.id.like(f"{document_id}%")))
+            .first()
+        )
+        if not doc:
+            rprint(f"[red]Document '{document_id}' not found.[/red]")
+            raise typer.Exit(1)
+        runs = runs_for_document(session, doc.id)
+
+        if prune:
+            stale = sum(1 for r in runs if not r.is_current)
+            if not yes:
+                rprint(
+                    f"Delete {stale} earlier run(s) of [cyan]{doc.filename}[/cyan] with their "
+                    "entities and relationships? The run in use is kept."
+                )
+                if not typer.confirm("Continue?", default=False):
+                    rprint("[yellow]Cancelled.[/yellow]")
+                    raise typer.Exit(1)
+            deleted_runs, deleted_entities = prune_runs(session, doc.id)
+            rprint(f"[green]Deleted {deleted_runs} run(s) and {deleted_entities} entities.[/green]")
+            rprint(
+                "[dim]Freed database pages are overwritten. Earlier exports, backups and "
+                "filesystem copies are not; 'openfoia purge --secure' removes all data.[/dim]"
+            )
+            return
+
+        table = Table(title=f"Extraction runs: {doc.filename}")
+        for column in ("Current", "Run", "Backend", "Model", "Started (UTC)", "Entities"):
+            table.add_column(column)
+        for r in runs:
+            table.add_row(
+                "yes" if r.is_current else "",
+                r.id,
+                r.backend,
+                r.model or "-",
+                r.started_at.strftime("%Y-%m-%d %H:%M:%S") if r.started_at else "unknown",
+                str(r.entity_count),
+            )
+        if not runs:
+            rprint(f"[dim]No extraction runs for {doc.filename}.[/dim]")
+            if doc.entities_extracted:
+                rprint(
+                    "[dim]Its entities were stored before runs were recorded; the next "
+                    "'analyze extract --force' keeps them as a run.[/dim]"
+                )
+            if csv_path:
+                _emit_table(table, csv_path)
+            return
+        _emit_table(table, csv_path)
+        if not csv_path:
+            rprint(
+                f"[dim]Use another run: openfoia analyze extract {doc.id[:8]} "
+                "--prefer-run <run>[/dim]"
+            )
 
 
 @analyze_app.command("graphs")
@@ -3653,6 +3719,7 @@ def analyze_graph(
         openfoia analyze graphs                                # list saved graphs
     """
     from .db import get_db_path, get_session
+    from .extraction_runs import current_entities
     from .models import Document, Entity, entity_links
     from .models import Request as RequestModel
 
@@ -3662,7 +3729,7 @@ def analyze_graph(
         raise typer.Exit(1)
 
     with get_session() as session:
-        query = session.query(Entity)
+        query = current_entities(session.query(Entity))
 
         if request_id:
             # Accept either UUID or request number (e.g., REQ-20260322-ABC)
@@ -6706,6 +6773,7 @@ def _doc_cite(session, doc, req) -> dict[str, Any]:
 
 
 def _case_summary(session, case) -> dict[str, Any]:
+    from .extraction_runs import current_entities
     from .models import CaseNote, CaseQuery, Document, Entity
     from .models import Request as RequestModel
 
@@ -6723,7 +6791,7 @@ def _case_summary(session, case) -> dict[str, Any]:
         .all()
     )
     entity_count = (
-        session.query(Entity)
+        current_entities(session.query(Entity))
         .join(Document)
         .join(RequestModel)
         .filter(RequestModel.case_id == case.id)
@@ -7404,6 +7472,7 @@ def crossref(
     from .config import load_config
     from .crossref import OFFLINE_SOURCES, crossref_entities
     from .db import get_db_path, get_session
+    from .extraction_runs import current_entities
     from .models import Document, Entity
     from .models import Request as RequestModel
     from .net import TorUnavailableError, describe_egress
@@ -7433,7 +7502,7 @@ def crossref(
 
     # Gather entities
     with get_session() as session:
-        query = session.query(Entity)
+        query = current_entities(session.query(Entity))
 
         if document_id:
             query = query.filter(Entity.document_id == document_id)
@@ -7685,6 +7754,7 @@ def analyze_export(
         openfoia analyze export -o investigation.ftm.json -r REQ-20260322-ABC
     """
     from .db import get_db_path, get_session
+    from .extraction_runs import current_entities
     from .ftm import export_ftm
     from .models import Document, Entity, entity_links
     from .models import Request as RequestModel
@@ -7696,7 +7766,7 @@ def analyze_export(
         raise typer.Exit(1)
 
     with get_session() as session:
-        query = session.query(Entity)
+        query = current_entities(session.query(Entity))
         if request_id:
             query = query.join(Document).filter(
                 (Document.request_id == request_id)
@@ -7725,12 +7795,19 @@ def analyze_export(
             for e in db_entities
         ]
 
-        # Get relationships
-        links = session.query(entity_links).all()
+        # Relationships between exported entities only (not earlier runs' or other scopes')
+        exported_ids = {e.id for e in db_entities}
+        links = [
+            lnk
+            for lnk in session.query(entity_links).all()
+            if lnk.source_id in exported_ids and lnk.target_id in exported_ids
+        ]
+        # The FtM writer joins relationship ends to entities by name, not database id.
+        names = {e.id: e.normalized_text for e in db_entities}
         relationships = [
             {
-                "source": lnk.source_id,
-                "target": lnk.target_id,
+                "source": names[lnk.source_id],
+                "target": names[lnk.target_id],
                 "relation": lnk.link_type or "related_to",
             }
             for lnk in links

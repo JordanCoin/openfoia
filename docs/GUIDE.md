@@ -318,6 +318,23 @@ ollama pull llama3.2:3b    # 2GB model, runs on any laptop
 openfoia analyze extract <document-id>
 ```
 
+### Extraction runs
+
+Every extraction is kept as a run: which backend and model produced it, when,
+and how many entities it found. Re-extracting with `--force` adds a run and
+keeps the earlier ones. The graph, crossref, exports, the web UI and the agent
+use one run per document: the newest, unless you pick another.
+
+```bash
+openfoia analyze runs <document-id>                            # list runs; "yes" marks the one in use
+openfoia analyze extract <document-id> --prefer-run <run-id>   # use an earlier run instead
+openfoia analyze runs <document-id> --prune                    # delete every other run and its entities
+```
+
+Earlier runs stay in the database until you prune them or run `openfoia purge`.
+`--prune` overwrites the freed database pages, but it cannot reach copies made
+before it ran: graph and FtM exports, backups, or old blocks on an SSD.
+
 ---
 
 ## Building investigation graphs

@@ -510,6 +510,8 @@ def _get_sentence(text: str, pos: int) -> str:
 # ---------------------------------------------------------------------------
 
 _GLINER_MODEL = None
+#: Recorded on each extraction run as the model that produced its entities.
+GLINER_MODEL_ID = "urchade/gliner_medium-v2.1"
 
 
 def _get_gliner():
@@ -524,7 +526,7 @@ def _get_gliner():
         from gliner import GLiNER
         from huggingface_hub import constants as hf_constants
 
-        model_id = "urchade/gliner_medium-v2.1"
+        model_id = GLINER_MODEL_ID
         # ponytail: gliner ignores local_files_only for its tokenizer backbone,
         # so flip the hub-wide offline flag instead of threading kwargs through.
         was_offline = hf_constants.HF_HUB_OFFLINE
@@ -654,6 +656,15 @@ def _get_spacy():
                 "python -m spacy download en_core_web_sm"
             )
     return _SPACY_NLP
+
+
+def spacy_model_name() -> str | None:
+    """Name and version of the loaded spaCy pipeline, or None if none was loaded."""
+    if _SPACY_NLP is None:
+        return None
+    meta = getattr(_SPACY_NLP, "meta", {}) or {}
+    name = f"{meta.get('lang', '')}_{meta.get('name', '')}".strip("_") or "unknown"
+    return f"{name} {meta['version']}" if meta.get("version") else name
 
 
 def _spacy_available() -> bool:
@@ -1095,6 +1106,20 @@ def _llm_available(provider: str, api_key: str | None, base_url: str | None) -> 
 # Main extractor
 # ---------------------------------------------------------------------------
 
+#: Prompt the LLM validator sends; its SHA-256 is recorded on LLM extraction runs.
+LLM_VALIDATION_PROMPT = """Review this entity list extracted from a government document.
+
+TASKS:
+1. Remove junk entries (boilerplate like "To:", "APPROVED", job titles, sentence fragments)
+2. Flag OCR errors in names (e.g. "KIRKLAND 8. ELLIS" should be "Kirkland & Ellis")
+3. Mark low-quality entries with confidence 0.1
+4. Keep all legitimate people, organizations, locations, dates, money amounts
+
+ENTITIES:
+{entity_list}
+
+Return JSON: {{"keep": [{{"raw_text": "...", "confidence": 0.95, "corrected": "..."}}], "remove": ["junk entry 1", "junk entry 2"]}}"""
+
 TIERS = ("gliner", "llm", "spacy", "regex")
 
 
@@ -1295,18 +1320,7 @@ class EntityExtractor:
             )
         entity_list = "\n".join(entity_lines[:200])  # cap to keep prompt manageable
 
-        prompt = f"""Review this entity list extracted from a government document.
-
-TASKS:
-1. Remove junk entries (boilerplate like "To:", "APPROVED", job titles, sentence fragments)
-2. Flag OCR errors in names (e.g. "KIRKLAND 8. ELLIS" should be "Kirkland & Ellis")
-3. Mark low-quality entries with confidence 0.1
-4. Keep all legitimate people, organizations, locations, dates, money amounts
-
-ENTITIES:
-{entity_list}
-
-Return JSON: {{"keep": [{{"raw_text": "...", "confidence": 0.95, "corrected": "..."}}], "remove": ["junk entry 1", "junk entry 2"]}}"""
+        prompt = LLM_VALIDATION_PROMPT.format(entity_list=entity_list)
 
         try:
             if self.provider == "openai":

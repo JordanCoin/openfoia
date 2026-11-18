@@ -111,6 +111,12 @@ backend with `openfoia analyze extract <id> --tier gliner` (or `spacy`,
 `regex`), or set `OPENFOIA_AI_PROVIDER=none`, which wins over any API key
 or Ollama URL in the config file or environment.
 
+Each extraction is stored as a run (backend, model, time, entity count).
+`--force` adds a run instead of overwriting the last one; graphs, crossref and
+exports use the newest run per document. `openfoia analyze runs <id>` lists
+them, `analyze extract <id> --prefer-run <run>` picks another, and
+`analyze runs <id> --prune` deletes the rest.
+
 ## Which law applies
 
 Federal FOIA reaches only federal executive agencies. A school district, city, county, police department or public university answers under its state's public-records act, with that state's clock, fees and appeal path. OpenFOIA carries one record per law, built from the [RCFP Open Government Guide](https://www.rcfp.org/open-government-guide/), each with its sources and a `verified` flag. Unknown values stay unknown; nothing is invented.

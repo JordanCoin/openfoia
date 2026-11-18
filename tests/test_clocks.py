@@ -164,7 +164,7 @@ def test_migration_head_007_and_auto_upgrade_from_006(data_dir, monkeypatch):
 
     dbmod.init_db(seed=False)
     version = "select version_num from alembic_version"
-    assert sqlite3.connect(dbmod.get_db_path()).execute(version).fetchall() == [("007",)]
+    assert sqlite3.connect(dbmod.get_db_path()).execute(version).fetchall() == [("008",)]
 
     monkeypatch.setenv("OPENFOIA_DATA_DIR", str(data_dir.parent / "old"))
     cfg = dbmod._alembic_config()
@@ -173,7 +173,7 @@ def test_migration_head_007_and_auto_upgrade_from_006(data_dir, monkeypatch):
     monkeypatch.setattr(dbmod, "_schema_checked", False)
     with dbmod.get_session() as s:
         s.connection().exec_driver_sql("select appeal_due_at from requests").fetchall()
-    assert sqlite3.connect(dbmod.get_db_path()).execute(version).fetchall() == [("007",)]
+    assert sqlite3.connect(dbmod.get_db_path()).execute(version).fetchall() == [("008",)]
 
 
 def _request_number(agency_name: str) -> str:

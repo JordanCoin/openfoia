@@ -193,6 +193,7 @@ def import_ftm_to_db(
         (entities_imported, relationships_imported)
     """
     from .db import get_db_path, get_session, init_db
+    from .extraction_runs import current_entities
     from .models import Entity
 
     db_path = get_db_path()
@@ -205,9 +206,10 @@ def import_ftm_to_db(
     rels_added = 0
 
     with get_session() as session:
-        # Get existing entity names for dedup
+        # Dedup against entities in use, not ones from superseded extraction runs
         existing = set()
-        for row in session.query(Entity.entity_type, Entity.normalized_text).all():
+        current = current_entities(session.query(Entity.entity_type, Entity.normalized_text))
+        for row in current.all():
             existing.add((row[0].value, row[1].lower()))
 
         # Map FtM IDs to our entity IDs for relationship resolution
@@ -221,7 +223,7 @@ def import_ftm_to_db(
             if key in existing:
                 # Already have this entity — find its ID for relationship mapping
                 existing_ent = (
-                    session.query(Entity)
+                    current_entities(session.query(Entity))
                     .filter(
                         Entity.entity_type == etype,
                         Entity.normalized_text == name,

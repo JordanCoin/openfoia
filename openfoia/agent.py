@@ -663,9 +663,10 @@ Please contact me if you have questions about this request.
 
     async def _build_entity_graph(self, params: dict[str, Any]) -> dict[str, Any]:
         """Build entity graph."""
+        from .extraction_runs import current_entities
         from .models import Document, Entity, entity_links
 
-        query = self.db.query(Entity)
+        query = current_entities(self.db.query(Entity))
         request_ids = params.get("request_ids")
         if request_ids:
             query = query.join(Document).filter(Document.request_id.in_(request_ids))
@@ -688,11 +689,12 @@ Please contact me if you have questions about this request.
 
     async def _search_entities(self, params: dict[str, Any]) -> dict[str, Any]:
         """Search entities."""
+        from .extraction_runs import current_entities
         from .models import Entity
 
         search = f"%{params.get('query', '')}%"
 
-        query = self.db.query(Entity).filter(Entity.normalized_text.ilike(search))
+        query = current_entities(self.db.query(Entity)).filter(Entity.normalized_text.ilike(search))
 
         entity_type = params.get("entity_type")
         if entity_type and entity_type != "all":
@@ -783,11 +785,19 @@ Please contact me if you have questions about this request.
         if not requests:
             return {"error": "No requests found with the given IDs."}
 
-        # Gather data
+        # Gather data: each document's current extraction run only
+        from .extraction_runs import current_entities
+        from .models import Entity
+
         all_entities = []
         for req in requests:
-            for doc in req.documents:
-                all_entities.extend(doc.entities)
+            doc_ids = [doc.id for doc in req.documents]
+            if doc_ids:
+                all_entities.extend(
+                    current_entities(self.db.query(Entity))
+                    .filter(Entity.document_id.in_(doc_ids))
+                    .all()
+                )
 
         report = "# FOIA Analysis Report\n\n"
         report += f"## Requests Analyzed: {len(requests)}\n\n"
