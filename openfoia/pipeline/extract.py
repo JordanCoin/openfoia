@@ -11,12 +11,16 @@ The first available backend is used. All backends produce the same output format
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
+import os
 import re
+import sys
 import unicodedata
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlparse
 
 from ..config import EntityConfig, OpenFOIAConfig, load_config
 from ..models import ConfidenceLevel, EntityType
@@ -1087,19 +1091,115 @@ def _llm_available(provider: str, api_key: str | None, base_url: str | None) -> 
         except Exception:
             return False
 
-    if provider == "openai" and base_url:
+    if provider == "openai" and base_url and is_loopback_url(base_url):
         # Local OpenAI-compatible server — check if it's actually reachable
-        is_local = "localhost" in base_url or "127.0.0.1" in base_url
-        if is_local:
-            try:
-                url = base_url.rstrip("/")
-                req = urllib.request.Request(f"{url}/models", method="GET")
-                with urllib.request.urlopen(req, timeout=3):
-                    return True
-            except Exception:
-                return False
+        try:
+            url = base_url.rstrip("/")
+            req = urllib.request.Request(f"{url}/models", method="GET")
+            with urllib.request.urlopen(req, timeout=3):
+                return True
+        except Exception:
+            return False
 
     return bool(api_key)
+
+
+# ---------------------------------------------------------------------------
+# Where document text goes: this machine, or somewhere else
+# ---------------------------------------------------------------------------
+
+
+def is_loopback_url(url: str | None) -> bool:
+    """True only when *url*'s host is this machine.
+
+    That is the name ``localhost`` (exactly, trailing dot allowed) or a loopback
+    IP literal (127.0.0.0/8, ``[::1]``). A substring test is not enough:
+    ``https://localhost.attacker.example/`` is somebody else's server.
+    Anything unparseable counts as not local.
+    """
+    if not url:
+        return False
+    try:
+        host = urlparse(url.strip()).hostname
+    except ValueError:
+        return False
+    if not host:
+        return False
+    host = host.rstrip(".").lower()
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def llm_endpoint(provider: str | None, base_url: str | None) -> str | None:
+    """The URL *provider* sends prompts to, or None when no LLM is configured."""
+    if not provider or provider == "none":
+        return None
+    if provider == "ollama":
+        return base_url or "http://localhost:11434"
+    if provider == "anthropic":
+        # _call_anthropic does not pass base_url; the SDK reads ANTHROPIC_BASE_URL.
+        return os.environ.get("ANTHROPIC_BASE_URL") or "https://api.anthropic.com"
+    if provider == "openai":
+        return base_url or os.environ.get("OPENAI_BASE_URL") or "https://api.openai.com/v1"
+    return base_url
+
+
+def remote_llm_host(provider: str | None, base_url: str | None) -> str | None:
+    """The host off this machine that document text would be sent to, or None if local."""
+    url = llm_endpoint(provider, base_url)
+    if url is None or is_loopback_url(url):
+        return None
+    try:
+        return urlparse(url.strip()).hostname or url
+    except ValueError:
+        return url
+
+
+def remote_llm_refusal(
+    provider: str | None, base_url: str | None, *, allow_remote: bool, tor: bool
+) -> str | None:
+    """Why text must not go to the configured LLM, or None when it may (or it is local).
+
+    The one consent rule for every caller (CLI, agent tool, web UI): an LLM
+    that is not on this machine is used only with ``ai.allow_remote`` (config
+    or OPENFOIA_AI_ALLOW_REMOTE) or the user's confirmation for this run,
+    and never in Tor mode, because these client libraries cannot be routed
+    through Tor and the request would leave from the user's real IP.
+    """
+    host = remote_llm_host(provider, base_url)
+    if host is None:
+        return None
+    if tor:
+        return (
+            f"WARNING: AI provider '{provider}' at {host} is not on this machine, and Tor "
+            "mode is on. OpenFOIA cannot route AI requests through Tor, so it is not "
+            f"sending any document text to {host}. Use a model on this machine (Ollama at "
+            "localhost), or turn Tor off for this run (OPENFOIA_TOR=0)."
+        )
+    if not allow_remote:
+        return (
+            f"WARNING: AI provider '{provider}' at {host} is not on this machine. "
+            f"Not sending document text to {host} without your consent: confirm when "
+            'the CLI asks, or set "ai": {"allow_remote": true} in config.json '
+            "(or OPENFOIA_AI_ALLOW_REMOTE=1). Using local extraction instead."
+        )
+    return None
+
+
+def remote_llm_warning(provider: str | None, base_url: str | None) -> str | None:
+    """The warning printed before text goes to an LLM off this machine, or None if local."""
+    host = remote_llm_host(provider, base_url)
+    if host is None:
+        return None
+    return (
+        f"WARNING: AI provider '{provider}' at {host} is not on this machine. Text from "
+        f"your documents will be sent to {host}, from your real IP address, and you "
+        "cannot control how long it is kept there."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1127,6 +1227,10 @@ class BackendUnavailableError(RuntimeError):
     """A forced extraction tier is not installed or not reachable."""
 
 
+class RemoteLLMNotAllowedError(BackendUnavailableError):
+    """The configured LLM is off this machine and sending to it was not allowed."""
+
+
 class EntityExtractor:
     """Extract entities and relationships from document text.
 
@@ -1142,11 +1246,16 @@ class EntityExtractor:
         api_key: str | None = None,
         base_url: str | None = None,
         tier: str | None = None,
+        allow_remote: bool | None = None,
     ):
         """*tier* forces one backend (see TIERS) instead of the best available.
 
         regex/spacy/gliner never call an LLM; llm runs regex + the best local
         NER, then the LLM validator, and fails if no LLM is reachable.
+
+        *allow_remote* is consent to send text to an LLM that is not on this
+        machine (None: config ``ai.allow_remote``). It has no effect in Tor
+        mode, where a remote LLM is never used; see remote_llm_refusal.
         """
         if tier is not None and tier not in TIERS:
             raise ValueError(f"Unknown tier {tier!r}; choose from {', '.join(TIERS)}")
@@ -1160,7 +1269,34 @@ class EntityExtractor:
         self.max_tokens = cfg.ai.extraction_max_tokens
         self.compact_prompt = cfg.ai.compact_prompt
         self.entity_config = cfg.entities
+        self.allow_remote = cfg.ai.allow_remote if allow_remote is None else allow_remote
+        self.tor = cfg.network.tor
         self._backend: str | None = None  # resolved lazily
+        self._refusal: str | None = None
+        self._consent_checked = False
+
+    def _llm_send_allowed(self) -> bool:
+        """May text go to the configured LLM? Warns (once) whenever it is off this machine."""
+        if not self._consent_checked:
+            self._consent_checked = True
+            self._refusal = remote_llm_refusal(
+                self.provider, self.base_url, allow_remote=self.allow_remote, tor=self.tor
+            )
+            message = self._refusal or remote_llm_warning(self.provider, self.base_url)
+            if message:
+                print(message, file=sys.stderr)
+        return self._refusal is None
+
+    def _require_llm_consent(self) -> None:
+        """Raise before any request that would carry text to an LLM it may not reach."""
+        if not self._llm_send_allowed():
+            raise RemoteLLMNotAllowedError(self._refusal or "remote AI provider not allowed")
+
+    def _llm_ready(self) -> bool:
+        """Allowed and reachable. Never probes a remote host before consent."""
+        return self._llm_send_allowed() and _llm_available(
+            self.provider, self.api_key, self.base_url
+        )
 
     def _resolve_backend(self) -> str:
         """Determine which extraction backend to use."""
@@ -1168,26 +1304,14 @@ class EntityExtractor:
             return self._backend
 
         # Try in order of quality.
-        if _llm_available(self.provider, self.api_key, self.base_url):
-            if self.provider in ("anthropic", "openai"):
-                import sys
-
-                is_local = self.base_url and (
-                    "localhost" in self.base_url
-                    or "127.0.0.1" in self.base_url
-                    or "0.0.0.0" in self.base_url
+        if self._llm_ready():
+            # Off-machine providers were warned about in _llm_send_allowed.
+            local = remote_llm_host(self.provider, self.base_url) is None
+            if self.provider in ("anthropic", "openai") and local:
+                print(
+                    f"Using local AI provider ({self.model} via {self.base_url})",
+                    file=sys.stderr,
                 )
-                if is_local:
-                    print(
-                        f"Using local AI provider ({self.model} via {self.base_url})",
-                        file=sys.stderr,
-                    )
-                else:
-                    print(
-                        f"WARNING: Using cloud AI provider '{self.provider}'. "
-                        "Document text will be sent to external servers.",
-                        file=sys.stderr,
-                    )
             self._backend = "llm"
         elif _gliner_available():
             self._backend = "gliner"
@@ -1229,6 +1353,8 @@ class EntityExtractor:
             raise BackendUnavailableError(
                 "spaCy or its English model is not installed: openfoia install-extras ner-spacy"
             )
+        if tier == "llm" and not self._llm_send_allowed():
+            raise RemoteLLMNotAllowedError(self._refusal or "remote AI provider not allowed")
         if tier == "llm" and not _llm_available(self.provider, self.api_key, self.base_url):
             raise BackendUnavailableError(
                 f"No LLM reachable for provider '{self.provider}'. Start Ollama "
@@ -1273,9 +1399,7 @@ class EntityExtractor:
         # Skip if only regex ran (no NER entities to validate) or backend was forced.
         has_ner_mentions = any(m.backend_name != "regex" for m in all_mentions)
         llm_available = (
-            tier in (None, "llm")
-            and (has_ner_mentions or tier == "llm")
-            and _llm_available(self.provider, self.api_key, self.base_url)
+            tier in (None, "llm") and (has_ner_mentions or tier == "llm") and self._llm_ready()
         )
         if llm_available and entities:
             entities = await self._llm_validate_entities(entities, text)
@@ -1323,6 +1447,7 @@ class EntityExtractor:
         prompt = LLM_VALIDATION_PROMPT.format(entity_list=entity_list)
 
         try:
+            self._require_llm_consent()
             if self.provider == "openai":
                 raw = await asyncio.to_thread(
                     _call_openai, prompt, self.model, self.api_key or "", self.base_url, 0.1, 4000
@@ -1332,10 +1457,11 @@ class EntityExtractor:
                     _call_ollama, prompt, self.model, self.base_url, 0.1, 4000
                 )
         except Exception as exc:
-            import sys
+            from ..termsafe import safe_text
 
+            # The error can quote the remote server's response.
             print(
-                f"LLM validation skipped: {type(exc).__name__}: {exc}",
+                safe_text(f"LLM validation skipped: {type(exc).__name__}: {exc}"),
                 file=sys.stderr,
             )
             return entities  # LLM failed, return unmodified
@@ -1462,6 +1588,7 @@ class EntityExtractor:
     def _extract_chunk_llm(
         self, text: str, context: str | None, page_number: int | None
     ) -> dict[str, Any]:
+        self._require_llm_consent()
         prompt = _build_extraction_prompt(
             text,
             context,

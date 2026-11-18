@@ -354,17 +354,19 @@ def test_a8_records_output_does_not_render_markup(capsys):
 # ---------------------------------------------------------------------------
 
 
-@audit("A9 a remote Ollama base_url is used without any warning")
 def test_a9_remote_ollama_is_warned_about(data_dir, monkeypatch, capsys):
     from openfoia.pipeline import extract
 
     monkeypatch.setattr(extract, "_llm_available", lambda *a: True)
+    # The fix also requires consent for a remote LLM (without it the backend
+    # falls back to local NER, with a warning: see test_security_network_terminal).
+    # Given consent, the warning must still be printed.
+    monkeypatch.setenv("OPENFOIA_AI_ALLOW_REMOTE", "1")
     ex = extract.EntityExtractor(provider="ollama", base_url="http://gpu-box.example.net:11434")
     assert ex._resolve_backend() == "llm"
     assert "WARNING" in capsys.readouterr().err
 
 
-@audit("A9 'localhost' anywhere in base_url is treated as local")
 def test_a9_lookalike_host_is_not_called_local(data_dir, monkeypatch, capsys):
     from openfoia.pipeline import extract
 

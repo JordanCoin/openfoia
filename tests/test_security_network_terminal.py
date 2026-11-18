@@ -170,6 +170,158 @@ def test_echo_keeps_document_layout_but_drops_escapes(capsys):
 
 
 # ---------------------------------------------------------------------------
+# A9: document text and LLMs off this machine
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "url,local",
+    [
+        ("http://localhost:11434", True),
+        ("http://LOCALHOST.:11434", True),
+        ("http://127.0.0.1:8080/v1", True),
+        ("http://127.9.9.9/v1", True),
+        ("http://[::1]:11434", True),
+        ("https://localhost.attacker.example/v1", False),
+        ("https://attacker.example/localhost/v1", False),
+        ("https://127.0.0.1.attacker.example/v1", False),
+        ("http://gpu-box.example.net:11434", False),
+        ("http://10.0.0.5:11434", False),  # the LAN is not this machine
+        ("http://0.0.0.0:11434", False),
+        ("", False),
+        (None, False),
+        ("not a url", False),
+    ],
+)
+def test_is_loopback_url(url, local):
+    from openfoia.pipeline.extract import is_loopback_url
+
+    assert is_loopback_url(url) is local
+
+
+def _no_llm_calls(monkeypatch):
+    from openfoia.pipeline import extract
+
+    def boom(*a, **k):
+        raise AssertionError("document text was sent to the LLM")
+
+    for name in ("_call_ollama", "_call_openai", "_call_anthropic"):
+        monkeypatch.setattr(extract, name, boom)
+    # Keep these tests on the regex tier: no NER models loaded.
+    monkeypatch.setattr(extract, "_gliner_available", lambda: False)
+    monkeypatch.setattr(extract, "_spacy_available", lambda: False)
+    probes = []
+    monkeypatch.setattr(extract, "_llm_available", lambda *a: probes.append(a) or True)
+    return probes
+
+
+def test_remote_ollama_without_consent_is_refused_and_never_probed(data_dir, monkeypatch, capsys):
+    from openfoia.pipeline import extract
+
+    probes = _no_llm_calls(monkeypatch)
+    ex = extract.EntityExtractor(provider="ollama", base_url="http://gpu-box.example.net:11434")
+    assert ex._resolve_backend() != "llm"
+    err = capsys.readouterr().err
+    assert "WARNING" in err and "gpu-box.example.net" in err and "allow_remote" in err
+    assert probes == [], "the remote host was contacted before consent"
+    result = asyncio.run(ex.extract("Jane Doe met John Smith at Acme Corp in Springfield."))
+    assert result.entities is not None  # local extraction still works
+
+
+def test_forced_llm_tier_without_consent_raises(data_dir, monkeypatch):
+    from openfoia.pipeline import extract
+
+    _no_llm_calls(monkeypatch)
+    ex = extract.EntityExtractor(
+        provider="openai", api_key="k", base_url="https://api.example.com/v1", tier="llm"
+    )
+    with pytest.raises(extract.RemoteLLMNotAllowedError):
+        asyncio.run(ex.extract("Jane Doe met John Smith."))
+
+
+def test_llm_chunk_call_checks_consent_itself(data_dir, monkeypatch):
+    """Defense in depth: even a caller that skips _resolve_backend cannot send."""
+    from openfoia.pipeline import extract
+
+    _no_llm_calls(monkeypatch)
+    ex = extract.EntityExtractor(provider="anthropic", api_key="k")
+    with pytest.raises(extract.RemoteLLMNotAllowedError):
+        ex._extract_chunk_llm("Jane Doe", None, 1)
+
+
+def test_consent_in_config_env_allows_and_still_warns(data_dir, monkeypatch, capsys):
+    from openfoia.pipeline import extract
+
+    _no_llm_calls(monkeypatch)
+    monkeypatch.setenv("OPENFOIA_AI_ALLOW_REMOTE", "1")
+    ex = extract.EntityExtractor(provider="openai", api_key="k")
+    assert ex._resolve_backend() == "llm"
+    err = capsys.readouterr().err
+    assert "WARNING" in err and "api.openai.com" in err
+
+
+def test_tor_mode_refuses_remote_llm_even_with_consent(data_dir, monkeypatch, capsys):
+    from openfoia.pipeline import extract
+
+    probes = _no_llm_calls(monkeypatch)
+    monkeypatch.setenv("OPENFOIA_TOR", "1")
+    ex = extract.EntityExtractor(provider="openai", api_key="k", allow_remote=True)
+    assert ex._resolve_backend() != "llm"
+    err = capsys.readouterr().err
+    assert "Tor" in err and "not sending" in err
+    assert probes == []
+
+
+def test_tor_mode_keeps_local_ollama(data_dir, monkeypatch, capsys):
+    from openfoia.pipeline import extract
+
+    _no_llm_calls(monkeypatch)
+    monkeypatch.setenv("OPENFOIA_TOR", "1")
+    ex = extract.EntityExtractor(provider="ollama", base_url="http://127.0.0.1:11434")
+    assert ex._resolve_backend() == "llm"
+    assert "WARNING" not in capsys.readouterr().err
+
+
+def test_agent_path_uses_the_same_consent_rule(data_dir, monkeypatch):
+    """agent.py builds EntityExtractor() from config: no consent, no remote send."""
+    from openfoia.pipeline import extract
+
+    _no_llm_calls(monkeypatch)
+    monkeypatch.setenv("OPENFOIA_AI_PROVIDER", "openai")
+    monkeypatch.setenv("OPENFOIA_OPENAI_API_KEY", "k")
+    ex = extract.EntityExtractor()
+    assert ex.provider == "openai"
+    assert ex._resolve_backend() != "llm"
+
+
+def test_allow_remote_config_requires_a_real_true(tmp_path):
+    from openfoia.config import OpenFOIAConfig, _merge_config
+
+    assert _merge_config(OpenFOIAConfig(), {"ai": {"allow_remote": "yes"}}).ai.allow_remote is False
+    assert _merge_config(OpenFOIAConfig(), {"ai": {"allow_remote": True}}).ai.allow_remote is True
+
+
+def test_cli_consent_prompt_is_not_assumed_without_a_terminal(data_dir, monkeypatch):
+    from openfoia import cli
+
+    monkeypatch.setenv("OPENFOIA_AI_PROVIDER", "openai")
+    monkeypatch.setenv("OPENFOIA_OPENAI_API_KEY", "k")
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: False, raising=False)
+    assert cli._remote_ai_consent() is None  # falls back to config (off)
+
+
+def test_entities_import_helpers_do_not_send_without_consent(data_dir, monkeypatch, capsys):
+    from openfoia import cli
+
+    _no_llm_calls(monkeypatch)
+    monkeypatch.setenv("OPENFOIA_AI_PROVIDER", "ollama")
+    monkeypatch.setenv("OPENFOIA_AI_BASE_URL", "http://gpu-box.example.net:11434")
+    assert cli._llm_generate_regex("a US phone number") is None
+    assert cli._llm_map_columns(["a", "b"], [["x", "y"]]) is None
+    assert "WARNING" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
 # A12: SEC User-Agent
 # ---------------------------------------------------------------------------
 

@@ -287,6 +287,17 @@ exhaustive lists.
   joiners are kept. `--json`/`--raw` output escapes the same characters as
   `\uXXXX`. One shared helper (`openfoia/termsafe.py`) is used by the CLI and
   by `openfoia search`. `case export --format md` output is cleaned the same way.
+- Entity extraction no longer sends document text to an AI provider that is
+  not on this machine without consent. Only `localhost` and loopback addresses
+  (127.0.0.0/8, `[::1]`) count as local; a base URL that merely contains
+  "localhost" (such as `https://localhost.example.net/`) does not. A remote
+  Ollama, a remote OpenAI-compatible server and the cloud APIs now print a
+  warning naming the host, and are used only after you confirm at the prompt
+  or set `"ai": {"allow_remote": true}` in config.json (or
+  `OPENFOIA_AI_ALLOW_REMOTE=1`); otherwise extraction falls back to the local
+  tiers. The agent interface and the `entities import` helpers follow the
+  same rule. In Tor mode a remote AI provider is never used, because these
+  requests cannot be routed through Tor.
 - SEC EDGAR requests no longer send the fixed User-Agent
   `Research Client/1.0 (contact: research@example.org)`, which only this
   project used and so marked every request as OpenFOIA's, over Tor too. Over

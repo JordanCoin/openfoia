@@ -101,6 +101,10 @@ class AIConfig:
     base_url: str | None = None
     api_key: str | None = None
     compact_prompt: str = "auto"  # auto, true, false (env OPENFOIA_AI_COMPACT_PROMPT)
+    # Consent to send document text to an LLM that is not on this machine (a
+    # cloud API, or Ollama on another host). Off by default; never used in Tor
+    # mode. Env OPENFOIA_AI_ALLOW_REMOTE. See pipeline.extract.remote_llm_refusal.
+    allow_remote: bool = False
 
     # For entity extraction
     extraction_temperature: float = 0.1
@@ -325,6 +329,7 @@ def _merge_config(config: OpenFOIAConfig, data: dict[str, Any]) -> OpenFOIAConfi
             or ai.get(ai.get("provider", ""), {}).get("api_key")
         )
         config.ai.compact_prompt = str(ai.get("compact_prompt", config.ai.compact_prompt)).lower()
+        config.ai.allow_remote = ai.get("allow_remote") is True
 
         # Handle ollama specifically
         if config.ai.provider == "ollama" and "ollama" in ai:
@@ -434,6 +439,8 @@ def _apply_env_overrides(config: OpenFOIAConfig, prefix: str) -> OpenFOIAConfig:
         config.ai.base_url = v
     if v := os.environ.get(f"{prefix}AI_COMPACT_PROMPT"):
         config.ai.compact_prompt = v.lower()
+    if v := os.environ.get(f"{prefix}AI_ALLOW_REMOTE"):
+        config.ai.allow_remote = v.strip().lower() in ("1", "true", "yes", "on")
 
     # Specific providers
     if v := os.environ.get(f"{prefix}ANTHROPIC_API_KEY"):
@@ -560,6 +567,7 @@ def save_config(config: OpenFOIAConfig, config_path: Path | str | None = None) -
             "provider": config.ai.provider,
             "model": config.ai.model,
             "compact_prompt": config.ai.compact_prompt,
+            "allow_remote": config.ai.allow_remote,
         },
         "ocr": {
             "backend": config.ocr.backend,

@@ -3761,7 +3761,8 @@ def analyze_extract(
             rprint("[red]--tier and --ensemble cannot be combined.[/red]")
             raise typer.Exit(1)
 
-        extractor = EntityExtractor(model=model, tier=tier)
+        allow_remote = _remote_ai_consent() if tier in (None, "llm") else None
+        extractor = EntityExtractor(model=model, tier=tier, allow_remote=allow_remote)
         backend = tier if tier and tier != "llm" else extractor._resolve_backend()
 
         if backend == "regex" and not tier:
@@ -4481,12 +4482,46 @@ def _fuzzy_match_column(header: str) -> str | None:
     return None
 
 
+def _remote_ai_consent() -> bool | None:
+    """Ask before text goes to an AI provider that is not on this machine.
+
+    Returns True or False for the user's answer, or None to leave the decision
+    to config (``ai.allow_remote``): when the provider is local, already
+    allowed, refused anyway (Tor mode), or nobody is at a terminal to answer.
+    A warning you cannot answer is not consent.
+    """
+    from .config import load_config
+    from .pipeline.extract import remote_llm_host, remote_llm_warning
+
+    cfg = load_config()
+    host = remote_llm_host(cfg.ai.provider, cfg.ai.base_url)
+    if host is None or cfg.ai.allow_remote or cfg.network.tor or not sys.stdin.isatty():
+        return None
+    rprint(f"[yellow]{_safe(remote_llm_warning(cfg.ai.provider, cfg.ai.base_url))}[/yellow]")
+    return typer.confirm(f"Send document text to {safe_text(host)}?", default=False)
+
+
+def _helper_llm_allowed(cfg) -> bool:
+    """The entities-import helpers' consent check: same rule as EntityExtractor."""
+    from .pipeline.extract import remote_llm_refusal, remote_llm_warning
+
+    refusal = remote_llm_refusal(
+        cfg.ai.provider, cfg.ai.base_url, allow_remote=cfg.ai.allow_remote, tor=cfg.network.tor
+    )
+    message = refusal or remote_llm_warning(cfg.ai.provider, cfg.ai.base_url)
+    if message:
+        typer.echo(safe_text(message), err=True)
+    return refusal is None
+
+
 def _llm_map_columns(headers: list[str], sample_rows: list[list[str]]) -> dict[str, int] | None:
     """Use the configured LLM to figure out which columns map to name/pattern/description."""
     from .config import load_config
     from .pipeline.extract import _call_ollama, _llm_available
 
     cfg = load_config()
+    if not _helper_llm_allowed(cfg):
+        return None
     if not _llm_available(cfg.ai.provider, cfg.ai.api_key, cfg.ai.base_url):
         return None
 
@@ -4542,6 +4577,8 @@ def _llm_generate_regex(description: str) -> str | None:
     from .pipeline.extract import _llm_available
 
     cfg = load_config()
+    if not _helper_llm_allowed(cfg):
+        return None
     if not _llm_available(cfg.ai.provider, cfg.ai.api_key, cfg.ai.base_url):
         return None
 
