@@ -185,9 +185,17 @@ class RecordAdapter(ABC):
     """
 
     source_name: str = ""
+    credentials_withheld: bool = False
 
     def __init__(self, *, egress: EgressPolicy | None = None) -> None:
         self._egress = egress if egress is not None else EgressPolicy()
+
+    def _personal_credential(self, value: str | None) -> str | None:
+        """*value*, or None over Tor: a personal key or token names the user whatever the route."""
+        if value and self._egress.is_tor:
+            self.credentials_withheld = True
+            return None
+        return value
 
     async def _request(
         self,
@@ -260,12 +268,14 @@ class DataGovAdapter(RecordAdapter):
     Without an explicit *api_key* these use the shared, rate-limited DEMO_KEY. Get a
     free key at https://api.data.gov/signup/ and set OPENFOIA_API_DATA_GOV_KEY, or
     ``"records": {"_api_data_gov_key": "..."}`` in config.json. The key is tied to the
-    email you signed up with, so it identifies you to api.data.gov even over Tor.
+    email you signed up with, so it identifies you to api.data.gov even over Tor, and
+    over Tor DEMO_KEY is used instead.
     """
 
     def __init__(self, api_key: str | None = None, *, egress: EgressPolicy | None = None):
         super().__init__(egress=egress)
-        self._api_key = api_key or DEMO_KEY
+        personal = api_key if api_key != DEMO_KEY else None
+        self._api_key = self._personal_credential(personal) or DEMO_KEY
 
     def _redact(self, err: object) -> str:
         """Error text with the key removed, wherever httpx or a URL may have put it."""
