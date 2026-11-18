@@ -7802,10 +7802,12 @@ def analyze_export(
             for lnk in session.query(entity_links).all()
             if lnk.source_id in exported_ids and lnk.target_id in exported_ids
         ]
+        # The FtM writer joins relationship ends to entities by name, not database id.
+        names = {e.id: e.normalized_text for e in db_entities}
         relationships = [
             {
-                "source": lnk.source_id,
-                "target": lnk.target_id,
+                "source": names[lnk.source_id],
+                "target": names[lnk.target_id],
                 "relation": lnk.link_type or "related_to",
             }
             for lnk in links

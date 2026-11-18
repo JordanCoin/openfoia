@@ -318,7 +318,8 @@ def test_every_entity_reader_counts_a_reextracted_document_once(tmp_path, monkey
     # FtM export
     export = tmp_path / "out.ftm.json"
     _ok(runner.invoke(app, ["analyze", "export", "-o", str(export)]))
-    names = {json.loads(line)["properties"]["name"][0] for line in export.read_text().splitlines()}
+    exported = [json.loads(line)["properties"] for line in export.read_text().splitlines()]
+    names = {p["name"][0] for p in exported if "name" in p}  # relationship lines have no name
     assert names == {"Olu Sample", "Cy Current"}
 
     # crossref (offline OpenSanctions fixture: nothing leaves the machine)
@@ -542,3 +543,27 @@ def test_purge_leaves_no_runs_or_entities(data_dir, monkeypatch, secure):
 
     assert not db_path.exists()
     assert not data_dir.exists()
+
+
+def test_ftm_export_writes_the_relationships_between_exported_entities(tmp_path):
+    """`analyze export` passed link ends as database ids, but the FtM writer matches by name."""
+    import json
+
+    from typer.testing import CliRunner
+
+    from openfoia.cli import app
+
+    doc = _document()
+    _store(doc, "Jane Roe", "Acme Port Authority")
+    out = tmp_path / "case.ftm.json"
+
+    _ok(CliRunner().invoke(app, ["analyze", "export", "-o", str(out)]))
+
+    lines = [json.loads(line) for line in out.read_text().splitlines()]
+    people = {
+        line["properties"]["name"][0]: line["id"] for line in lines if "name" in line["properties"]
+    }
+    links = [line for line in lines if "name" not in line["properties"]]
+    assert len(links) == 1
+    ends = {v[0] for k, v in links[0]["properties"].items() if k != "summary"}
+    assert ends == {people["Jane Roe"], people["Acme Port Authority"]}
