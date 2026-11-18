@@ -43,6 +43,14 @@ investigations.
 - **Swap files and virtual memory.** Your OS may write portions of in-memory
   data (documents, extracted text, passwords) to swap/pagefile at any time.
   OpenFOIA cannot prevent or erase this.
+- **Metadata in formats it cannot clean.** Ingest strips metadata from the
+  stored copy of PDF, DOCX and common image files, and of many more formats
+  when mat2 is installed. Anything else (for example legacy `.doc`, Outlook
+  `.msg`, or `.odt` without mat2) is stored with the author, device, location
+  and timestamps it arrived with; ingest says so for each file. Stripping is
+  best effort even where it runs: neither OpenFOIA nor mat2 can promise a file
+  is clean. The files you ingest are never modified, and email attachments and
+  archived web pages are stored as received.
 - **Filesystem journals.** Journaling filesystems (ext4, APFS, NTFS) may retain
   metadata or partial file contents in their journal even after deletion.
 - **macOS Spotlight and thumbnail caches.** macOS indexes file contents

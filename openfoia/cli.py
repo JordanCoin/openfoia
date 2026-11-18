@@ -1573,8 +1573,11 @@ def docs_ingest(
     """Ingest documents into the system.
 
     Copies documents to ~/.openfoia/docs/ and tracks them in the database.
-    Automatically strips sensitive metadata (EXIF, author info, etc.)
-    unless --keep-metadata is specified.
+    Strips sensitive metadata (EXIF, author, editing tool, timestamps) from
+    the stored copy unless --keep-metadata is given: PDF, DOCX and JPEG/PNG/TIFF
+    always, and OpenDocument, XLSX, PPTX, EPUB, audio, video and more when mat2
+    is installed. Each file's line says whether its metadata was stripped; a
+    file that could not be cleaned is reported, never shown as done.
     Supports PDF, DOCX, TXT, and image files.
 
     Examples:
@@ -1587,6 +1590,7 @@ def docs_ingest(
 
     from .db import ensure_db, get_data_dir
     from .pipeline.ingest import DocumentIngester
+    from .pipeline.metadata import describe
 
     ensure_db()
 
@@ -1594,6 +1598,17 @@ def docs_ingest(
     ingester = DocumentIngester(storage_path=storage_path)
 
     results = []
+    still_carrying: list[str] = []
+
+    def report(name: str, result) -> None:
+        clean, note = describe(result.metadata.get("metadata_stripped"))
+        if clean:
+            rprint(f"[green]✓[/green] {name} → {result.document_id[:8]}... ({note})")
+        else:
+            still_carrying.append(name)
+            rprint(
+                f"[yellow]⚠[/yellow] {name} → {result.document_id[:8]}... [yellow]({note})[/yellow]"
+            )
 
     with Progress(
         SpinnerColumn(),
@@ -1611,13 +1626,7 @@ def docs_ingest(
                     )
                 )
                 results.append(result)
-                stripped = result.metadata.get("metadata_stripped") or {}
-                if stripped.get("stripped"):
-                    rprint(
-                        f"[green]✓[/green] {path.name} → {result.document_id[:8]}... (stripped {len(stripped['stripped'])} metadata fields)"
-                    )
-                else:
-                    rprint(f"[green]✓[/green] {path.name} → {result.document_id[:8]}...")
+                report(path.name, result)
             except Exception as e:
                 rprint(f"[red]✗[/red] {path.name}: {e}")
         else:
@@ -1657,6 +1666,7 @@ def docs_ingest(
                         )
                     )
                     results.append(result)
+                    report(file.name, result)
                 except Exception as e:
                     rprint(f"[red]✗[/red] {file.name}: {e}")
                 progress.advance(task)
@@ -1724,12 +1734,20 @@ def docs_ingest(
     rprint(f"  Total size: {total_size / 1024 / 1024:.1f} MB")
     rprint(f"  Storage: {storage_path}")
 
-    if not keep_metadata:
-        stripped_count = sum(
-            1 for r in results if (r.metadata.get("metadata_stripped") or {}).get("stripped")
-        )
-        if stripped_count:
-            rprint(f"  Metadata stripped: {stripped_count} files")
+    if keep_metadata:
+        rprint("  Metadata: kept as received (--keep-metadata)")
+    elif results:
+        clean = len(results) - len(still_carrying)
+        rprint(f"  Metadata: {clean} clean, {len(still_carrying)} still carrying metadata")
+        if still_carrying:
+            rprint(
+                f"\n[yellow]{len(still_carrying)} stored "
+                f"{'copy still carries' if len(still_carrying) == 1 else 'copies still carry'} "
+                f"the metadata {'it' if len(still_carrying) == 1 else 'they'} arrived with "
+                "(author, device, location, timestamps): "
+                f"{', '.join(still_carrying)}. The files you ingested were never modified. "
+                "Remove it before sharing these documents.[/yellow]"
+            )
 
     # Run OCR if requested
     if ocr and results:

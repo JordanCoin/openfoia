@@ -6,6 +6,7 @@ Your data never leaves your machine.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import secrets
 from pathlib import Path
@@ -440,6 +441,20 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
         file_size = written
         mime = file.content_type or "application/octet-stream"
 
+        # Same stripping as `docs ingest`, on the stored copy. This path used to
+        # store uploads exactly as received while the README said otherwise.
+        from .pipeline.metadata import describe, strip_metadata
+
+        try:
+            stripped_info = await asyncio.to_thread(strip_metadata, dest)
+        except Exception as exc:
+            stripped_info = {
+                "stripped": [],
+                "status": "failed",
+                "error": f"metadata stripping failed ({type(exc).__name__})",
+            }
+        metadata_clean, metadata_note = describe(stripped_info)
+
         # Extract text from the uploaded file
         from .pipeline.ingest import DocumentIngester
 
@@ -471,6 +486,11 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
             "filename": safe_name,
             "status": "uploaded",
             "text_extracted": bool(extracted_text),
+            "metadata": {
+                "clean": metadata_clean,
+                "status": stripped_info.get("status"),
+                "note": metadata_note,
+            },
         }
 
     @app.get("/api/entities")

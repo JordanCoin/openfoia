@@ -72,7 +72,7 @@ openfoia request mark REQ-2026-001 denied              # starts the appeal clock
 | **Encrypted storage** | SQLCipher AES-256. Decoy profile mode |
 | **Forensic purge** | 3-pass overwrite, shell history scrub, free space fill |
 | **Portable mode** | `openfoia portable` keeps everything on the USB, nothing on the host |
-| **Metadata stripping** | Strips EXIF, PDF author, DOCX revision history on file and web-UI ingest. Email attachments and archived web pages are stored as received; see [THREAT_MODEL.md](docs/THREAT_MODEL.md) |
+| **Metadata stripping** | Strips image EXIF, PDF author and XMP, and DOCX author, company and revision data from the stored copy on `docs ingest` and web-UI upload; with [mat2](https://github.com/jvoisin/mat2) installed (preinstalled on Tails) also OpenDocument, XLSX, PPTX, EPUB, audio and video. Every file is reported as stripped or not; a format nothing here can clean is flagged, never shown as done. Email attachments and archived web pages are stored as received; see [THREAT_MODEL.md](docs/THREAT_MODEL.md) |
 
 ### PDF Extraction Engine
 
