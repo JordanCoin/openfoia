@@ -278,6 +278,15 @@ exhaustive lists.
   while the job that tags and publishes (the only one that can write)
   installs nothing and acts on the commit that was tested. CI's token is
   read-only too. See `docs/RELEASING.md`.
+- Text from records APIs, crossref sources, imported FollowTheMoney files and
+  documents is now cleaned before it reaches the terminal. Terminal escape
+  sequences (for example OSC 52, which writes the clipboard, and OSC 0, which
+  retitles the window), other control characters, bidi overrides and lone
+  surrogates are removed; Rich markup in upstream text such as
+  `[link=...]` is printed as text instead of becoming a hyperlink. Zero-width
+  joiners are kept. `--json`/`--raw` output escapes the same characters as
+  `\uXXXX`. One shared helper (`openfoia/termsafe.py`) is used by the CLI and
+  by `openfoia search`. `case export --format md` output is cleaned the same way.
 - SEC EDGAR requests no longer send the fixed User-Agent
   `Research Client/1.0 (contact: research@example.org)`, which only this
   project used and so marked every request as OpenFOIA's, over Tor too. Over

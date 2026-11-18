@@ -316,7 +316,6 @@ def test_a7_portable_mode_writes_nothing_to_host_home(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@audit("A8 API-supplied names reach the terminal with escape sequences intact")
 def test_a8_records_output_strips_terminal_escapes(capsys):
     from openfoia import cli
     from openfoia.records.base import RecordEntity, SearchResult
@@ -334,7 +333,6 @@ def test_a8_records_output_strips_terminal_escapes(capsys):
     assert "\x1b" not in capsys.readouterr().out
 
 
-@audit("A8 API-supplied names are parsed as Rich markup")
 def test_a8_records_output_does_not_render_markup(capsys):
     from openfoia import cli
     from openfoia.records.base import RecordEntity, SearchResult

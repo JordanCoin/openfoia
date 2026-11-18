@@ -43,6 +43,133 @@ def _no_controls(text: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# A8: the shared sanitizer
+# ---------------------------------------------------------------------------
+
+
+def test_safe_text_strips_controls_and_bidi_but_keeps_joiners():
+    from openfoia.termsafe import safe_text
+
+    persian = "می‌خواهم"  # ZWNJ is part of the spelling
+    family = "\U0001f469‍\U0001f467"  # ZWJ emoji sequence
+    out = safe_text(f"{HOSTILE} {persian} {family} \ud800")
+    assert _no_controls(out)
+    assert "\ud800" not in out
+    assert persian in out and family in out
+    assert "\n" not in safe_text("a\nb\tc") and safe_text("a\nb\tc") == "a b c"
+
+
+def test_safe_text_multiline_keeps_layout_only():
+    from openfoia.termsafe import safe_text
+
+    out = safe_text("line1\r\nline2\x1b[31m\tcol line3", multiline=True)
+    assert out == "line1\nline2[31m\tcol\nline3"
+
+
+def test_search_clean_is_the_shared_sanitizer():
+    from openfoia import search, termsafe
+
+    assert search.clean is termsafe.safe_text
+
+
+def test_safe_markup_is_never_parsed_as_markup():
+    from rich.console import Console
+
+    from openfoia.termsafe import safe_markup
+
+    console = Console(force_terminal=True, color_system=None, width=200)
+    with console.capture() as cap:
+        console.print(f"[bold]{safe_markup(HOSTILE)}[/bold]")
+    out = cap.get()
+    assert _no_controls(out)
+    assert "[link=https://evil.example/x]Verify[/link]" in out
+    assert "\x1b]8;" not in out  # no OSC 8 hyperlink
+
+
+def test_safe_json_escapes_controls_and_round_trips():
+    from openfoia.termsafe import safe_json
+
+    value = {"name": HOSTILE + " محمد ‍"}
+    text = safe_json(value)
+    assert _no_controls(text)
+    assert "محمد" in text  # readable non-ASCII is kept
+    assert json.loads(text) == value
+
+
+def test_safe_console_backstop_strips_escapes_from_unescaped_strings():
+    from openfoia.termsafe import SafeConsole
+
+    console = SafeConsole(force_terminal=True, color_system=None, width=200)
+    with console.capture() as cap:
+        console.print("plain " + "\x1b]52;c;AAAA\x1b\\" + " end")
+    assert "\x1b" not in cap.get()
+
+
+@pytest.mark.parametrize(
+    "source,ids",
+    [
+        ("muckrock", {"muckrock_id": "\x1b]0;x\x07 1"}),
+        ("documentcloud", {"documentcloud_id": "1"}),
+        ("sec", {"cik": "1"}),
+        ("federalregister", {"document_number": "2026-1"}),
+        ("futuresource", {}),
+    ],
+)
+def test_records_tables_strip_escapes_and_markup_for_every_source(capsys, source, ids):
+    from openfoia import cli
+    from openfoia.records.base import RecordEntity, SearchResult
+
+    entity = RecordEntity(
+        entity_type="ORGANIZATION",
+        name=HOSTILE,
+        source=source,
+        identifiers=ids,
+        extra_data={"username": HOSTILE, "highlights": [HOSTILE], "filing_type": HOSTILE},
+    )
+    result = SearchResult(source=source, query=HOSTILE, total_results=1, entities=[entity])
+    cli._print_search_result(result, source, HOSTILE, 5, False, False, None)
+    out = capsys.readouterr().out
+    assert _no_controls(out), repr(out)
+    assert "\x1b]8;" not in out
+
+
+@pytest.mark.parametrize("raw,json_lines", [(True, False), (False, True)])
+def test_records_json_output_has_no_raw_controls(capsys, raw, json_lines):
+    from openfoia import cli
+    from openfoia.records.base import RecordEntity, SearchResult
+
+    entity = RecordEntity(entity_type="ORGANIZATION", name=HOSTILE, source="opencorporates")
+    result = SearchResult(source="opencorporates", query="q", total_results=1, entities=[entity])
+    cli._print_search_result(result, "opencorporates", "q", 5, raw, json_lines, None)
+    out = capsys.readouterr().out
+    assert _no_controls(out), repr(out)
+    # The value is preserved, only escaped: it decodes back to the original.
+    if raw:
+        assert json.loads(out)[0]["name"] == HOSTILE
+    else:
+        assert json.loads(out.splitlines()[0])["title"] == HOSTILE
+
+
+def test_crossref_style_markup_strings_escape_upstream_values(capsys):
+    """rprint (the module console) + _safe: the pattern every CLI site uses."""
+    from openfoia import cli
+
+    cli.rprint(f"[red]FLAGGED: {cli._safe(HOSTILE)}[/red]")
+    out = capsys.readouterr().out
+    assert _no_controls(out)
+    assert "[link=https://evil.example/x]" in out
+
+
+def test_echo_keeps_document_layout_but_drops_escapes(capsys):
+    from openfoia import cli
+
+    cli._echo(f"--- page 1 ---\n{HOSTILE}\n\tindented")
+    out = capsys.readouterr().out
+    assert _no_controls(out)
+    assert "--- page 1 ---\n" in out and "\n\tindented" in out
+
+
+# ---------------------------------------------------------------------------
 # A12: SEC User-Agent
 # ---------------------------------------------------------------------------
 

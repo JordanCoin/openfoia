@@ -17,13 +17,33 @@ import typer
 
 if TYPE_CHECKING:
     from .net import EgressPolicy
-from rich import print as rprint
-from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 from rich.text import Text
 
 from .models import utcnow as _utcnow
+from .termsafe import SafeConsole, safe_cell, safe_json, safe_text
+from .termsafe import safe_markup as _safe
+
+# Every Rich string this module prints goes through SafeConsole, which removes
+# terminal control characters (ESC, C1, bidi overrides) as a backstop. Values
+# from records APIs, crossref sources, imported files and documents are also
+# escaped at each call site (_safe for markup strings, _row / safe_cell for
+# table cells, _echo for plain output, safe_json for JSON), so they are never
+# parsed as Rich markup either.
+console = SafeConsole()
+rprint = console.print
+
+
+def _row(table: Table, *cells: Any) -> None:
+    """Add a table row of untrusted values: each cell is cleaned Text, never markup."""
+    table.add_row(*(safe_cell(c) for c in cells))
+
+
+def _echo(message: Any = "", **kwargs: Any) -> None:
+    """typer.echo for text that carries upstream or document-derived values."""
+    typer.echo(safe_text(message, multiline=True), **kwargs)
+
 
 app = typer.Typer(
     name="openfoia",
@@ -537,8 +557,6 @@ def serve(
     run_server(host=host, port=port, data_dir=get_data_dir(), open_browser=open_browser)
 
 
-console = Console()
-
 CSV_HELP = "Write the table as CSV to this file ('-' for stdout)"
 _csv_stdout = None  # the real stdout while a `--csv -` command prints everything else to stderr
 
@@ -694,7 +712,7 @@ def encrypt(
     try:
         encrypt_database(password)
     except Exception as e:
-        rprint(f"[bold red]Encryption failed:[/bold red] {e}")
+        rprint(f"[bold red]Encryption failed:[/bold red] {_safe(e)}")
         raise typer.Exit(1) from None
 
     rprint("[bold green]Database encrypted successfully.[/bold green]")
@@ -826,8 +844,6 @@ def request_new(
         body = body_file.read_text()
     elif not body:
         rprint("[yellow]Enter request body (Ctrl+D when done):[/yellow]")
-        import sys
-
         body = sys.stdin.read()
 
     # Ensure database exists
@@ -926,7 +942,7 @@ def request_list(
                 status_enum = RequestStatus(status.lower())
                 query = query.filter(RequestModel.status == status_enum)
             except ValueError:
-                rprint(f"[red]Invalid status '{status}'.[/red]")
+                rprint(f"[red]Invalid status '{_safe(status)}'.[/red]")
                 raise typer.Exit(1) from None
 
         if agency:
@@ -962,10 +978,11 @@ def request_list(
             color = status_colors.get(r.status.value, "white")
             sent_str = r.sent_at.strftime("%Y-%m-%d") if r.sent_at else "-"
             days = str(r.days_pending()) if r.sent_at else "-"
+            # Subjects of fetched records are the upstream document titles.
             table.add_row(
-                r.request_number,
-                r.agency.abbreviation or r.agency.name,
-                r.subject,
+                safe_cell(r.request_number),
+                safe_cell(r.agency.abbreviation or r.agency.name),
+                safe_cell(r.subject),
                 Text(r.status.value, style=color),
                 sent_str,
                 days,
@@ -996,18 +1013,18 @@ def request_status(
         )
 
         if not request:
-            rprint(f"[red]Request '{request_id}' not found.[/red]")
+            rprint(f"[red]Request '{_safe(request_id)}' not found.[/red]")
             raise typer.Exit(1)
 
-        rprint(f"\n[bold cyan]{request.request_number}[/bold cyan]")
+        rprint(f"\n[bold cyan]{_safe(request.request_number)}[/bold cyan]")
         rprint("=" * 50)
 
         info_table = Table(show_header=False, box=None)
         info_table.add_column("Field", style="cyan", width=20)
         info_table.add_column("Value")
 
-        info_table.add_row("Agency", request.agency.name)
-        info_table.add_row("Subject", request.subject)
+        _row(info_table, "Agency", request.agency.name)
+        _row(info_table, "Subject", request.subject)
         info_table.add_row("Status", request.status.value.replace("_", " ").title())
         info_table.add_row(
             "Delivery Method", request.delivery_method.value.replace("_", " ").title()
@@ -1065,7 +1082,7 @@ def request_status(
                 f"{_days_left(clocks.still_interested_due)}",
             )
         if request.agency_tracking_number:
-            info_table.add_row("Tracking #", request.agency_tracking_number)
+            _row(info_table, "Tracking #", request.agency_tracking_number)
         if request.fee_estimate:
             info_table.add_row("Fee Estimate", f"${request.fee_estimate:,.2f}")
         if request.fee_paid:
@@ -1091,7 +1108,8 @@ def request_status(
             timeline_table.add_column("Details")
 
             for event in events:
-                timeline_table.add_row(
+                _row(
+                    timeline_table,
                     event.event_type,
                     event.occurred_at.strftime("%Y-%m-%d %H:%M"),
                     event.description,
@@ -1141,7 +1159,9 @@ def request_mark(
     from .models import RequestStatus, TimelineEvent
 
     if event not in MARK_EVENTS:
-        rprint(f"[red]Unknown event '{event}'. Choose from: {', '.join(MARK_EVENTS)}[/red]")
+        rprint(
+            f"[red]Unknown event '{_safe(event)}'. Choose from: {_safe(', '.join(MARK_EVENTS))}[/red]"
+        )
         raise typer.Exit(2)
     when = _parse_day(on, "--on") or _utcnow()
     until_at = _parse_day(until, "--until")
@@ -1164,7 +1184,7 @@ def request_mark(
             .first()
         )
         if not req:
-            rprint(f"[red]Request '{request_id}' not found.[/red]")
+            rprint(f"[red]Request '{_safe(request_id)}' not found.[/red]")
             raise typer.Exit(1)
         if event != "closed" and not req.sent_at:
             rprint("[red]Request has not been sent; no clock is running.[/red]")
@@ -1247,7 +1267,10 @@ def request_mark(
                     extra_data={"jurisdiction": clocks.law["id"]},
                 )
             )
-        rprint(f"[green]{req.request_number}[/green] {event}" + (f": {detail}" if detail else ""))
+        rprint(
+            f"[green]{_safe(req.request_number)}[/green] {_safe(event)}"
+            + (f": {_safe(detail)}" if detail else "")
+        )
         if clocks.fallback:
             rprint("[dim]Agency has no jurisdiction set; federal FOIA clocks assumed.[/dim]")
 
@@ -1303,7 +1326,7 @@ def request_send(
     from .models import Agency
 
     if method not in ("email", "fax", "mail"):
-        rprint(f"[red]Unknown method '{method}'. Use: email, fax, mail[/red]")
+        rprint(f"[red]Unknown method '{_safe(method)}'. Use: email, fax, mail[/red]")
         raise typer.Exit(1)
 
     # Get agency from database
@@ -1330,18 +1353,20 @@ def request_send(
     if method == "email":
         recipient = to_address or agency_email
         if not recipient:
-            rprint(f"[red]No FOIA email found for '{agency}'. Specify with --to.[/red]")
+            rprint(f"[red]No FOIA email found for '{_safe(agency)}'. Specify with --to.[/red]")
             raise typer.Exit(1)
     elif method == "fax":
         recipient = to_address or agency_fax
         if not recipient:
-            rprint(f"[red]No FOIA fax number found for '{agency}'. Specify with --to.[/red]")
+            rprint(f"[red]No FOIA fax number found for '{_safe(agency)}'. Specify with --to.[/red]")
             rprint("[dim]Example: --to '+12025551234'[/dim]")
             raise typer.Exit(1)
     elif method == "mail":
         recipient = to_address or agency_address
         if not recipient:
-            rprint(f"[red]No FOIA mailing address found for '{agency}'. Specify with --to.[/red]")
+            rprint(
+                f"[red]No FOIA mailing address found for '{_safe(agency)}'. Specify with --to.[/red]"
+            )
             rprint("[dim]Format: 'Name\\nStreet\\nCity, ST ZIP' (use \\n for newlines)[/dim]")
             raise typer.Exit(1)
         # Handle escaped newlines from CLI
@@ -1361,7 +1386,7 @@ def request_send(
                 requester=requester, agency_name=agency_name, record_type=subject
             )
         else:
-            rprint(f"[red]Unknown template '{template}'. Use: standard, self[/red]")
+            rprint(f"[red]Unknown template '{_safe(template)}'. Use: standard, self[/red]")
             raise typer.Exit(1)
     elif body_file:
         body = body_file.read_text()
@@ -1385,9 +1410,9 @@ def request_send(
     rprint(f"\n[bold cyan]FOIA Request ({method_labels[method]})[/bold cyan]")
     rprint("─" * 50)
     rprint(f"[cyan]Method:[/cyan] {method_labels[method]}")
-    rprint(f"[cyan]To:[/cyan] {recipient}")
-    rprint(f"[cyan]Subject:[/cyan] FOIA Request: {subject}")
-    rprint(f"[cyan]From:[/cyan] {name} <{email}>")
+    rprint(f"[cyan]To:[/cyan] {_safe(recipient)}")
+    rprint(f"[cyan]Subject:[/cyan] FOIA Request: {_safe(subject)}")
+    rprint(f"[cyan]From:[/cyan] {_safe(name)} <{_safe(email)}>")
 
     # Show cost estimate for paid methods
     if method == "fax":
@@ -1515,20 +1540,22 @@ def request_send(
 
     if result.success:
         rprint("[bold green]Request sent![/bold green]")
-        rprint(f"  Reference: {result.reference_id}")
-        rprint(f"  Sent at: {result.sent_at}")
+        rprint(f"  Reference: {_safe(result.reference_id)}")
+        rprint(f"  Sent at: {_safe(result.sent_at)}")
         if result.cost_cents:
             rprint(f"  Estimated cost: ${result.cost_cents / 100:.2f}")
 
         # Show method-specific details
         if result.metadata:
             if method == "fax" and result.metadata.get("estimated_pages"):
-                rprint(f"  Estimated pages: {result.metadata['estimated_pages']}")
+                rprint(f"  Estimated pages: {_safe(result.metadata['estimated_pages'])}")
             if method == "mail":
                 if result.metadata.get("tracking_number"):
-                    rprint(f"  Tracking #: {result.metadata['tracking_number']}")
+                    rprint(f"  Tracking #: {_safe(result.metadata['tracking_number'])}")
                 if result.metadata.get("expected_delivery_date"):
-                    rprint(f"  Expected delivery: {result.metadata['expected_delivery_date']}")
+                    rprint(
+                        f"  Expected delivery: {_safe(result.metadata['expected_delivery_date'])}"
+                    )
 
         # Update the matching Request in the DB if one exists
         from .db import get_db_path, get_session
@@ -1564,7 +1591,7 @@ def request_send(
         rprint("\n[dim]Save this reference to track your request.[/dim]")
     else:
         rprint("[bold red]Failed to send[/bold red]")
-        rprint(f"  Error: {result.error_message}")
+        rprint(f"  Error: {_safe(result.error_message)}")
         raise typer.Exit(1)
 
 
@@ -1616,11 +1643,12 @@ def docs_ingest(
     def report(name: str, result) -> None:
         clean, note = describe(result.metadata.get("metadata_stripped"))
         if clean:
-            rprint(f"[green]✓[/green] {name} → {result.document_id[:8]}... ({note})")
+            rprint(f"[green]✓[/green] {_safe(name)} → {result.document_id[:8]}... ({_safe(note)})")
         else:
             still_carrying.append(name)
             rprint(
-                f"[yellow]⚠[/yellow] {name} → {result.document_id[:8]}... [yellow]({note})[/yellow]"
+                f"[yellow]⚠[/yellow] {_safe(name)} → {result.document_id[:8]}... "
+                f"[yellow]({_safe(note)})[/yellow]"
             )
 
     with Progress(
@@ -1629,7 +1657,7 @@ def docs_ingest(
         console=console,
     ) as progress:
         if path.is_file():
-            task = progress.add_task(f"Ingesting {path.name}...", total=None)
+            task = progress.add_task(f"Ingesting {_safe(path.name)}...", total=None)
             try:
                 result = asyncio.run(
                     ingester.ingest_file(
@@ -1641,7 +1669,7 @@ def docs_ingest(
                 results.append(result)
                 report(path.name, result)
             except Exception as e:
-                rprint(f"[red]✗[/red] {path.name}: {e}")
+                rprint(f"[red]✗[/red] {_safe(path.name)}: {_safe(e)}")
         else:
             # Directory
             patterns = [
@@ -1663,13 +1691,13 @@ def docs_ingest(
                     files.extend(path.glob(pattern))
 
             if not files:
-                rprint(f"[yellow]No supported files found in {path}[/yellow]")
+                rprint(f"[yellow]No supported files found in {_safe(path)}[/yellow]")
                 return
 
             task = progress.add_task("Ingesting...", total=len(files))
 
             for file in files:
-                progress.update(task, description=f"Ingesting {file.name}...")
+                progress.update(task, description=f"Ingesting {_safe(file.name)}...")
                 try:
                     result = asyncio.run(
                         ingester.ingest_file(
@@ -1681,7 +1709,7 @@ def docs_ingest(
                     results.append(result)
                     report(file.name, result)
                 except Exception as e:
-                    rprint(f"[red]✗[/red] {file.name}: {e}")
+                    rprint(f"[red]✗[/red] {_safe(file.name)}: {_safe(e)}")
                 progress.advance(task)
 
     # Persist Document rows to database
@@ -1745,7 +1773,7 @@ def docs_ingest(
     total_size = sum(r.file_size for r in results)
     rprint(f"  Total pages: {total_pages}")
     rprint(f"  Total size: {total_size / 1024 / 1024:.1f} MB")
-    rprint(f"  Storage: {storage_path}")
+    rprint(f"  Storage: {_safe(storage_path)}")
 
     if keep_metadata:
         rprint("  Metadata: kept as received (--keep-metadata)")
@@ -1758,7 +1786,7 @@ def docs_ingest(
                 f"{'copy still carries' if len(still_carrying) == 1 else 'copies still carry'} "
                 f"the metadata {'it' if len(still_carrying) == 1 else 'they'} arrived with "
                 "(author, device, location, timestamps): "
-                f"{', '.join(still_carrying)}. The files you ingested were never modified. "
+                f"{_safe(', '.join(still_carrying))}. The files you ingested were never modified. "
                 "Remove it before sharing these documents.[/yellow]"
             )
 
@@ -1776,9 +1804,9 @@ def docs_ingest(
             if result.mime_type == "application/pdf":
                 verdicts = result.verdicts or []
                 if verdicts and all(v and v.startswith("ocr") for v in verdicts):
-                    rprint(f"  OCR: {result.filename} already OCR'd during ingest")
+                    rprint(f"  OCR: {_safe(result.filename)} already OCR'd during ingest")
                     continue
-                rprint(f"  OCR: {result.filename}...")
+                rprint(f"  OCR: {_safe(result.filename)}...")
                 try:
                     ocr_result = asyncio.run(engine.process_pdf(result.file_path, force_ocr=True))
                     rprint(
@@ -1798,7 +1826,7 @@ def docs_ingest(
                                 [p.get("verdict") for p in ocr_result.pages],
                             )
                 except Exception as e:
-                    rprint(f"    [red]✗[/red] OCR failed: {e}")
+                    rprint(f"    [red]✗[/red] OCR failed: {_safe(e)}")
 
 
 @docs_app.command("ocr")
@@ -1827,7 +1855,7 @@ def docs_ocr(
     from .pipeline.ocr import OCREngine, RedactionDetector
 
     if not file_path.exists():
-        rprint(f"[red]File not found: {file_path}[/red]")
+        rprint(f"[red]File not found: {_safe(file_path)}[/red]")
         raise typer.Exit(1)
 
     if file_path.suffix.lower() != ".pdf":
@@ -1846,12 +1874,12 @@ def docs_ocr(
         try:
             result = asyncio.run(engine.process_pdf(file_path))
         except ImportError as e:
-            rprint(f"[red]Missing dependency: {e}[/red]")
+            rprint(f"[red]Missing dependency: {_safe(e)}[/red]")
             rprint("[dim]Install with: pip install pytesseract pdf2image[/dim]")
             rprint("[dim]Also need: brew install tesseract poppler (macOS)[/dim]")
             raise typer.Exit(1) from None
         except Exception as e:
-            rprint(f"[red]OCR failed: {e}[/red]")
+            rprint(f"[red]OCR failed: {_safe(e)}[/red]")
             raise typer.Exit(1) from None
 
         progress.update(task, description="Detecting redactions...")
@@ -1887,7 +1915,7 @@ def docs_ocr(
     if redactions["exemptions_cited"]:
         rprint("\n[yellow]⚠️  Exemptions cited in document:[/yellow]")
         for ex in redactions["exemptions_cited"]:
-            rprint(f"  • {ex['code']}: {ex['description']} ({ex['count']}x)")
+            rprint(f"  • {_safe(ex['code'])}: {_safe(ex['description'])} ({ex['count']}x)")
 
 
 def _open_docs_db() -> None:
@@ -1906,7 +1934,7 @@ def _resolve_doc(session, doc_id: str):
     matches = session.query(Document).filter(Document.id.like(f"{doc_id}%")).limit(2).all()
     if len(matches) != 1:
         problem = "not found" if not matches else "is ambiguous; use more characters"
-        typer.echo(f"Document id '{doc_id}' {problem}.", err=True)
+        _echo(f"Document id '{doc_id}' {problem}.", err=True)
         raise typer.Exit(1)
     return matches[0]
 
@@ -1999,7 +2027,7 @@ def docs_list(
         for doc_id, filename, page_count, text_len, num, subject, n in rows
     ]
     if as_json:
-        typer.echo(json.dumps(docs, indent=2, ensure_ascii=False))
+        typer.echo(safe_json(docs, indent=2))
         return
     if not docs:
         rprint("[yellow]No documents stored yet.[/yellow]")
@@ -2015,9 +2043,10 @@ def docs_list(
         pages = str(d["stored_pages"])
         if d["pages"] and d["pages"] != d["stored_pages"]:
             pages += f"/{d['pages']}"
-        table.add_row(
+        _row(
+            table,
             d["id"][:8],
-            Text(d["title"]),
+            d["title"],
             pages,
             d["source"],
             f"{d['text_length']:,}",
@@ -2069,24 +2098,25 @@ def docs_show(
             "page_map": [{"page": n, "chars": c, "verdict": v} for n, c, _, v in pages],
             "pages": [{"page": n, "text": t} for n, _, t, _ in selected],
         }
-        typer.echo(json.dumps(out, indent=2, ensure_ascii=False))
+        typer.echo(safe_json(out, indent=2))
         return
 
-    typer.echo(f"{header['id']}  {header['title']}")
+    _echo(f"{header['id']}  {safe_text(header['title'])}")
     typer.echo("Page map: " + ", ".join(f"p{n}={c:,}" for n, c, _, _ in pages))
     counts: dict[str, int] = {}
     for _, _, _, v in pages:
         if v:
             counts[v] = counts.get(v, 0) + 1
     if counts:
-        typer.echo("Verdicts: " + _verdict_summary(counts))
+        _echo("Verdicts: " + _verdict_summary(counts))
     if declared and declared > len(pages):
         typer.echo(
             f"Note: the source has {declared} pages but the text is stored as {len(pages)}; "
             + SINGLE_PAGE_CAVEAT
         )
     for n, _, text, v in selected:
-        typer.echo(f"\n--- page {n}{f' ({v})' if v else ''} ---\n{text}")
+        # Document text is untrusted: a hostile PDF's text layer can carry ESC.
+        _echo(f"\n--- page {n}{f' ({v})' if v else ''} ---\n{text}")
 
 
 @docs_app.command("grep")
@@ -2222,19 +2252,25 @@ def docs_grep(
 
     if as_json:
         out = {"query": query, "engine": engine, "hits": [h.to_dict() for h in hits]}
-        typer.echo(json.dumps(out, indent=2, ensure_ascii=False))
+        typer.echo(safe_json(out, indent=2))
         return
     if not hits:
         typer.echo("No matches." + (" (no embedded pages to search)" if semantic else ""))
         return
     for h in hits:
-        body = Text(h.passage)
         star = "" if h.pages_are_real else "*"
-        head = f"{h.document_id[:8]}  {h.title}  p.{h.page}{star}"
+        head = f"{h.document_id[:8]}  {safe_text(h.title)}  p.{h.page}{star}"
         if semantic:
             head += f"  score {h.score:.2f}"
+            body = Text(safe_text(h.passage, multiline=True))
         else:
-            body.stylize("bold yellow", h.match_start, h.match_end)
+            # Clean each part separately so the match offsets still line up.
+            body = Text(safe_text(h.passage[: h.match_start], multiline=True))
+            body.append(
+                safe_text(h.passage[h.match_start : h.match_end], multiline=True),
+                style="bold yellow",
+            )
+            body.append(safe_text(h.passage[h.match_end :], multiline=True))
         console.print(Text(head, style="cyan"))
         console.print(body)
         console.print()
@@ -2546,7 +2582,8 @@ def agency_list(
             contact = a.foia_email or a.foia_portal_url or "—"
             if len(contact) > 28:
                 contact = contact[:25] + "..."
-            table.add_row(
+            _row(
+                table,
                 a.abbreviation or "—",
                 a.name,
                 a.body_type or a.level.value,
@@ -2618,7 +2655,7 @@ def agency_add(
     days = response_days if response_days is not None else j["response"]["days"]
     with get_session() as session:
         if session.query(Agency).filter(Agency.name.ilike(_like_escape(name), escape="\\")).first():
-            rprint(f"[red]An agency named '{name}' already exists.[/red]")
+            rprint(f"[red]An agency named '{_safe(name)}' already exists.[/red]")
             raise typer.Exit(1)
         a = Agency(
             name=name,
@@ -2776,7 +2813,7 @@ def jurisdiction_search(text: str = typer.Argument(..., help="Part of a name, id
 
     hits = search_jurisdictions(text)
     if not hits:
-        rprint(f"[yellow]No jurisdiction matches '{text}'.[/yellow]")
+        rprint(f"[yellow]No jurisdiction matches '{_safe(text)}'.[/yellow]")
         raise typer.Exit(1)
     for j in hits:
         flag = "" if j["verified"] else " [yellow](unverified)[/yellow]"
@@ -2811,7 +2848,7 @@ def agency_search(
         )
 
         if not agencies:
-            rprint(f"[yellow]No agencies found matching '{query}'.[/yellow]")
+            rprint(f"[yellow]No agencies found matching '{_safe(query)}'.[/yellow]")
             return
 
         table = Table(title=f"Search results for '{query}' ({len(agencies)} found)")
@@ -2821,7 +2858,8 @@ def agency_search(
 
         for a in agencies:
             contact = a.foia_email or a.foia_portal_url or "—"
-            table.add_row(
+            _row(
+                table,
                 a.abbreviation or "—",
                 a.name,
                 contact,
@@ -2852,12 +2890,12 @@ def agency_info(
         )
 
         if not agency:
-            rprint(f"[red]Agency '{agency_id}' not found.[/red]")
+            rprint(f"[red]Agency '{_safe(agency_id)}' not found.[/red]")
             raise typer.Exit(1)
 
-        rprint(f"\n[bold cyan]{agency.name}[/bold cyan]")
+        rprint(f"\n[bold cyan]{_safe(agency.name)}[/bold cyan]")
         if agency.abbreviation:
-            rprint(f"[dim]({agency.abbreviation})[/dim]")
+            rprint(f"[dim]({_safe(agency.abbreviation)})[/dim]")
         rprint("─" * 50)
 
         table = Table(show_header=False, box=None)
@@ -2874,7 +2912,7 @@ def agency_info(
 
             j = get_jurisdiction(agency.jurisdiction_id)
             law = (j["statute"]["name"] or "statute unknown") if j else "unknown jurisdiction"
-            table.add_row("Law", f"{agency.jurisdiction_id}: {law}")
+            table.add_row("Law", f"{_safe(agency.jurisdiction_id)}: {_safe(law)}")
             if j and not j["verified"]:
                 table.add_row(
                     "", "[yellow]jurisdiction data unverified; check the sources[/yellow]"
@@ -3061,7 +3099,10 @@ def template_generate(
                 if len(matches) > 1:
                     rprint(f"[red]'{agency}' matches more than one agency; be exact:[/red]")
                     for m in matches:
-                        rprint(f"  {m.name}" + (f" ({m.abbreviation})" if m.abbreviation else ""))
+                        rprint(
+                            f"  {_safe(m.name)}"
+                            + (f" ({_safe(m.abbreviation)})" if m.abbreviation else "")
+                        )
                     raise typer.Exit(2)
                 found = matches[0] if matches else None
             if found:
@@ -3244,7 +3285,7 @@ def campaign_create(
         campaign_id = campaign.id
 
     rprint(f"[green]Campaign created: {campaign_id[:8]}[/green]")
-    rprint(f"  Name: {name}")
+    rprint(f"  Name: {_safe(name)}")
     rprint(f"  Target: {target} requests")
     rprint(f"  Template: {template_file}")
 
@@ -3277,7 +3318,8 @@ def campaign_list():
 
         for c in campaigns:
             active = "[green]Yes[/green]" if c.is_active else "[dim]No[/dim]"
-            table.add_row(
+            _row(
+                table,
                 c.id[:8],
                 c.name,
                 active,
@@ -3306,7 +3348,7 @@ def campaign_status(
         matches = session.query(Campaign).filter(Campaign.id.like(f"{campaign_id}%")).all()
 
         if len(matches) == 0:
-            rprint(f"[red]Campaign '{campaign_id}' not found.[/red]")
+            rprint(f"[red]Campaign '{_safe(campaign_id)}' not found.[/red]")
             raise typer.Exit(1)
         if len(matches) > 1:
             rprint(
@@ -3368,7 +3410,7 @@ def campaign_join(
         matches = session.query(Campaign).filter(Campaign.id.like(f"{campaign_id}%")).all()
 
         if len(matches) == 0:
-            rprint(f"[red]Campaign '{campaign_id}' not found.[/red]")
+            rprint(f"[red]Campaign '{_safe(campaign_id)}' not found.[/red]")
             raise typer.Exit(1)
         if len(matches) > 1:
             rprint(
@@ -3379,7 +3421,7 @@ def campaign_join(
         campaign = matches[0]
 
         if not campaign.is_active:
-            rprint(f"[red]Campaign '{campaign.name}' is no longer active.[/red]")
+            rprint(f"[red]Campaign '{_safe(campaign.name)}' is no longer active.[/red]")
             raise typer.Exit(1)
 
         # Get or create user
@@ -3391,14 +3433,14 @@ def campaign_join(
 
         # Check if already a participant
         if user in campaign.participants:
-            rprint(f"[yellow]You are already a participant in '{campaign.name}'.[/yellow]")
+            rprint(f"[yellow]You are already a participant in '{_safe(campaign.name)}'.[/yellow]")
             return
 
         campaign.participants.append(user)
         campaign_name = campaign.name
         participant_count = len(campaign.participants)
 
-    rprint(f"[green]Joined campaign: {campaign_name}[/green]")
+    rprint(f"[green]Joined campaign: {_safe(campaign_name)}[/green]")
     rprint(f"  Participants now: {participant_count}")
 
 
@@ -3435,7 +3477,7 @@ def campaign_distribute(
         matches = session.query(Campaign).filter(Campaign.id.like(f"{campaign_id}%")).all()
 
         if len(matches) == 0:
-            rprint(f"[red]Campaign '{campaign_id}' not found.[/red]")
+            rprint(f"[red]Campaign '{_safe(campaign_id)}' not found.[/red]")
             raise typer.Exit(1)
         if len(matches) > 1:
             rprint(
@@ -3446,7 +3488,7 @@ def campaign_distribute(
         campaign = matches[0]
 
         if not campaign.is_active:
-            rprint(f"[red]Campaign '{campaign.name}' is no longer active.[/red]")
+            rprint(f"[red]Campaign '{_safe(campaign.name)}' is no longer active.[/red]")
             raise typer.Exit(1)
 
         participants = list(campaign.participants)
@@ -3503,7 +3545,8 @@ def campaign_distribute(
                 fee_waiver_requested=True,
             )
             session.add(request)
-            table.add_row(
+            _row(
+                table,
                 req_num,
                 agency.abbreviation or agency.name[:30],
                 participant.name,
@@ -3534,7 +3577,7 @@ def campaign_progress(
         matches = session.query(Campaign).filter(Campaign.id.like(f"{campaign_id}%")).all()
 
         if len(matches) == 0:
-            rprint(f"[red]Campaign '{campaign_id}' not found.[/red]")
+            rprint(f"[red]Campaign '{_safe(campaign_id)}' not found.[/red]")
             raise typer.Exit(1)
         if len(matches) > 1:
             rprint(
@@ -3547,7 +3590,7 @@ def campaign_progress(
         participants = list(campaign.participants)
 
         if not participants:
-            rprint(f"[yellow]No participants in campaign '{campaign.name}'.[/yellow]")
+            rprint(f"[yellow]No participants in campaign '{_safe(campaign.name)}'.[/yellow]")
             return
 
         if not requests:
@@ -3578,7 +3621,7 @@ def campaign_progress(
             "partial_response": "[green]partial[/green]",
         }
 
-        rprint(f"\n[bold]Campaign: {campaign.name}[/bold]")
+        rprint(f"\n[bold]Campaign: {_safe(campaign.name)}[/bold]")
         rprint(
             f"Participants: {len(participants)} | Agencies: {len(agencies)} | Requests: {len(requests)}"
         )
@@ -3674,7 +3717,7 @@ def analyze_extract(
         )
 
         if not doc:
-            rprint(f"[red]Document '{document_id}' not found.[/red]")
+            rprint(f"[red]Document '{_safe(document_id)}' not found.[/red]")
             raise typer.Exit(1)
 
         if prefer_run:
@@ -3694,7 +3737,7 @@ def analyze_extract(
 
         if not doc.extracted_text:
             rprint("[yellow]Document has no extracted text. Run OCR first:[/yellow]")
-            rprint(f"[dim]openfoia docs ocr {doc.file_path}[/dim]")
+            rprint(f"[dim]openfoia docs ocr {_safe(doc.file_path)}[/dim]")
             raise typer.Exit(1)
 
         if doc.entities_extracted and not force:
@@ -3704,7 +3747,7 @@ def analyze_extract(
             )
             return
 
-        rprint(f"[cyan]Extracting entities from {doc.filename}...[/cyan]")
+        rprint(f"[cyan]Extracting entities from {_safe(doc.filename)}...[/cyan]")
 
         # Run extraction
         import asyncio
@@ -3712,7 +3755,7 @@ def analyze_extract(
         from .pipeline.extract import TIERS, BackendUnavailableError, EntityExtractor
 
         if tier is not None and tier not in TIERS:
-            rprint(f"[red]Unknown --tier '{tier}'. Choose from: {', '.join(TIERS)}[/red]")
+            rprint(f"[red]Unknown --tier '{_safe(tier)}'. Choose from: {', '.join(TIERS)}[/red]")
             raise typer.Exit(1)
         if tier and ensemble:
             rprint("[red]--tier and --ensemble cannot be combined.[/red]")
@@ -3737,10 +3780,10 @@ def analyze_extract(
         try:
             result = asyncio.run(extractor.extract(doc.extracted_text, ensemble=ensemble))
         except BackendUnavailableError as e:
-            rprint(f"[red]{e}[/red]")
+            rprint(f"[red]{_safe(e)}[/red]")
             raise typer.Exit(1) from None
         except Exception as e:
-            rprint(f"[red]Extraction failed: {e}[/red]")
+            rprint(f"[red]Extraction failed: {_safe(e)}[/red]")
             rprint("[dim]Ensure AI provider is configured: openfoia config --init[/dim]")
             raise typer.Exit(1) from None
 
@@ -3777,7 +3820,8 @@ def analyze_extract(
         table.add_column("Confidence")
 
         for ent in result.entities:
-            table.add_row(
+            _row(
+                table,
                 ent.entity_type.value,
                 ent.normalized_text,
                 f"{ent.confidence:.0%}",
@@ -3801,7 +3845,7 @@ def analyze_extract(
                     indent=2,
                 )
             )
-            rprint(f"\n[green]Entities saved to {output}[/green]")
+            rprint(f"\n[green]Entities saved to {_safe(output)}[/green]")
 
 
 @analyze_app.command("runs")
@@ -3944,11 +3988,11 @@ def analyze_graphs_list():
         # Local time is intended: this is a file listing shown to the user.
         modified = datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")  # noqa: DTZ006
 
-        table.add_row(name, " + ".join(types), size_str, modified)
+        _row(table, name, " + ".join(types), size_str, modified)
 
     console.print(table)
     rprint("\n[dim]View a graph: openfoia analyze graph --name <name> --view[/dim]")
-    rprint(f"[dim]Graphs stored in: {graphs_dir}[/dim]")
+    rprint(f"[dim]Graphs stored in: {_safe(graphs_dir)}[/dim]")
 
 
 @analyze_app.command("graph")
@@ -4047,7 +4091,7 @@ def analyze_graph(
                 query = (
                     query.join(Document).join(RequestModel).filter(RequestModel.case_id == case.id)
                 )
-                scope = f"case '{case.name}'"
+                scope = f"case '{_safe(case.name)}'"
             else:
                 scope = "all documents (every investigation in this database)"
         rprint(f"[dim]Scope: {scope}[/dim]")
@@ -4143,13 +4187,13 @@ def analyze_graph(
 
         json_path.write_text(json_mod.dumps(graph_data, indent=2))
 
-        rprint(f"[green]Graph exported to {json_path}[/green]")
+        rprint(f"[green]Graph exported to {_safe(json_path)}[/green]")
         # The graph page draws one node per (type, label); say so, so the two counts match.
         distinct = len({(n["type"], n["label"]) for n in nodes})
         rprint(f"  Entities: {distinct} ({len(nodes)} mentions)")
         rprint(f"  Relationships: {len(edges)}")
         if name:
-            rprint(f"  Saved as: [cyan]{name}[/cyan]")
+            rprint(f"  Saved as: [cyan]{_safe(name)}[/cyan]")
         if no_text:
             rprint("  [dim]Document text omitted (--no-text). The reader view will be empty.[/dim]")
         elif documents:
@@ -4160,7 +4204,7 @@ def analyze_graph(
 
         if view:
             _generate_graph_html(graph_data, html_path)
-            rprint(f"[green]Visualization: {html_path}[/green]")
+            rprint(f"[green]Visualization: {_safe(html_path)}[/green]")
 
             import webbrowser
 
@@ -4208,7 +4252,8 @@ def _print_mentions(
             both[doc_id] = hit
     if not both:
         rprint(
-            f"[yellow]No document in scope mentions both {labels[0]!r} and {labels[1]!r}.[/yellow]"
+            f"[yellow]No document in scope mentions both {_safe(repr(labels[0]))} and "
+            f"{_safe(repr(labels[1]))}.[/yellow]"
         )
     for doc_id, hit in both.items():
         doc = session.get(Document, doc_id)
@@ -4225,7 +4270,8 @@ def _print_mentions(
                 f"{label} p.{','.join(map(str, sorted(pages)))}" if pages else f"{label} p.?"
             )
         rprint(
-            f"[cyan]{doc_id[:8]}[/cyan]  {req.subject if req else doc.filename}  [dim]{'; '.join(cells)}[/dim]"
+            f"[cyan]{doc_id[:8]}[/cyan]  {_safe(req.subject if req else doc.filename)}  "
+            f"[dim]{_safe('; '.join(cells))}[/dim]"
         )
 
     if not graph_name:
@@ -4235,7 +4281,7 @@ def _print_mentions(
 
     path = get_data_dir() / "graphs" / f"{_graph_safe_name(graph_name)}.json"
     if not path.exists():
-        rprint(f"[yellow]No saved graph named {graph_name!r}.[/yellow]")
+        rprint(f"[yellow]No saved graph named {_safe(repr(graph_name))}.[/yellow]")
         return
     g = json.loads(path.read_text())
     label_of = {n["id"]: n["label"] for n in g["nodes"]}
@@ -4258,13 +4304,13 @@ def _print_mentions(
                     break
                 queue.append(nxt)
     if end is None:
-        rprint(f"[yellow]No path between them in graph {graph_name!r}.[/yellow]")
+        rprint(f"[yellow]No path between them in graph {_safe(repr(graph_name))}.[/yellow]")
         return
     chain = []
     while end is not None:
         chain.append(label_of[end])
         end = prev[end]
-    rprint(f"Shortest path in {graph_name!r}: " + " -> ".join(reversed(chain)))
+    rprint(f"Shortest path in {_safe(repr(graph_name))}: " + _safe(" -> ".join(reversed(chain))))
 
 
 def _like_escape(text: str) -> str:
@@ -4319,7 +4365,7 @@ def entities_list():
     table.add_column("Description")
 
     for ct in custom_types:
-        table.add_row(ct.get("name", ""), ct.get("pattern", ""), ct.get("description", ""))
+        _row(table, ct.get("name", ""), ct.get("pattern", ""), ct.get("description", ""))
 
     console.print(table)
 
@@ -4344,7 +4390,7 @@ def entities_add(
     try:
         re.compile(pattern)
     except re.error as e:
-        rprint(f"[red]Invalid regex pattern: {e}[/red]")
+        rprint(f"[red]Invalid regex pattern: {_safe(e)}[/red]")
         raise typer.Exit(1) from None
 
     name = name.upper().replace(" ", "_")
@@ -4364,9 +4410,9 @@ def entities_add(
     custom_types.append({"name": name, "pattern": pattern, "description": description})
     _save_config_data(config_path, data)
 
-    rprint(f"[green]Added entity type '{name}'[/green]")
-    rprint(f"  Pattern: {pattern}")
-    rprint(f"  Description: {description}")
+    rprint(f"[green]Added entity type '{_safe(name)}'[/green]")
+    rprint(f"  Pattern: {_safe(pattern)}")
+    rprint(f"  Description: {_safe(description)}")
 
 
 @entities_app.command("remove")
@@ -4383,12 +4429,12 @@ def entities_remove(
     custom_types = [ct for ct in custom_types if ct.get("name") != name]
 
     if len(custom_types) == original_len:
-        rprint(f"[yellow]Entity type '{name}' not found.[/yellow]")
+        rprint(f"[yellow]Entity type '{_safe(name)}' not found.[/yellow]")
         raise typer.Exit(1)
 
     data["entities"]["custom_types"] = custom_types
     _save_config_data(config_path, data)
-    rprint(f"[green]Removed entity type '{name}'[/green]")
+    rprint(f"[green]Removed entity type '{_safe(name)}'[/green]")
 
 
 def _fuzzy_match_column(header: str) -> str | None:
@@ -4661,7 +4707,7 @@ def entities_import(
         header = [h.strip() for h in all_rows[0]]
         data_rows = all_rows[1:]
 
-        rprint(f"[cyan]Columns found: {', '.join(header)}[/cyan]")
+        rprint(f"[cyan]Columns found: {_safe(', '.join(header))}[/cyan]")
 
         # Try fuzzy matching first
         col_map: dict[str, int] = {}
@@ -4678,7 +4724,7 @@ def entities_import(
                 col_map = llm_map
                 rprint("[green]AI mapped columns:[/green]")
                 for field, idx in col_map.items():
-                    rprint(f"  {field} → column '{header[idx]}' (index {idx})")
+                    rprint(f"  {_safe(field)} → column '{_safe(header[idx])}' (index {idx})")
             else:
                 rprint(
                     "[yellow]No AI available. Using first 3 columns as name, pattern, description.[/yellow]"
@@ -4686,7 +4732,7 @@ def entities_import(
         elif len(col_map) >= 2:
             rprint("[green]Auto-mapped columns:[/green]")
             for field, idx in col_map.items():
-                rprint(f"  {field} → column '{header[idx]}'")
+                rprint(f"  {field} → column '{_safe(header[idx])}'")
 
         name_idx = col_map.get("name", 0)
         pattern_idx = col_map.get("pattern", 1)
@@ -4723,10 +4769,12 @@ def entities_import(
                     is_plain_english = True  # invalid regex, treat as English
 
         if is_plain_english and smart and pattern_val:
-            rprint(f"[cyan]  '{name_val}': pattern looks like English, generating regex...[/cyan]")
+            rprint(
+                f"[cyan]  '{_safe(name_val)}': pattern looks like English, generating regex...[/cyan]"
+            )
             generated = _llm_generate_regex(pattern_val)
             if generated:
-                rprint(f"[green]    Generated: {generated}[/green]")
+                rprint(f"[green]    Generated: {_safe(generated)}[/green]")
                 # Use the original text as description if no description exists
                 if not desc_val:
                     desc_val = pattern_val
@@ -4734,12 +4782,13 @@ def entities_import(
                 ai_generated += 1
             else:
                 rprint(
-                    f"[red]  Row {row_num}: '{pattern_val}' is not valid regex and AI couldn't generate one[/red]"
+                    f"[red]  Row {row_num}: '{_safe(pattern_val)}' is not valid regex "
+                    "and AI couldn't generate one[/red]"
                 )
                 errors += 1
                 continue
         elif not pattern_val:
-            rprint(f"[red]  Row {row_num}: no pattern for '{name_val}'[/red]")
+            rprint(f"[red]  Row {row_num}: no pattern for '{_safe(name_val)}'[/red]")
             errors += 1
             continue
 
@@ -4747,12 +4796,12 @@ def entities_import(
         try:
             re.compile(pattern_val)
         except re.error as e:
-            rprint(f"[red]  Row {row_num}: invalid regex for '{name_val}': {e}[/red]")
+            rprint(f"[red]  Row {row_num}: invalid regex for '{_safe(name_val)}': {_safe(e)}[/red]")
             errors += 1
             continue
 
         if name_val in existing_names:
-            rprint(f"[dim]  Skipped '{name_val}' (already exists)[/dim]")
+            rprint(f"[dim]  Skipped '{_safe(name_val)}' (already exists)[/dim]")
             skipped += 1
             continue
 
@@ -4839,7 +4888,7 @@ def entities_test(
         try:
             matches = re.findall(pattern, text)
         except re.error:
-            table.add_row(name, "[red]INVALID REGEX[/red]", "")
+            table.add_row(safe_cell(name), "[red]INVALID REGEX[/red]", "")
             continue
 
         unique_matches = sorted(set(matches))
@@ -4849,7 +4898,9 @@ def entities_test(
             examples += f" ... +{len(unique_matches) - 5} more"
 
         count_str = f"[green]{len(unique_matches)}[/green]" if unique_matches else "[dim]0[/dim]"
-        table.add_row(name, count_str, examples or "[dim]none[/dim]")
+        table.add_row(
+            safe_cell(name), count_str, safe_cell(examples) if examples else "[dim]none[/dim]"
+        )
 
     console.print(table)
     rprint(
@@ -5176,13 +5227,13 @@ def browse(
     except SystemExit:
         raise typer.Exit(1) from None
     except Exception as e:
-        rprint(f"[red]Browse failed:[/red] {e}")
+        rprint(f"[red]Browse failed:[/red] {_safe(e)}")
         raise typer.Exit(1) from None
 
-    rprint(f"\n[cyan]Title:[/cyan] {result.get('title', 'N/A')}")
-    rprint(f"[cyan]URL:[/cyan]   {result.get('url', url)}")
+    rprint(f"\n[cyan]Title:[/cyan] {_safe(result.get('title', 'N/A'))}")
+    rprint(f"[cyan]URL:[/cyan]   {_safe(result.get('url', url))}")
     if result.get("saved_to"):
-        rprint(f"[cyan]Saved:[/cyan] {result['saved_to']}")
+        rprint(f"[cyan]Saved:[/cyan] {_safe(result['saved_to'])}")
 
 
 # === Purge Command ===
@@ -5339,7 +5390,7 @@ def ingest_url(
         console=console,
     ) as progress:
         mode = " via Tor" if policy.is_tor else ""
-        progress.add_task(f"Fetching{mode}: {url}", total=None)
+        progress.add_task(f"Fetching{_safe(mode)}: {_safe(url)}", total=None)
 
         try:
             result = asyncio.run(
@@ -5348,7 +5399,7 @@ def ingest_url(
         except TorUnavailableError:
             _report_tor_unavailable()
         except Exception as e:
-            rprint(f"[red]Failed to fetch URL: {e}[/red]")
+            rprint(f"[red]Failed to fetch URL: {_safe(e)}[/red]")
             if policy.is_tor:
                 rprint("[dim]Make sure Tor is running: brew install tor && tor[/dim]")
             raise typer.Exit(1) from None
@@ -5360,14 +5411,14 @@ def ingest_url(
     table.add_column("Field", style="cyan", width=16)
     table.add_column("Value")
 
-    table.add_row("Title", result.title)
-    table.add_row("URL", result.url)
-    table.add_row("Document ID", result.document_id[:12] + "...")
-    table.add_row("Size", f"{result.file_size / 1024:.1f} KB")
-    table.add_row("Text length", f"{len(result.text):,} chars")
-    table.add_row("HTML saved", result.html_path)
-    table.add_row("Text saved", result.text_path)
-    table.add_row("Checksum", result.checksum[:16] + "...")
+    _row(table, "Title", result.title)
+    _row(table, "URL", result.url)
+    _row(table, "Document ID", result.document_id[:12] + "...")
+    _row(table, "Size", f"{result.file_size / 1024:.1f} KB")
+    _row(table, "Text length", f"{len(result.text):,} chars")
+    _row(table, "HTML saved", result.html_path)
+    _row(table, "Text saved", result.text_path)
+    _row(table, "Checksum", result.checksum[:16] + "...")
     if policy.is_tor:
         table.add_row("Tor", "Yes")
 
@@ -5524,7 +5575,8 @@ def _records_search_all(
 
     def say(msg: str) -> None:
         # Status goes to stderr in --json mode so stdout stays pure JSON lines.
-        typer.echo(msg, err=json_lines)
+        # Error text can quote the upstream response, so it is cleaned too.
+        _echo(msg, err=json_lines)
 
     say(
         f"Sending '{query}' to {len(sources)} services "
@@ -5583,13 +5635,13 @@ def _records_search_all(
         rows.sort(key=lambda r: -r[1]["score"])
     for source, c in rows:
         if json_lines:
-            typer.echo(json.dumps(c, ensure_ascii=False, default=str))
+            typer.echo(safe_json(c, default=str))
         else:
             pages = f" ({c['pages']}p)" if c["pages"] else ""
             score = f"{c['score']:>3} " if rank else ""
             line = f"{score}{source:<14} {c['id'] or '-':<12} {c['title']}{pages}"
             # Titles are upstream data: drop control chars (terminal escapes).
-            typer.echo("".join(ch for ch in line if ch.isprintable()))
+            typer.echo(safe_text(line))
 
     if not any(result for _, result, _ in outcomes):
         raise typer.Exit(1)
@@ -5751,7 +5803,7 @@ def records_search(
     # Validate source
     available = list_sources()
     if source not in available:
-        rprint(f"[red]Unknown source '{source}'. Available: {', '.join(available)}[/red]")
+        rprint(f"[red]Unknown source '{_safe(source)}'. Available: {', '.join(available)}[/red]")
         raise typer.Exit(1)
 
     policy = _records_policy_or_exit()
@@ -5768,24 +5820,24 @@ def records_search(
         sent = ([repr(query)] if query else []) + [
             f"{'type' if k == 'filing_type' else k}={v}" for k, v in kwargs.items()
         ]
-        typer.echo(
+        _echo(
             f"Sending {', '.join(sent)} to www.federalregister.gov "
             f"({_route_note(policy, adapter)}).",
             err=True,
         )
     elif source != "cia":
-        typer.echo(f"Sending {query!r} to {source} ({_route_note(policy, adapter)}).", err=True)
+        _echo(f"Sending {query!r} to {source} ({_route_note(policy, adapter)}).", err=True)
     if source == "cia":
         notice = f"WARNING: This will send the query {query!r} to cia.gov ({_route_note(policy)})."
         if quiet:
-            typer.echo(notice, err=True)
+            _echo(notice, err=True)
         else:
-            rprint(f"\n[yellow]{notice}[/yellow]")
+            rprint(f"\n[yellow]{_safe(notice)}[/yellow]")
     elif source == "nara":
         from .records.nara import ATTRIBUTION
 
         _nara_key_or_exit(adapter)
-        typer.echo(
+        _echo(
             f"Note: sending {query or '*'!r} to catalog.archives.gov with your API key "
             f"(counted against the 10,000/month quota). {ATTRIBUTION}",
             err=True,
@@ -5811,14 +5863,14 @@ def records_search(
                 TextColumn("[progress.description]{task.description}"),
                 console=console,
             ) as progress:
-                progress.add_task(f"Searching {source} for '{query}'...", total=None)
+                progress.add_task(f"Searching {source} for '{_safe(query)}'...", total=None)
                 result = asyncio.run(_search_one(adapter, source, query, limit, kwargs))
     except Exception as e:
         _log_case_queries([(source, query, None)])
         if quiet:
-            typer.echo(f"Search failed: {e}", err=True)
+            _echo(f"Search failed: {e}", err=True)
         else:
-            rprint(f"[red]Search failed: {e}[/red]")
+            rprint(f"[red]Search failed: {_safe(e)}[/red]")
         raise typer.Exit(1) from None
 
     _log_case_queries([(source, query, None if result.error else result.total_results)])
@@ -5830,9 +5882,9 @@ def records_search(
         if result.entities:
             msg += f" Showing the {len(result.entities)} results retrieved before it failed."
         if quiet:
-            typer.echo(msg, err=True)
+            _echo(msg, err=True)
         else:
-            rprint(f"[red]{msg}[/red]")
+            rprint(f"[red]{_safe(msg)}[/red]")
         if result.entities:
             _print_search_result(
                 result, source, query, limit, raw, json_lines, filing_type, keywords, csv_path
@@ -5851,19 +5903,16 @@ def _print_search_result(
         result.entities = _rank(result.entities, rank)
     if json_lines:
         for e in result.entities[:limit]:
-            typer.echo(json.dumps(_compact_result(e), ensure_ascii=False, default=str))
+            typer.echo(safe_json(_compact_result(e), default=str))
         return
 
     if raw:
-        typer.echo(
-            json.dumps(
-                [e.to_dict() for e in result.entities[:limit]],
-                indent=2,
-                ensure_ascii=False,
-                default=str,
-            )
-        )
+        typer.echo(safe_json([e.to_dict() for e in result.entities[:limit]], indent=2, default=str))
         return
+
+    # Everything below prints upstream API values: in markup strings through
+    # _safe, in tables through _row (cleaned Text cells, never parsed as markup).
+    query = _safe(query)
 
     if not result.entities:
         if source == "sec":
@@ -5873,7 +5922,7 @@ def _print_search_result(
             if not csv_path:  # with --csv the shared footer below prints it
                 rprint(f"[dim]Showing 0 of {result.total_results} results.[/dim]")
             if filing_type:
-                rprint(f"[dim]Applied SEC filing type filter: {filing_type}[/dim]")
+                rprint(f"[dim]Applied SEC filing type filter: {_safe(filing_type)}[/dim]")
             rprint(
                 "[yellow]SEC EDGAR full-text search can be incomplete for a company or form type; "
                 "0 results is not proof that no filing exists.[/yellow]"
@@ -5896,7 +5945,7 @@ def _print_search_result(
         table.add_column("Snippet", ratio=3, style="yellow", no_wrap=True, overflow="ellipsis")
         for e in entities:
             c = _compact_result(e)
-            table.add_row(str(c["score"]), c["id"] or "-", e.name, c["snippet"])
+            _row(table, str(c["score"]), c["id"] or "-", e.name, c["snippet"])
         _emit_table(table, csv_path)
         rprint(f"\n[dim]Showing {len(entities)} of {result.total_results} results.[/dim]")
         return
@@ -5913,7 +5962,8 @@ def _print_search_result(
         for e in entities:
             file_types = e.extra_data.get("file_types", [])
             types_str = ", ".join(sorted(file_types)) if file_types else "-"
-            table.add_row(
+            _row(
+                table,
                 e.identifiers.get("muckrock_id", "-"),
                 e.name,
                 e.extra_data.get("username", "-"),
@@ -5939,7 +5989,8 @@ def _print_search_result(
                 if highlights and len(highlights[0]) > 120
                 else (highlights[0] if highlights else "-")
             )
-            table.add_row(
+            _row(
+                table,
                 e.identifiers.get("documentcloud_id", "-"),
                 e.name,
                 str(e.extra_data.get("pages") or "-"),
@@ -5990,7 +6041,8 @@ def _print_search_result(
         table.add_column("Description", ratio=3, no_wrap=True, overflow="ellipsis")
 
         for e in entities:
-            table.add_row(
+            _row(
+                table,
                 e.name,
                 e.extra_data.get("amount_formatted", "-"),
                 e.extra_data.get("awarding_agency", "-") or "-",
@@ -6008,7 +6060,8 @@ def _print_search_result(
         table.add_column("Type", width=12)
 
         for e in entities:
-            table.add_row(
+            _row(
+                table,
                 e.identifiers.get("strein", "-"),
                 e.name,
                 e.extra_data.get("location", "-") or "-",
@@ -6025,7 +6078,8 @@ def _print_search_result(
         table.add_column("Date", width=12)
 
         for e in entities:
-            table.add_row(
+            _row(
+                table,
                 e.extra_data.get("collection", "-"),
                 e.name[:80],
                 e.extra_data.get("government_author", "-") or "-",
@@ -6041,7 +6095,8 @@ def _print_search_result(
         table.add_column("Date", width=12)
 
         for e in entities:
-            table.add_row(
+            _row(
+                table,
                 e.name,
                 e.extra_data.get("amount_formatted", "-"),
                 e.extra_data.get("committee_name", "-") or "-",
@@ -6058,7 +6113,8 @@ def _print_search_result(
         table.add_column("Date", width=12)
 
         for e in entities:
-            table.add_row(
+            _row(
+                table,
                 e.extra_data.get("agency", "-") or "-",
                 e.name[:80],
                 e.extra_data.get("document_type", "-") or "-",
@@ -6077,14 +6133,15 @@ def _print_search_result(
 
         for e in entities:
             x = e.extra_data
-            # Text(), not str: upstream strings must not be read as Rich markup.
-            table.add_row(
-                Text(e.identifiers.get("document_number", "-")),
-                Text(x.get("subtype") or x.get("document_type") or "-"),
-                Text(", ".join(x.get("agencies") or []) or "-"),
-                Text(e.name),
-                Text(x.get("publication_date") or "-"),
-                Text(x.get("comments_close_on") or "-"),
+            # Cleaned Text, not str: upstream strings must not be read as Rich markup.
+            _row(
+                table,
+                e.identifiers.get("document_number", "-"),
+                x.get("subtype") or x.get("document_type") or "-",
+                ", ".join(x.get("agencies") or []) or "-",
+                e.name,
+                x.get("publication_date") or "-",
+                x.get("comments_close_on") or "-",
             )
         _emit_table(table, csv_path)
         if result.total_results >= 10_000:
@@ -6098,20 +6155,21 @@ def _print_search_result(
 
     elif source == "opencorporates":
         table = Table()
-        table.add_column("Name", style="cyan", max_width=30)
-        table.add_column("Jurisdiction", width=12)
-        table.add_column("Company #", width=14)
-        table.add_column("Status", width=12)
-        table.add_column("Type", width=14)
-        table.add_column("Officers", max_width=30)
+        table.add_column("Name", style="cyan", max_width=30, overflow="fold")
+        table.add_column("Jurisdiction", max_width=12)
+        table.add_column("Company #", max_width=14)
+        table.add_column("Status", max_width=12)
+        table.add_column("Type", max_width=14)
+        table.add_column("Officers", max_width=30, overflow="fold")
 
         for e in entities:
             officers = e.extra_data.get("officers", [])
-            officer_str = ", ".join(o["name"] for o in officers[:3]) if officers else "-"
+            officer_str = ", ".join(str(o.get("name")) for o in officers[:3]) if officers else "-"
             if len(officers) > 3:
                 officer_str += f" (+{len(officers) - 3} more)"
 
-            table.add_row(
+            _row(
+                table,
                 e.name,
                 e.jurisdiction or "-",
                 e.identifiers.get("company_number", "-"),
@@ -6123,14 +6181,15 @@ def _print_search_result(
 
     elif source == "sec":
         table = Table()
-        table.add_column("Company", style="cyan", max_width=30)
+        table.add_column("Company", style="cyan", max_width=30, overflow="fold")
         table.add_column("Filing", width=10)
         table.add_column("Date", width=12)
         table.add_column("CIK", width=12)
         table.add_column("URL", max_width=50)
 
         for e in entities:
-            table.add_row(
+            _row(
+                table,
                 e.name,
                 e.extra_data.get("filing_type", "-"),
                 e.extra_data.get("filing_date", "-"),
@@ -6142,13 +6201,13 @@ def _print_search_result(
     else:
         # Generic table for any future adapter
         table = Table()
-        table.add_column("Name", style="cyan")
+        table.add_column("Name", style="cyan", overflow="fold")
         table.add_column("Type")
         table.add_column("Source")
         table.add_column("Jurisdiction")
 
         for e in entities:
-            table.add_row(e.name, e.entity_type, e.source, e.jurisdiction or "-")
+            _row(table, e.name, e.entity_type, e.source, e.jurisdiction or "-")
         _emit_table(table, csv_path)
 
     rprint(f"\n[dim]Showing {len(entities)} of {result.total_results} results.[/dim]")
@@ -6192,7 +6251,7 @@ def records_filings(
         elif not re.fullmatch(r"[A-Za-z][A-Za-z0-9.-]{0,9}", ticker_or_cik.strip()):
             raise ValueError("ticker must be 1-10 letters, digits, periods, or hyphens")
     except ValueError as exc:
-        rprint(f"[red]Invalid filing query: {exc}[/red]")
+        rprint(f"[red]Invalid filing query: {_safe(exc)}[/red]")
         raise typer.Exit(2) from None
 
     cfg = load_config()
@@ -6221,10 +6280,10 @@ def records_filings(
     try:
         result = asyncio.run(adapter.filings(ticker_or_cik, since=since, forms=forms))
     except ValueError as exc:
-        rprint(f"[red]Invalid filing query: {exc}[/red]")
+        rprint(f"[red]Invalid filing query: {_safe(exc)}[/red]")
         raise typer.Exit(2) from None
     if result.error:
-        rprint(f"[red]SEC source error: {result.error}[/red]")
+        rprint(f"[red]SEC source error: {_safe(result.error)}[/red]")
         raise typer.Exit(1)
     if not result.entities:
         rprint("[yellow]No SEC filings matched the requested filters.[/yellow]")
@@ -6236,14 +6295,15 @@ def records_filings(
     table.add_column("Accession", width=22)
     table.add_column("URL", max_width=70)
     for entity in result.entities[:limit]:
-        table.add_row(
+        _row(
+            table,
             entity.extra_data.get("filing_date", "-"),
             entity.extra_data.get("filing_type", "-"),
             entity.identifiers.get("cik", "-"),
             entity.identifiers.get("accession_number", "-"),
             entity.source_url or "-",
         )
-    rprint(f"\n[bold]SEC filings for {ticker_or_cik}[/bold]")
+    rprint(f"\n[bold]SEC filings for {_safe(ticker_or_cik)}[/bold]")
     console.print(table)
     rprint(
         f"\n[dim]Showing {min(limit, len(result.entities))} of "
@@ -6266,7 +6326,7 @@ def _ids_from_results(path: Path, source: str) -> list[str]:
     if isinstance(data, list):
         data = [{"id": str(i)} if isinstance(i, str | int) else i for i in data]
     if not isinstance(data, list) or not all(isinstance(i, dict) for i in data):
-        rprint(f"[red]{path}: expected 'records search --json' or '--raw' output.[/red]")
+        rprint(f"[red]{_safe(path)}: expected 'records search --json' or '--raw' output.[/red]")
         raise typer.Exit(2)
     ids, other = [], 0
     for item in data:
@@ -6373,7 +6433,8 @@ def records_fetch(
     }
     if source not in prefixes:
         rprint(
-            f"[yellow]Fetch not yet supported for '{source}'. Use 'records download' for MuckRock.[/yellow]"
+            f"[yellow]Fetch not yet supported for '{_safe(source)}'. "
+            "Use 'records download' for MuckRock.[/yellow]"
         )
         raise typer.Exit(1)
     prefix = prefixes[source]
@@ -6434,7 +6495,7 @@ def records_fetch(
         if doc_id in stored and not refresh:
             skipped.append(doc_id)
             where = f"stored in case {stored[doc_id]}" if stored[doc_id] else "already stored"
-            rprint(f"  {doc_id}  [dim]{where} (--refresh to re-fetch)[/dim]")
+            rprint(f"  {_safe(doc_id)}  [dim]{_safe(where)} (--refresh to re-fetch)[/dim]")
             continue
         try:
             if source == "federalregister":
@@ -6445,14 +6506,16 @@ def records_fetch(
                 result_id, text = asyncio.run(adapter.pull_text(doc_id, case_id=case_id))
         except Exception as e:
             failed.append(doc_id)
-            rprint(f"  {doc_id}  [red]failed: {e}[/red]")
+            rprint(f"  {_safe(doc_id)}  [red]failed: {_safe(e)}[/red]")
             continue
         if not result_id or not text:
             failed.append(doc_id)
-            rprint(f"  {doc_id}  [red]no text (missing document or no extracted text)[/red]")
+            rprint(f"  {_safe(doc_id)}  [red]no text (missing document or no extracted text)[/red]")
             continue
         fetched.append(result_id)
-        rprint(f"  {doc_id}  [green]saved {result_id[:8]}[/green] ({len(text):,} characters)")
+        rprint(
+            f"  {_safe(doc_id)}  [green]saved {result_id[:8]}[/green] ({len(text):,} characters)"
+        )
 
     rprint(
         f"\nFetched {len(fetched)}, skipped {len(skipped)} already stored, failed {len(failed)}."
@@ -6483,11 +6546,11 @@ def _records_nara_objects(
             entity = asyncio.run(adapter.fetch(naid))
         except Exception as e:
             failed += 1
-            rprint(f"  {naid}  [red]failed: {e}[/red]")
+            rprint(f"  {_safe(naid)}  [red]failed: {_safe(e)}[/red]")
             continue
         if entity is None:
             failed += 1
-            rprint(f"  {naid}  [red]no such NAID[/red]")
+            rprint(f"  {_safe(naid)}  [red]no such NAID[/red]")
             continue
         objs = entity.extra_data.get("objects") or []
         ok += 1
@@ -6495,20 +6558,24 @@ def _records_nara_objects(
             if as_json:
                 listing += [{"naid": naid, "index": i, **o} for i, o in enumerate(objs, 1)]
                 continue
-            rprint(f"\n[bold]{naid}[/bold] {entity.name}: {len(objs)} digital objects")
+            rprint(
+                f"\n[bold]{_safe(naid)}[/bold] {_safe(entity.name)}: {len(objs)} digital objects"
+            )
             for i, o in enumerate(objs, 1):
                 # ponytail: NARA lists 1234 as a placeholder size on many objects
                 # (seen 2026-10-20); a real 1,234-byte scan is implausible.
                 real = o.get("size") and o["size"] != NARA_PLACEHOLDER_SIZE
                 size = f"{o['size']:,} bytes" if real else "size unknown"
-                typer.echo(f"  {i:>4}  {o.get('type') or '-'}  {size}  {o.get('url') or '-'}")
+                typer.echo(
+                    safe_text(f"  {i:>4}  {o.get('type') or '-'}  {size}  {o.get('url') or '-'}")
+                )
             continue
 
         if not notified and objs:
             notified = True
             hosts = sorted({urlsplit(o.get("url") or "").hostname or "?" for o in objs})
             rprint(
-                f"[yellow]Downloading digital objects from {', '.join(hosts)} (NARA's "
+                f"[yellow]Downloading digital objects from {_safe(', '.join(hosts))} (NARA's "
                 f"object storage; {route}; not counted against the API quota).[/yellow]"
             )
         ensure_db()
@@ -6520,10 +6587,11 @@ def _records_nara_objects(
         failed += len(bad)
         present = sum(r[2] == "present" for r in results)
         rprint(
-            f"  {naid}  {ingested} ingested, {present} already present, {len(bad)} not downloaded"
+            f"  {_safe(naid)}  {ingested} ingested, {present} already present, "
+            f"{len(bad)} not downloaded"
         )
     if as_json and not download:
-        typer.echo(json.dumps(listing, ensure_ascii=False))
+        typer.echo(safe_json(listing))
     if failed:
         raise typer.Exit(2 if ok else 1)
 
@@ -6556,17 +6624,21 @@ def _ingest_nara_objects(entity, naid: str, results) -> int:
     done = 0
     for obj, path, status in results:
         if status == "refused":
-            rprint(f"    [yellow]skipped {obj.get('url')}: not NARA's object storage[/yellow]")
+            rprint(
+                f"    [yellow]skipped {_safe(obj.get('url'))}: not NARA's object storage[/yellow]"
+            )
             continue
         if status.startswith("failed"):
-            rprint(f"    [red]{path.name}: {status}[/red]")
+            rprint(f"    [red]{_safe(path.name)}: {_safe(status)}[/red]")
             continue
         if path.name in have:
             continue
         try:
             result = asyncio.run(ingester.ingest_file(path))
         except Exception as e:
-            rprint(f"    [red]{path.name}: ingest failed: {e} (re-run to retry)[/red]")
+            rprint(
+                f"    [red]{_safe(path.name)}: ingest failed: {_safe(e)} (re-run to retry)[/red]"
+            )
             continue
         _persist_ingested(
             [result],
@@ -6663,15 +6735,15 @@ def _records_fetch_cia(identifier: str) -> None:
     try:
         kind, page_url, _ = normalize_identifier(identifier)
     except ValueError as e:
-        rprint(f"[red]{e}[/red]")
+        rprint(f"[red]{_safe(e)}[/red]")
         raise typer.Exit(1) from None
 
     policy = _records_policy_or_exit()
     rprint(
-        f"\n[yellow]WARNING: This will send the identifier {identifier!r} to cia.gov "
+        f"\n[yellow]WARNING: This will send the identifier {_safe(repr(identifier))} to cia.gov "
         f"({_route_note(policy)}).[/yellow]"
     )
-    rprint(f"[dim]{kind}: {page_url}[/dim]")
+    rprint(f"[dim]{_safe(kind)}: {_safe(page_url)}[/dim]")
 
     ensure_db()
     adapter = CIAReadingRoomAdapter(egress=policy)
@@ -6680,24 +6752,27 @@ def _records_fetch_cia(identifier: str) -> None:
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
-        progress.add_task(f"Fetching {identifier} from the CIA reading room...", total=None)
+        progress.add_task(f"Fetching {_safe(identifier)} from the CIA reading room...", total=None)
         try:
             entity, pdf_path = asyncio.run(
                 adapter.download(identifier, get_data_dir() / "downloads" / "cia")
             )
         except Exception as e:
-            rprint(f"[red]Fetch failed: {e}[/red]")
+            rprint(f"[red]Fetch failed: {_safe(e)}[/red]")
             raise typer.Exit(1) from None
 
-    rprint(f"\n[bold cyan]{entity.name}[/bold cyan]")
-    rprint(f"  ESDN: {entity.identifiers.get('esdn')}  Pages: {entity.extra_data.get('pages')}")
-    rprint(f"  PDF: {pdf_path}")
+    rprint(f"\n[bold cyan]{_safe(entity.name)}[/bold cyan]")
+    rprint(
+        f"  ESDN: {_safe(entity.identifiers.get('esdn'))}  "
+        f"Pages: {_safe(entity.extra_data.get('pages'))}"
+    )
+    rprint(f"  PDF: {_safe(pdf_path)}")
 
     ingester = DocumentIngester(storage_path=get_data_dir() / "docs")
     try:
         result = asyncio.run(ingester.ingest_file(pdf_path))
     except Exception as e:
-        rprint(f"[red]Ingest failed: {e}[/red]")
+        rprint(f"[red]Ingest failed: {_safe(e)}[/red]")
         raise typer.Exit(1) from None
     _persist_ingested(
         [result],
@@ -6729,7 +6804,7 @@ def _records_fetch_federalregister(adapter, doc_id: str) -> tuple[str, str | Non
     x = entity.extra_data
     number = entity.identifiers["document_number"]
     # Upstream strings: printed as Text so they are never read as Rich markup.
-    console.print(Text(f"  {number}  {entity.name}", style="cyan"))
+    console.print(Text(safe_text(f"  {number}  {entity.name}"), style="cyan"))
     details = [
         x.get("subtype") or x.get("document_type"),
         ", ".join(x.get("agencies") or []),
@@ -6738,7 +6813,7 @@ def _records_fetch_federalregister(adapter, doc_id: str) -> tuple[str, str | Non
         f"comments close {x['comments_close_on']}" if x.get("comments_close_on") else None,
         f"docket {', '.join(x['docket_ids'])}" if x.get("docket_ids") else None,
     ]
-    console.print(Text("    " + " | ".join(d for d in details if d)), style="dim")
+    console.print(Text(safe_text("    " + " | ".join(d for d in details if d))), style="dim")
 
     result = asyncio.run(
         DocumentIngester(storage_path=get_data_dir() / "docs").ingest_file(pdf_path)
@@ -6749,7 +6824,7 @@ def _records_fetch_federalregister(adapter, doc_id: str) -> tuple[str, str | Non
         Path(result.file_path).unlink(missing_ok=True)
         console.print(
             Text(
-                f"    PDF kept at {pdf_path}, but no text was extracted, so it was not "
+                f"    PDF kept at {safe_text(pdf_path)}, but no text was extracted, so it was not "
                 "stored. Check that pdf-extract is installed (scanned pages also need "
                 "OCR: openfoia install-extras ocr), then fetch again.",
                 style="yellow",
@@ -6786,7 +6861,7 @@ def records_download(
     import asyncio
 
     if source != "muckrock":
-        rprint(f"[yellow]Download only supported for muckrock (got '{source}')[/yellow]")
+        rprint(f"[yellow]Download only supported for muckrock (got '{_safe(source)}')[/yellow]")
         raise typer.Exit(1)
 
     from .records.muckrock import MuckRockAdapter
@@ -6801,32 +6876,32 @@ def records_download(
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
-        progress.add_task(f"Fetching request {request_id}...", total=None)
+        progress.add_task(f"Fetching request {_safe(request_id)}...", total=None)
         try:
             entity = asyncio.run(adapter.fetch(request_id))
         except Exception as e:
-            rprint(f"[red]Failed to fetch request: {e}[/red]")
+            rprint(f"[red]Failed to fetch request: {_safe(e)}[/red]")
             raise typer.Exit(1) from None
 
     if not entity:
-        rprint(f"[red]Request {request_id} not found on MuckRock.[/red]")
+        rprint(f"[red]Request {_safe(request_id)} not found on MuckRock.[/red]")
         raise typer.Exit(1)
 
     files = entity.extra_data.get("files", [])
-    rprint(f"\n[bold cyan]{entity.name}[/bold cyan]")
-    rprint(f"  Status: {entity.status}")
+    rprint(f"\n[bold cyan]{_safe(entity.name)}[/bold cyan]")
+    rprint(f"  Status: {_safe(entity.status)}")
     rprint(f"  Documents: {len(files)}")
 
     if not files:
         rprint("[yellow]No response documents attached to this request.[/yellow]")
         return
 
-    rprint(f"\n[cyan]Downloading {len(files)} file(s) to {output}/[/cyan]")
+    rprint(f"\n[cyan]Downloading {len(files)} file(s) to {_safe(output)}/[/cyan]")
 
     for f in files:
         url = f.get("url", "")
         filename = url.split("/")[-1] if url else "unknown"
-        rprint(f"  {filename}")
+        rprint(f"  {_safe(filename)}")
 
     # Download
     with Progress(
@@ -6838,13 +6913,13 @@ def records_download(
         try:
             downloaded = asyncio.run(adapter.download_files(request_id, str(output)))
         except Exception as e:
-            rprint(f"[red]Download failed: {e}[/red]")
+            rprint(f"[red]Download failed: {_safe(e)}[/red]")
             raise typer.Exit(1) from None
 
-    rprint(f"\n[green]{len(downloaded)} file(s) downloaded to {output}/[/green]")
+    rprint(f"\n[green]{len(downloaded)} file(s) downloaded to {_safe(output)}/[/green]")
 
     for path in downloaded:
-        rprint(f"  {path}")
+        rprint(f"  {_safe(path)}")
 
     # Auto-ingest if requested
     if ingest and downloaded:
@@ -6865,10 +6940,11 @@ def records_download(
                 ingest_results.append(result)
                 ingested += 1
                 rprint(
-                    f"  [green]Ingested:[/green] {Path(path).name} → {result.document_id[:8]}..."
+                    f"  [green]Ingested:[/green] {_safe(Path(path).name)} → "
+                    f"{result.document_id[:8]}..."
                 )
             except Exception as e:
-                rprint(f"  [red]Failed:[/red] {Path(path).name}: {e}")
+                rprint(f"  [red]Failed:[/red] {_safe(Path(path).name)}: {_safe(e)}")
 
         if ingest_results:
             _persist_ingested(
@@ -6982,7 +7058,7 @@ def _resolve_case_or_exit(session, name: str | None):
     case = find_case(session, name) if name else get_active_case(session)
     if case is None:
         if name:
-            rprint(f"[red]No case named '{name}'. See 'openfoia case list'.[/red]")
+            rprint(f"[red]No case named '{_safe(name)}'. See 'openfoia case list'.[/red]")
         else:
             rprint(
                 "[yellow]No active case. Pass a name or run 'openfoia case use <name>'.[/yellow]"
@@ -7162,7 +7238,7 @@ def case_new(
         session.flush()
         set_active_case_id(case.id)
 
-    rprint(f"[green]Created case[/green] [cyan]{name}[/cyan] ({slug}) — now active.")
+    rprint(f"[green]Created case[/green] [cyan]{_safe(name)}[/cyan] ({_safe(slug)}) — now active.")
 
 
 @case_app.command("list")
@@ -7181,7 +7257,7 @@ def case_list():
             return
         for c in cases:
             marker = "*" if c.id == active_id else " "
-            rprint(f"{marker} [cyan]{c.name}[/cyan]  [dim]{c.slug}[/dim]")
+            rprint(f"{marker} [cyan]{_safe(c.name)}[/cyan]  [dim]{_safe(c.slug)}[/dim]")
 
 
 @case_app.command("use")
@@ -7194,7 +7270,7 @@ def case_use(name: str = typer.Argument(..., help="Case name or slug")):
     with get_session() as session:
         case = _resolve_case_or_exit(session, name)
         set_active_case_id(case.id)
-        rprint(f"[green]Active case:[/green] [cyan]{case.name}[/cyan]")
+        rprint(f"[green]Active case:[/green] [cyan]{_safe(case.name)}[/cyan]")
 
 
 @case_app.command("close")
@@ -7232,7 +7308,7 @@ def case_edit(
             case.name, case.slug = new_name, slug
         if desc is not None:
             case.description = desc or None
-        rprint(f"[green]Updated case[/green] [cyan]{case.name}[/cyan] ({case.slug}).")
+        rprint(f"[green]Updated case[/green] [cyan]{_safe(case.name)}[/cyan] ({_safe(case.slug)}).")
 
 
 @case_app.command("rm")
@@ -7273,7 +7349,9 @@ def case_rm(
         session.delete(case)
     if was_active:
         clear_active_case()
-    rprint(f"[green]Deleted case[/green] [cyan]{label}[/cyan]; {docs} document(s) kept.")
+    rprint(
+        f"[green]Deleted case[/green] [cyan]{_safe(label)}[/cyan]; {_safe(docs)} document(s) kept."
+    )
 
 
 @case_app.command("move")
@@ -7295,7 +7373,9 @@ def case_move(
             rprint(f"[red]Document {doc} has no request record to move.[/red]")
             raise typer.Exit(1)
         if req.case_id == target.id:
-            rprint(f"[red]Document {d.id[:8]} is already in case {target.name}.[/red]")
+            rprint(
+                f"[red]Document {_safe(d.id[:8])} is already in case {_safe(target.name)}.[/red]"
+            )
             raise typer.Exit(1)
         siblings = [x.id for x in session.query(Document).filter(Document.request_id == req.id)]
         req.case_id = target.id
@@ -7321,9 +7401,9 @@ def case_show(name: str | None = typer.Argument(None, help="Case name (default: 
     with get_session() as session:
         s = _case_summary(session, _resolve_case_or_exit(session, name))
 
-    rprint(f"\n[bold cyan]{s['name']}[/bold cyan] [dim]({s['slug']})[/dim]")
+    rprint(f"\n[bold cyan]{_safe(s['name'])}[/bold cyan] [dim]({_safe(s['slug'])})[/dim]")
     if s["description"]:
-        rprint(f"  {s['description']}")
+        rprint(f"  {_safe(s['description'])}")
     rprint(f"  Documents:      {len(s['documents'])}")
     rprint(f"  Entities:       {s['entity_count']}")
     rprint(f"  Queries logged: {len(s['queries'])}")
@@ -7391,7 +7471,7 @@ def case_note(
             raise typer.Exit(2)
         document_id = _resolve_doc(session, doc).id if doc else None
         if document_id and document_id not in _case_document_ids(session, case.id):
-            rprint(f"[red]Document {doc} is not in case {case.name}.[/red]")
+            rprint(f"[red]Document {_safe(doc)} is not in case {_safe(case.name)}.[/red]")
             raise typer.Exit(1)
         if words[0] == "edit":
             try:
@@ -7401,7 +7481,7 @@ def case_note(
                 raise typer.Exit(2) from None
             n = session.get(CaseNote, note_id)
             if n is None or n.case_id != case.id:
-                rprint(f"[red]No note {note_id} in case {case.name}.[/red]")
+                rprint(f"[red]No note {_safe(note_id)} in case {_safe(case.name)}.[/red]")
                 raise typer.Exit(1)
             text = " ".join(words[2:])
             if text:
@@ -7417,7 +7497,7 @@ def case_note(
             if to is not None:
                 target = _resolve_case_or_exit(session, to)
                 if target.id == case.id:
-                    rprint(f"[red]Note {n.id} is already in case {case.name}.[/red]")
+                    rprint(f"[red]Note {_safe(n.id)} is already in case {_safe(case.name)}.[/red]")
                     raise typer.Exit(1)
                 if n.document_id and n.document_id not in _case_document_ids(session, target.id):
                     rprint(
@@ -7426,7 +7506,9 @@ def case_note(
                     )
                     raise typer.Exit(1)
                 n.case_id = target.id
-                rprint(f"[green]Note {n.id} moved to case[/green] [cyan]{target.name}[/cyan].")
+                rprint(
+                    f"[green]Note {_safe(n.id)} moved to case[/green] [cyan]{_safe(target.name)}[/cyan]."
+                )
                 return
             rprint(f"[green]Note {n.id} updated.[/green]")
             return
@@ -7440,7 +7522,7 @@ def case_note(
         )
         session.add(n)
         session.flush()
-        rprint(f"[green]Note {n.id} added to case[/green] [cyan]{case.name}[/cyan].")
+        rprint(f"[green]Note {_safe(n.id)} added to case[/green] [cyan]{_safe(case.name)}[/cyan].")
 
 
 @case_app.command("notes")
@@ -7455,7 +7537,7 @@ def case_notes(
     with get_session() as session:
         s = _case_summary(session, _resolve_case_or_exit(session, name))
     if as_json:
-        typer.echo(json.dumps(s["findings"], indent=2, ensure_ascii=False))
+        typer.echo(safe_json(s["findings"], indent=2))
         return
     if not s["findings"]:
         rprint(
@@ -7463,11 +7545,13 @@ def case_notes(
         )
         return
     for f in s["findings"]:
-        rprint(f"[cyan]{f['id']:>3}[/cyan]  [{f['tier'] or '-'}] {f['note'] or ''}")
+        # Quotes are document text and citations carry upstream titles.
+        tier = _safe(f"[{f['tier'] or '-'}]")
+        rprint(f"[cyan]{f['id']:>3}[/cyan]  {tier} {_safe(f['note'] or '')}")
         if f["quote"]:
-            rprint(f"      > {f['quote']}")
+            rprint(f"      > {_safe(f['quote'])}")
         if f["document_id"]:
-            rprint(f"      [dim]{_citation(f)}[/dim]")
+            rprint(f"      [dim]{_safe(_citation(f))}[/dim]")
     if not all(f["page_is_real"] for f in s["findings"]):
         rprint(f"[dim]* {SINGLE_PAGE_CAVEAT}[/dim]")
 
@@ -7489,7 +7573,7 @@ def case_export(
         s = _case_summary(session, _resolve_case_or_exit(session, name))
 
     if fmt == "json":
-        text = json.dumps(s, indent=2, ensure_ascii=False)
+        text = safe_json(s, indent=2)
     else:
         lines = [f"# {s['name']}", ""]
         if s["description"]:
@@ -7534,11 +7618,15 @@ def case_export(
         for q in s["queries"]:
             total = "?" if q["total_results"] is None else q["total_results"]
             lines.append(f"- {q['run_at'][:19]} `{q['source']}` {q['query']!r} ({total} results)")
-        text = "\n".join(lines) + "\n"
+        # Titles, quotes and queries are upstream or document text: a report
+        # someone will `cat` must not carry terminal escapes either.
+        text = safe_text("\n".join(lines) + "\n", multiline=True)
 
     if output:
         output.write_text(text)
-        rprint(f"[green]Exported to {output}[/green] [dim](plaintext, outside the database)[/dim]")
+        rprint(
+            f"[green]Exported to {_safe(output)}[/green] [dim](plaintext, outside the database)[/dim]"
+        )
     else:
         typer.echo(text, nl=False)
 
@@ -7625,7 +7713,7 @@ def search_cmd(
     from .net import TorUnavailableError
 
     def fail(message: str) -> None:
-        typer.echo(message, err=True)
+        _echo(message, err=True)
         raise typer.Exit(1)
 
     names = [n for raw in source or [] for n in raw.split(",") if n.strip()] or None
@@ -7687,7 +7775,7 @@ def search_cmd(
             f"egress {report.egress}."
         )
         for note in report.notes:
-            typer.echo(note, err=True)
+            _echo(note, err=True)
     if report.exit_code:
         raise typer.Exit(report.exit_code)
 
@@ -7893,7 +7981,7 @@ def crossref(
 
     def _progress(event: str, msg: str) -> None:
         if event == "start" or event == "entity":
-            rprint(f"[dim]  {msg}[/dim]")
+            rprint(f"[dim]  {_safe(msg)}[/dim]")
 
     try:
         report = asyncio.run(
@@ -7920,7 +8008,7 @@ def crossref(
     source_errors = getattr(report, "source_errors", {})
     if source_errors:
         details = ", ".join(f"{source} ({error})" for source, error in source_errors.items())
-        rprint(f"  [red]Sources errored: {len(source_errors)} — {details}[/red]")
+        rprint(f"  [red]Sources errored: {len(source_errors)} — {_safe(details)}[/red]")
     rprint("=" * 60)
 
     for result in report.results:
@@ -7932,7 +8020,10 @@ def crossref(
             if any(h.extra.get("is_sanctioned") or h.extra.get("is_pep") for h in result.hits)
             else "yellow"
         )
-        rprint(f"\n  [{color}]FLAGGED: {result.entity_name}[/{color}] ({result.entity_type})")
+        rprint(
+            f"\n  [{color}]FLAGGED: {_safe(result.entity_name)}[/{color}] "
+            f"({_safe(result.entity_type)})"
+        )
 
         for hit in result.hits:
             source_color = {
@@ -7945,10 +8036,11 @@ def crossref(
             }.get(hit.source, "white")
 
             rprint(
-                f"    [{source_color}]{hit.source}[/{source_color}] [{hit.match_type}] {hit.details}"
+                f"    [{source_color}]{_safe(hit.source)}[/{source_color}] "
+                f"{_safe(f'[{hit.match_type}]')} {_safe(hit.details)}"
             )
             if hit.url:
-                rprint(f"      {hit.url}")
+                rprint(f"      {_safe(hit.url)}")
 
     if not report.total_flagged:
         if source_errors:
@@ -7965,7 +8057,8 @@ def crossref(
             hits.add_column(column)
         for result in report.results:
             for hit in result.hits:
-                hits.add_row(
+                _row(
+                    hits,
                     result.entity_name,
                     result.entity_type,
                     hit.source,
@@ -7983,7 +8076,9 @@ def crossref(
         from .ftm import export_ftm
 
         count = export_ftm(entities, [], ftm)
-        rprint(f"\n[green]Exported {count} entities to {ftm} (FollowTheMoney format)[/green]")
+        rprint(
+            f"\n[green]Exported {count} entities to {_safe(ftm)} (FollowTheMoney format)[/green]"
+        )
 
     # Save report
     if output:
@@ -8014,7 +8109,7 @@ def crossref(
             ],
         }
         output.write_text(json.dumps(report_data, indent=2))
-        rprint(f"\n[green]Report saved to {output}[/green]")
+        rprint(f"\n[green]Report saved to {_safe(output)}[/green]")
 
 
 # === Export Command ===
@@ -8131,7 +8226,7 @@ def analyze_import(
 
     # Preview first
     entities, relationships = parse_ftm_file(file)
-    rprint(f"\n[cyan]File: {file}[/cyan]")
+    rprint(f"\n[cyan]File: {_safe(file)}[/cyan]")
     rprint(f"  Entities: {len(entities)}")
     rprint(f"  Relationships: {len(relationships)}")
 
@@ -8144,14 +8239,14 @@ def analyze_import(
 
     schemas = Counter(e["schema"] for e in entities)
     for schema, count in schemas.most_common(10):
-        rprint(f"  {schema}: {count}")
+        rprint(f"  {_safe(schema)}: {count}")  # schema names come from the imported file
 
     rprint("\n[cyan]Importing...[/cyan]")
     ent_count, rel_count = import_ftm_to_db(file, tag=tag)
 
     rprint(f"\n[green]Imported {ent_count} entities, {rel_count} relationships[/green]")
     if tag:
-        rprint(f"[dim]Tagged as: {tag}[/dim]")
+        rprint(f"[dim]Tagged as: {_safe(tag)}[/dim]")
     rprint("[dim]Run 'openfoia crossref' to cross-reference imported entities.[/dim]")
     rprint("[dim]Run 'openfoia analyze graph --view' to visualize.[/dim]")
 
