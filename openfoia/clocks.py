@@ -15,6 +15,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
+from .jurisdictions import get
+
 # Federal FOIA constants that are not in us.json because they are not the
 # response clock: appeal decision and expedited-processing decision.
 FEDERAL_APPEAL_DECISION_BUSINESS_DAYS = 20
@@ -163,8 +165,6 @@ def rule_text(jurisdiction: dict) -> str:
 
 def jurisdiction_for(jurisdiction_id: str | None) -> tuple[dict, bool]:
     """The law for an agency's jurisdiction id; federal FOIA, flagged, when there is none."""
-    from .jurisdictions import get
-
     j = get(jurisdiction_id) if jurisdiction_id else None
     if j is None:
         return get("us"), True

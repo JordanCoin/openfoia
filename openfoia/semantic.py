@@ -40,6 +40,7 @@ from __future__ import annotations
 import array
 import asyncio
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -50,6 +51,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 from sqlalchemy import text as sql
+
+from .db import _ensure_private_dir, get_data_dir
+from .doctext import _doc_info, backfill_single_pages
+from .models import DocumentPage
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
@@ -195,8 +200,6 @@ _MARKER = "openfoia-model.json"
 
 def models_dir() -> Path:
     """Where models live. Not created here: only a download creates it."""
-    from .db import get_data_dir
-
     return get_data_dir() / "models"
 
 
@@ -275,8 +278,7 @@ async def _download(
     progress: Callable[[str, int, int], None] | None,
     transport: Any = None,
 ) -> Path:
-    from .db import _ensure_private_dir
-    from .net import egress_client
+    from .net import egress_client  # lazy: monkeypatched in tests
 
     _ensure_private_dir(models_dir())
     folder = _ensure_private_dir(model_path(spec.name))
@@ -355,7 +357,7 @@ def _import_model2vec() -> Any:
     os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
     try:
-        from model2vec import StaticModel
+        from model2vec import StaticModel  # optional: semantic
     except ImportError:
         raise SemanticUnavailable(
             f"Semantic search needs the optional extra. Run: {INSTALL_HINT}"
@@ -393,8 +395,6 @@ def load_embedder(name: str | None = None) -> Model2VecEmbedder:
 
 def extra_status() -> dict[str, Any]:
     """What is installed, without importing anything heavy or touching the network."""
-    import importlib.util
-
     return {
         "model2vec": importlib.util.find_spec("model2vec") is not None,
         "sqlite_vec": importlib.util.find_spec("sqlite_vec") is not None,
@@ -551,8 +551,6 @@ def embed_missing(
     Runs entirely offline once the model is loaded. Returns pages embedded.
     Commits per batch, so an interrupted backfill keeps what it finished.
     """
-    from .doctext import backfill_single_pages
-
     conn = session.connection()
     backfill_single_pages(conn)
     ensure_vector_table(conn)
@@ -644,7 +642,7 @@ def load_sqlite_vec(conn: Connection) -> tuple[bool, str]:
     except Exception:  # not loaded yet on this connection
         pass
     try:
-        import sqlite_vec
+        import sqlite_vec  # optional: semantic
     except ImportError:
         return False, "sqlite-vec is not installed"
     enable = getattr(raw, "enable_load_extension", None)
@@ -691,7 +689,7 @@ def _rank_sqlite_vec(conn, qvec: bytes, model: str, flt: str, params: dict, k: i
 
 def _rank_numpy(conn, qvec: Sequence[float], model: str, flt: str, params: dict, k: int):
     try:
-        import numpy as np
+        import numpy as np  # optional: semantic
     except ImportError:
         raise SemanticUnavailable(
             f"Neither sqlite-vec nor numpy is available. Run: {INSTALL_HINT}"
@@ -728,9 +726,6 @@ def semantic_search(
     "numpy"; ``OPENFOIA_SEMANTIC_BACKEND`` does the same. Pages without
     vectors are not searched: call :func:`embed_missing` first.
     """
-    from .doctext import _doc_info
-    from .models import DocumentPage
-
     conn = session.connection()
     ensure_vector_table(conn)
     backend = backend or os.environ.get("OPENFOIA_SEMANTIC_BACKEND") or None

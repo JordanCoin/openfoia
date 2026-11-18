@@ -9,9 +9,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import secrets
+import socket
 from pathlib import Path
 from uuid import uuid4
 
+import uvicorn
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
@@ -20,6 +22,21 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from .db import _ensure_private_dir, get_data_dir
+from .extraction_runs import current_entities, current_entity_clause
+from .models import (
+    Agency,
+    AgencyLevel,
+    DeliveryMethod,
+    Document,
+    DocumentType,
+    Entity,
+    EntityType,
+    RequestStatus,
+    User,
+    entity_links,
+)
+from .models import Request as FOIARequest
 from .models import utcnow as _utcnow
 
 #: Hard cap on a single uploaded document (100 MiB), matching CLI ingest.
@@ -41,8 +58,6 @@ class CreateRequestBody(BaseModel):
 
 def _default_data_dir() -> Path:
     """Resolve the data dir the same way the rest of the toolkit does."""
-    from .db import get_data_dir
-
     return get_data_dir()
 
 
@@ -59,7 +74,6 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
 
     # Store token and data directory in app state
     app.state.auth_token = token
-    from .db import _ensure_private_dir
 
     app.state.data_dir = _ensure_private_dir(Path(data_dir) if data_dir else _default_data_dir())
 
@@ -138,16 +152,7 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
     @app.get("/api/stats")
     async def stats(token: str = Depends(verify_token)):
         """Get overview statistics."""
-        from .db import get_session
-        from .models import (
-            Document,
-            Entity,
-            EntityType,
-            RequestStatus,
-        )
-        from .models import (
-            Request as FOIARequest,
-        )
+        from .db import get_session  # lazy: monkeypatched in tests
 
         with get_session() as session:
             total_requests = session.query(func.count(FOIARequest.id)).scalar() or 0
@@ -186,8 +191,6 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
                 or 0
             )
             total_pages = session.query(func.coalesce(func.sum(Document.page_count), 0)).scalar()
-
-            from .extraction_runs import current_entity_clause
 
             current = current_entity_clause()
             total_entities = session.query(func.count(Entity.id)).filter(current).scalar() or 0
@@ -231,9 +234,7 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
         limit: int = 50,
     ):
         """List FOIA requests."""
-        from .db import get_session
-        from .models import Agency, RequestStatus
-        from .models import Request as FOIARequest
+        from .db import get_session  # lazy: monkeypatched in tests
 
         with get_session() as session:
             query = session.query(FOIARequest).join(Agency)
@@ -273,16 +274,7 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
         token: str = Depends(verify_token),
     ):
         """Create a new FOIA request."""
-        from .db import get_session
-        from .models import (
-            Agency,
-            DeliveryMethod,
-            RequestStatus,
-            User,
-        )
-        from .models import (
-            Request as FOIARequest,
-        )
+        from .db import get_session  # lazy: monkeypatched in tests
 
         with get_session() as session:
             agency = session.query(Agency).filter(Agency.id == request_data.agency_id).first()
@@ -330,8 +322,7 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
         level: str | None = None,
     ):
         """Search agencies."""
-        from .db import get_session
-        from .models import Agency, AgencyLevel
+        from .db import get_session  # lazy: monkeypatched in tests
 
         with get_session() as session:
             q = session.query(Agency)
@@ -372,8 +363,7 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
         request_id: str | None = None,
     ):
         """List documents."""
-        from .db import get_session
-        from .models import Document
+        from .db import get_session  # lazy: monkeypatched in tests
 
         with get_session() as session:
             q = session.query(Document)
@@ -446,7 +436,10 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
 
         # Same stripping as `docs ingest`, on the stored copy. This path used to
         # store uploads exactly as received while the README said otherwise.
-        from .pipeline.metadata import describe, strip_metadata
+        from .pipeline.metadata import (  # lazy: pulls in the pipeline package
+            describe,
+            strip_metadata,
+        )
 
         try:
             stripped_info = await asyncio.to_thread(strip_metadata, dest)
@@ -466,8 +459,7 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
         with contextlib.suppress(Exception):
             extracted_text = await ingester._extract_text(dest, mime)
 
-        from .db import get_session
-        from .models import Document, DocumentType
+        from .db import get_session  # lazy: monkeypatched in tests
 
         doc_id = str(uuid4())
         with get_session() as session:
@@ -503,9 +495,7 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
         entity_type: str | None = None,
     ):
         """Search entities."""
-        from .db import get_session
-        from .extraction_runs import current_entities
-        from .models import Entity, EntityType
+        from .db import get_session  # lazy: monkeypatched in tests
 
         with get_session() as session:
             q = current_entities(session.query(Entity))
@@ -541,9 +531,7 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
     @app.get("/api/deadlines")
     async def deadlines(token: str = Depends(verify_token)):
         """Get upcoming deadlines for pending requests."""
-        from .db import get_session
-        from .models import Agency, RequestStatus
-        from .models import Request as FOIARequest
+        from .db import get_session  # lazy: monkeypatched in tests
 
         with get_session() as session:
             active_statuses = [
@@ -588,9 +576,7 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
         request_ids: str | None = None,
     ):
         """Get entity relationship graph."""
-        from .db import get_session
-        from .extraction_runs import current_entities
-        from .models import Document, Entity, entity_links
+        from .db import get_session  # lazy: monkeypatched in tests
 
         with get_session() as session:
             q = current_entities(session.query(Entity))
@@ -1273,10 +1259,6 @@ def run_server(
     data_dir: Path | None = None,
 ) -> None:
     """Run the OpenFOIA server."""
-    import socket
-
-    import uvicorn
-
     # Generate token if not provided
     if token is None:
         token = secrets.token_urlsafe(16)

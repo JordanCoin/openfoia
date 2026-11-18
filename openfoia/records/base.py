@@ -8,6 +8,7 @@ import re
 import socket
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
@@ -78,8 +79,6 @@ async def download_to_file(client: Any, url: str, dest: Any, max_bytes: int) -> 
 
     Returns the number of bytes written.
     """
-    from pathlib import Path
-
     dest = Path(dest)
     # Stream into a sibling .part file and rename when complete, so *dest* only
     # ever exists whole: even a killed process can't leave a truncated file

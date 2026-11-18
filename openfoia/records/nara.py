@@ -18,9 +18,14 @@ import os
 import re
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
+from ..db import get_data_dir
+from ..doctext import join_pages
 from .base import AdapterRequestError, RecordAdapter, RecordEntity, SearchResult
+from .store import store_text_document
 
 logger = logging.getLogger(__name__)
 
@@ -66,8 +71,6 @@ def api_base() -> str:
     The key goes in a header on every request, so an arbitrary base would send
     it to an arbitrary host.
     """
-    from urllib.parse import urlsplit
-
     base = os.environ.get("OPENFOIA_NARA_API_BASE") or API_BASE_DEFAULT
     parts = urlsplit(base)
     local = parts.hostname in ("localhost", "127.0.0.1")
@@ -81,8 +84,6 @@ def api_base() -> str:
 
 def object_url_allowed(url: str) -> bool:
     """True only for https URLs on NARA's object storage; anything else is not downloaded."""
-    from urllib.parse import urlsplit
-
     parts = urlsplit(url)
     if parts.scheme != "https":
         return False
@@ -105,8 +106,6 @@ async def _throttle() -> None:
 
 
 def quota_path():
-    from ..db import get_data_dir
-
     return get_data_dir() / QUOTA_FILE
 
 
@@ -261,10 +260,8 @@ class NARAAdapter(RecordAdapter):
         host) or ``failed: ...``. Object downloads are not catalog queries, so they
         are not counted against the quota, but they keep the 1 req/s throttle.
         """
-        from pathlib import Path
-
-        from ..net import egress_client
-        from .base import download_to_file, safe_download_filename
+        from ..net import egress_client  # lazy: monkeypatched in tests
+        from .base import download_to_file, safe_download_filename  # lazy: monkeypatched in tests
 
         dest_dir = Path(dest_dir)
         dest_dir.mkdir(parents=True, exist_ok=True)
@@ -318,8 +315,6 @@ class NARAAdapter(RecordAdapter):
             (obj.get("extractedText") or "").strip() for obj in record.get("digitalObjects") or []
         ]
         if any(page_texts):
-            from ..doctext import join_pages
-
             entity.extra_data["page_texts"] = page_texts
             entity.extra_data["full_text"] = join_pages(page_texts)
             entity.extra_data["text_kind"] = "ocr"
@@ -344,8 +339,6 @@ class NARAAdapter(RecordAdapter):
     def store(
         self, entity: RecordEntity, identifier: str, case_id: str | None = None
     ) -> tuple[str | None, str | None]:
-        from .store import store_text_document
-
         naid = entity.identifiers.get("naid", identifier)
         described = entity.extra_data.get("text_kind") == "description"
         return store_text_document(

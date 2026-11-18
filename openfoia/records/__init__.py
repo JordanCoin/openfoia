@@ -9,6 +9,21 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from .base import DataGovAdapter
+from .cia import CIAReadingRoomAdapter
+from .courtlistener import CourtListenerAdapter
+from .documentcloud import DocumentCloudAdapter
+from .fec import FECAdapter
+from .federal_register import FederalRegisterAdapter
+from .govinfo import GovInfoAdapter
+from .muckrock import MuckRockAdapter
+from .nara import NARAAdapter
+from .opencorporates import OpenCorporatesAdapter
+from .propublica_nonprofit import ProPublicaNonprofitAdapter
+from .regulations import RegulationsGovAdapter
+from .sec_edgar import SECEdgarAdapter
+from .usaspending import USASpendingAdapter
+
 if TYPE_CHECKING:
     from ..net import EgressPolicy
     from .base import RecordAdapter
@@ -39,8 +54,6 @@ def get_adapter(
 
     Raises KeyError if the source is not registered.
     """
-    from .base import DataGovAdapter
-
     if name not in _REGISTRY:
         available = ", ".join(sorted(_REGISTRY.keys()))
         raise KeyError(f"Unknown records source '{name}'. Available: {available}")
@@ -57,20 +70,6 @@ def list_sources() -> list[str]:
 
 def _auto_register() -> None:
     """Auto-register built-in adapters."""
-    from .cia import CIAReadingRoomAdapter
-    from .courtlistener import CourtListenerAdapter
-    from .documentcloud import DocumentCloudAdapter
-    from .fec import FECAdapter
-    from .federal_register import FederalRegisterAdapter
-    from .govinfo import GovInfoAdapter
-    from .muckrock import MuckRockAdapter
-    from .nara import NARAAdapter
-    from .opencorporates import OpenCorporatesAdapter
-    from .propublica_nonprofit import ProPublicaNonprofitAdapter
-    from .regulations import RegulationsGovAdapter
-    from .sec_edgar import SECEdgarAdapter
-    from .usaspending import USASpendingAdapter
-
     register("opencorporates", OpenCorporatesAdapter)
     register("sec", SECEdgarAdapter)
     register("muckrock", MuckRockAdapter)

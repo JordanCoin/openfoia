@@ -26,8 +26,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+import re as _re
 import shutil
 import subprocess
+import tempfile
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -118,7 +122,7 @@ def _hash_metadata(metadata_dict: dict[str, Any]) -> str:
 
 
 def _strip_image_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
-    from PIL import Image
+    from PIL import Image  # optional: ocr
 
     result: dict[str, Any] = {"stripped": [], "file_type": "image", "status": "stripped"}
 
@@ -133,7 +137,7 @@ def _strip_image_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
     info = img.info or {}
 
     if hasattr(img, "_getexif") and img._getexif():
-        from PIL.ExifTags import TAGS
+        from PIL.ExifTags import TAGS  # optional: ocr
 
         raw_exif = img._getexif()
         for tag_id, value in raw_exif.items():
@@ -206,7 +210,7 @@ _PDF_SENSITIVE_KEYS = {
 
 
 def _strip_pdf_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
-    from pypdf import PdfReader, PdfWriter
+    from pypdf import PdfReader, PdfWriter  # lazy: heavy (pulls in Pillow)
 
     result: dict[str, Any] = {"stripped": [], "file_type": "pdf", "status": "stripped"}
 
@@ -274,7 +278,7 @@ def _pdf_has_xmp(reader: Any) -> bool:
 
 def _remove_xmp_metadata(writer: Any) -> None:
     """Remove the document-level XMP metadata stream from a PdfWriter."""
-    from pypdf.generic import NameObject
+    from pypdf.generic import NameObject  # lazy: heavy (pulls in Pillow)
 
     try:
         root = writer._root_object
@@ -309,7 +313,7 @@ _DOCX_SENSITIVE_ATTRS = [
 
 
 def _strip_docx_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
-    from docx import Document
+    from docx import Document  # lazy: heavy (lxml)
 
     result: dict[str, Any] = {"stripped": [], "file_type": "docx", "status": "stripped"}
 
@@ -376,12 +380,6 @@ def _strip_docx_extended_props(file_path: Path) -> list[str] | None:
     of property names that were actually present and removed, or None when the
     archive could not be read or rewritten (those properties are still there).
     """
-    import os
-    import re as _re
-    import shutil
-    import tempfile
-    import zipfile
-
     removed: list[str] = []
 
     try:

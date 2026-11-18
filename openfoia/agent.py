@@ -14,10 +14,27 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
-from .models import Agency, Request, RequestStatus
+from .clocks import request_clocks
+from .db import get_data_dir
+from .extraction_runs import current_entities
+from .models import (
+    Agency,
+    AgencyLevel,
+    DeliveryMethod,
+    Document,
+    Entity,
+    EntityType,
+    Request,
+    RequestStatus,
+    TimelineEvent,
+    User,
+    entity_links,
+)
 from .models import utcnow as _utcnow
 
 logger = logging.getLogger(__name__)
@@ -53,7 +70,7 @@ class OpenFOIAAgent:
 
     def get_tools(self) -> list[dict[str, Any]]:
         """Return tool definitions for LLM function calling."""
-        from .records import list_sources
+        from .records import list_sources  # lazy: monkeypatched in tests
 
         return [
             {
@@ -375,8 +392,6 @@ class OpenFOIAAgent:
         )
 
         if level and level != "all":
-            from .models import AgencyLevel
-
             with contextlib.suppress(ValueError):
                 agencies = agencies.filter(Agency.level == AgencyLevel(level))
 
@@ -441,10 +456,6 @@ Fee Waiver Request:
 Please contact me if you have questions about this request.
 """
 
-        import uuid
-
-        from .models import DeliveryMethod, User
-
         request_id = str(uuid.uuid4())
 
         # Persist the draft to DB
@@ -492,8 +503,6 @@ Please contact me if you have questions about this request.
 
         # Same code path as the CLI: the agency's jurisdiction rule decides the
         # clock, and a law with no known clock yields no due date, never a fake one.
-        from .clocks import request_clocks
-
         request.due_date = request_clocks(request).response_due
 
         self.db.commit()
@@ -518,8 +527,6 @@ Please contact me if you have questions about this request.
 
         if not request:
             return {"error": f"Request not found: {request_id}"}
-
-        from .models import TimelineEvent
 
         events = (
             self.db.query(TimelineEvent)
@@ -587,10 +594,6 @@ Please contact me if you have questions about this request.
         instruct it to ingest ~/.ssh/id_rsa or the config file into the
         database, where it becomes visible in reports and exports.
         """
-        from pathlib import Path
-
-        from .db import get_data_dir
-
         doc_path = params.get("document_path", "")
 
         try:
@@ -608,13 +611,13 @@ Please contact me if you have questions about this request.
         if not resolved.exists():
             return {"error": "File not found in the OpenFOIA data directory."}
 
-        from .pipeline.ingest import DocumentIngester
+        from .pipeline.ingest import DocumentIngester  # lazy: pulls in the pipeline package
 
         storage_path = get_data_dir() / "docs"
         ingester = DocumentIngester(storage_path=storage_path)
         result = await ingester.ingest_file(resolved, request_id=params.get("request_id"))
 
-        from .pipeline.metadata import describe
+        from .pipeline.metadata import describe  # lazy: pulls in the pipeline package
 
         stripped_info = result.metadata.get("metadata_stripped")
         metadata_clean, metadata_note = describe(stripped_info)
@@ -635,8 +638,6 @@ Please contact me if you have questions about this request.
 
     async def _extract_entities(self, params: dict[str, Any]) -> dict[str, Any]:
         """Extract entities from a document."""
-        from .models import Document
-
         doc_id = params.get("document_id")
         doc = self.db.query(Document).filter(Document.id == doc_id).first()
 
@@ -646,7 +647,7 @@ Please contact me if you have questions about this request.
         if not doc.extracted_text:
             return {"error": "Document has no extracted text. Run OCR first."}
 
-        from .pipeline.extract import EntityExtractor
+        from .pipeline.extract import EntityExtractor  # lazy: pulls in the pipeline package
 
         extractor = EntityExtractor()
         result = await extractor.extract(doc.extracted_text)
@@ -663,9 +664,6 @@ Please contact me if you have questions about this request.
 
     async def _build_entity_graph(self, params: dict[str, Any]) -> dict[str, Any]:
         """Build entity graph."""
-        from .extraction_runs import current_entities
-        from .models import Document, Entity, entity_links
-
         query = current_entities(self.db.query(Entity))
         request_ids = params.get("request_ids")
         if request_ids:
@@ -689,17 +687,12 @@ Please contact me if you have questions about this request.
 
     async def _search_entities(self, params: dict[str, Any]) -> dict[str, Any]:
         """Search entities."""
-        from .extraction_runs import current_entities
-        from .models import Entity
-
         search = f"%{params.get('query', '')}%"
 
         query = current_entities(self.db.query(Entity)).filter(Entity.normalized_text.ilike(search))
 
         entity_type = params.get("entity_type")
         if entity_type and entity_type != "all":
-            from .models import EntityType
-
             with contextlib.suppress(ValueError):
                 query = query.filter(Entity.entity_type == EntityType(entity_type))
 
@@ -727,9 +720,9 @@ Please contact me if you have questions about this request.
         ``allow_network``), and the call must carry ``confirmed=true`` after the
         user saw the warning, which is the agent's ``--yes``.
         """
-        from . import search as search_mod
-        from .config import load_config
-        from .net import TorUnavailableError
+        from . import search as search_mod  # lazy: pulls in httpx
+        from .config import load_config  # lazy: monkeypatched in tests
+        from .net import TorUnavailableError  # lazy: pulls in httpx
 
         cfg = load_config()
         egress = params.get("egress")
@@ -786,9 +779,6 @@ Please contact me if you have questions about this request.
             return {"error": "No requests found with the given IDs."}
 
         # Gather data: each document's current extraction run only
-        from .extraction_runs import current_entities
-        from .models import Entity
-
         all_entities = []
         for req in requests:
             doc_ids = [doc.id for doc in req.documents]

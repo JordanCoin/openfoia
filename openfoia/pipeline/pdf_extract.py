@@ -20,6 +20,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..doctext import split_pages
+
 logger = logging.getLogger(__name__)
 
 #: Per-page verdicts the glyph `--json` contract emits (docs/JSON_CONTRACT.md).
@@ -314,7 +316,6 @@ async def extract_text(
         return None
 
     text = result.stdout
-    from ..doctext import split_pages
 
     # Pages are separated by form feed (0x0C)
     pages = split_pages(text)

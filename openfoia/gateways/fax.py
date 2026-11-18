@@ -13,6 +13,8 @@ SRFax. The gateway interface remains the same regardless of provider.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import html
 import io
 import logging
 import os
@@ -21,6 +23,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from ..db import _ensure_private_dir, get_data_dir
 from .base import DeliveryGateway, DeliveryPayload, DeliveryResult, DeliveryStatus
 
 logger = logging.getLogger(__name__)
@@ -33,8 +36,6 @@ def _esc(value: Any) -> str:
     name (which can come from fetched agency data) corrupts or injects into
     the rendered cover page.
     """
-    import html
-
     return html.escape(str(value or ""), quote=True)
 
 
@@ -45,8 +46,6 @@ def get_fax_media_dir() -> Path:
     deleted: a world-readable copy of the FOIA request survived
     `openfoia purge --secure`, which only covers the data directory.
     """
-    from ..db import _ensure_private_dir, get_data_dir
-
     return _ensure_private_dir(get_data_dir() / "fax_media")
 
 
@@ -93,7 +92,7 @@ class TwilioFaxGateway(DeliveryGateway):
     def _get_client(self) -> Any:
         """Lazily initialize Twilio client."""
         if self._client is None:
-            from twilio.rest import Client
+            from twilio.rest import Client  # optional: fax
 
             self._client = Client(self.account_sid, self.auth_token)
         return self._client
@@ -267,10 +266,10 @@ class TwilioFaxGateway(DeliveryGateway):
 
     def _generate_pdf_reportlab(self, payload: DeliveryPayload) -> bytes:
         """Generate PDF using reportlab with proper legal formatting."""
-        from reportlab.lib.pagesizes import letter
-        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-        from reportlab.lib.units import inch
-        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+        from reportlab.lib.pagesizes import letter  # optional: fax
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet  # optional: fax
+        from reportlab.lib.units import inch  # optional: fax
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer  # optional: fax
 
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(
@@ -477,8 +476,6 @@ class TwilioFaxGateway(DeliveryGateway):
         """
         if self.media_base_url:
             # Write to temp file and construct URL from configured base
-            import hashlib
-
             file_hash = hashlib.sha256(pdf_bytes).hexdigest()[:16]
             filename = f"foia_fax_{file_hash}.pdf"
 

@@ -81,7 +81,7 @@ class LobMailGateway(DeliveryGateway):
     def _get_lob(self) -> Any:
         """Lazily initialize Lob client."""
         if self._letters_api is None:
-            import lob
+            import lob  # optional: mail
 
             lob.api_key = self.api_key
             self._letters_api = lob

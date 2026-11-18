@@ -57,7 +57,7 @@ def find_case(session: Session, name_or_slug: str) -> Case | None:
 
 def active_case_id_in_db() -> str | None:
     """Active case id if a database exists and holds that case, else None."""
-    from .db import get_db_path, get_session
+    from .db import get_db_path, get_session  # lazy: monkeypatched in tests
 
     if not get_active_case_id() or not get_db_path().exists():
         return None

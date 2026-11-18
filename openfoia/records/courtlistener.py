@@ -28,9 +28,11 @@ import os
 import re
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from ..db import get_data_dir
 from ..net import _retry_after, egress_client
 from .base import (
     AdapterRequestError,
@@ -40,6 +42,7 @@ from .base import (
     download_to_file,
     validate_download_url,
 )
+from .store import store_text_document
 
 logger = logging.getLogger(__name__)
 
@@ -275,8 +278,6 @@ def canonical_id(identifier: str) -> str:
 
 
 def budget_path():
-    from ..db import get_data_dir
-
     return get_data_dir() / BUDGET_FILE
 
 
@@ -697,8 +698,6 @@ class CourtListenerAdapter(RecordAdapter):
         download is not an API request, so it is not budget-counted. Raises
         ValueError for a URL that is not CourtListener's file storage.
         """
-        from pathlib import Path
-
         url = entity.extra_data.get("pdf_url") or ""
         if not storage_url_allowed(url):
             raise ValueError(f"Refusing to download {clean_line(url)!r}: not {STORAGE_BASE}")
@@ -718,8 +717,6 @@ class CourtListenerAdapter(RecordAdapter):
         self, entity: RecordEntity, case_id: str | None = None
     ) -> tuple[str | None, str | None]:
         """Save the entity's text as a local Document under request number CL-<id>."""
-        from .store import store_text_document
-
         ident = next(iter(entity.identifiers.values()))
         return store_text_document(
             entity,

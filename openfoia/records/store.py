@@ -3,7 +3,19 @@
 from __future__ import annotations
 
 import logging
+from uuid import uuid4
 
+from ..doctext import replace_pages
+from ..models import (
+    Agency,
+    DeliveryMethod,
+    Document,
+    DocumentPage,
+    DocumentType,
+    Request,
+    RequestStatus,
+    User,
+)
 from .base import RecordEntity
 
 logger = logging.getLogger(__name__)
@@ -27,20 +39,7 @@ def store_text_document(
     if not full_text:
         return None, None
 
-    from uuid import uuid4
-
-    from ..db import ensure_db, get_session
-    from ..doctext import replace_pages
-    from ..models import (
-        Agency,
-        DeliveryMethod,
-        Document,
-        DocumentPage,
-        DocumentType,
-        Request,
-        RequestStatus,
-        User,
-    )
+    from ..db import ensure_db, get_session  # lazy: monkeypatched in tests
 
     ensure_db()
     page_texts = entity.extra_data.get("page_texts")

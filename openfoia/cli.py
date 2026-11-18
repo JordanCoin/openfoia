@@ -7,23 +7,59 @@ import contextlib
 import csv
 import functools
 import json
+import math
+import os
 import re
+import secrets
+import shutil
+import socket
+import subprocess
 import sys
-from datetime import datetime
+import webbrowser
+from collections import Counter
+from datetime import date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit
+from uuid import uuid4
 
 import typer
-
-if TYPE_CHECKING:
-    from .net import EgressPolicy
 from rich import print as rprint
 from rich.console import Console
+from rich.markup import escape
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 from rich.text import Text
+from sqlalchemy import func, or_
 
+from . import __version__
+from .models import (
+    Agency,
+    AgencyLevel,
+    Campaign,
+    Case,
+    CaseNote,
+    CaseQuery,
+    DeliveryMethod,
+    Document,
+    DocumentPage,
+    DocumentType,
+    Entity,
+    Request,
+    RequestStatus,
+    TimelineEvent,
+    User,
+    entity_links,
+    utcnow,
+)
+from .models import Agency as AgencyModel
+from .models import Document as DocModel
+from .models import Request as ReqModel
+from .models import Request as RequestModel
 from .models import utcnow as _utcnow
+
+if TYPE_CHECKING:
+    from .net import EgressPolicy
 
 app = typer.Typer(
     name="openfoia",
@@ -34,8 +70,6 @@ app = typer.Typer(
 
 def _version_callback(value: bool) -> None:
     if value:
-        from . import __version__
-
         rprint(f"openfoia {__version__}")
         raise typer.Exit()
 
@@ -104,13 +138,13 @@ def init(
         openfoia init --encrypt              # Initialize with encryption (prompts)
         openfoia init --encrypt --duress     # Also set up a decoy database
     """
-    from .db import get_data_dir, get_db_path, has_sqlcipher, init_db
+    from .db import get_data_dir, get_db_path, has_sqlcipher, init_db  # lazy: startup time
 
     data_dir = get_data_dir()
 
     rprint("\n[bold green]🔒 OpenFOIA Initialization[/bold green]")
     rprint("─" * 50)
-    from .pipeline.pdf_extract import find_binary, font_pack_dir
+    from .pipeline.pdf_extract import find_binary, font_pack_dir  # lazy: startup time
 
     engine = find_binary()
     if engine:
@@ -157,8 +191,7 @@ def init(
         rprint("[dim]Use --force to re-initialize (WARNING: loses data)[/dim]")
 
         # Show stats
-        from .db import get_session
-        from .models import Agency, Document, Request
+        from .db import get_session  # lazy: startup time
 
         with get_session(password=password) as session:
             agency_count = session.query(Agency).count()
@@ -185,8 +218,7 @@ def init(
     init_db(seed=not no_seed, password=password)
 
     if not no_seed:
-        from .db import get_session
-        from .models import Agency
+        from .db import get_session  # lazy: startup time
 
         with get_session(password=password) as session:
             count = session.query(Agency).count()
@@ -194,7 +226,7 @@ def init(
 
     # Duress mode setup
     if duress_password:
-        from .security import setup_duress_mode
+        from .security import setup_duress_mode  # lazy: startup time
 
         if duress_password == password:
             rprint(
@@ -236,9 +268,6 @@ def install_extras(
         openfoia install-extras semantic     # offline search by meaning (docs grep --semantic)
         openfoia install-extras all          # everything
     """
-    import subprocess
-    import sys
-
     valid = {
         "ner",
         "ner-spacy",
@@ -457,10 +486,12 @@ def serve(
         openfoia serve --tor              # Use Tor Browser or Brave with Tor
         openfoia serve --no-browser       # Just print URL, don't open
     """
-    import secrets
-    import socket
-
-    from .browser import BrowserType, detect_browsers, launch_browser, print_browser_menu
+    from .browser import (  # lazy: startup time
+        BrowserType,
+        detect_browsers,
+        launch_browser,
+        print_browser_menu,
+    )
 
     # Generate session token for security
     token = secrets.token_urlsafe(16)
@@ -528,8 +559,8 @@ def serve(
             rprint("[yellow]No browser auto-selected. Copy the URL above.[/yellow]\n")
 
     # Start the server
-    from .db import get_data_dir
-    from .server import run_server
+    from .db import get_data_dir  # lazy: startup time
+    from .server import run_server  # lazy: startup time
 
     run_server(host=host, port=port, token=token, data_dir=get_data_dir())
 
@@ -635,7 +666,7 @@ def upgrade(
         openfoia db upgrade          # Upgrade to latest
         openfoia db upgrade head     # Same as above
     """
-    from .db import get_db_path, run_migrations
+    from .db import get_db_path, run_migrations  # lazy: startup time
 
     db_path = get_db_path()
     rprint(f"\n[cyan]Database:[/cyan] {db_path}")
@@ -673,7 +704,7 @@ def encrypt(
         openfoia db encrypt --password SECRET
         openfoia db encrypt   # will prompt for password
     """
-    from .db import encrypt_database, get_db_path, has_sqlcipher
+    from .db import encrypt_database, get_db_path, has_sqlcipher  # lazy: startup time
 
     if not has_sqlcipher():
         rprint("[bold red]Error:[/bold red] pysqlcipher3 is not installed.")
@@ -713,7 +744,7 @@ def config(
     show: bool = typer.Option(False, "--show", help="Show current configuration"),
 ):
     """Manage OpenFOIA configuration."""
-    from .db import get_data_dir
+    from .db import get_data_dir  # lazy: startup time
 
     config_path = get_data_dir() / "config.json"
 
@@ -773,7 +804,7 @@ def config(
 
     elif show:
         if config_path.exists():
-            from .config import redact_secrets
+            from .config import redact_secrets  # lazy: startup time
 
             config_data = json.loads(config_path.read_text())
             # Never print secrets: terminal scrollback outlives the session,
@@ -804,26 +835,12 @@ def request_new(
     email_addr: str = typer.Option(..., "--email", "-e", help="Your email address"),
 ):
     """Create a new FOIA request."""
-    from uuid import uuid4
-
-    from .db import get_db_path, get_session, init_db
-    from .models import (
-        Agency as AgencyModel,
-    )
-    from .models import (
-        DeliveryMethod,
-        RequestStatus,
-        User,
-    )
-    from .models import (
-        Request as RequestModel,
-    )
+    from .db import get_db_path, get_session, init_db  # lazy: startup time
 
     if body_file:
         body = body_file.read_text()
     elif not body:
         rprint("[yellow]Enter request body (Ctrl+D when done):[/yellow]")
-        import sys
 
         body = sys.stdin.read()
 
@@ -905,10 +922,7 @@ def request_list(
     csv_path: str | None = typer.Option(None, "--csv", help=CSV_HELP),
 ):
     """List FOIA requests."""
-    from .db import get_db_path, get_session
-    from .models import Agency as AgencyModel
-    from .models import Request as RequestModel
-    from .models import RequestStatus
+    from .db import get_db_path, get_session  # lazy: startup time
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -976,9 +990,7 @@ def request_status(
     request_id: str = typer.Argument(..., help="Request ID or number"),
 ):
     """Check status of a FOIA request."""
-    from .db import get_db_path, get_session
-    from .models import Request as RequestModel
-    from .models import TimelineEvent
+    from .db import get_db_path, get_session  # lazy: startup time
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -1014,7 +1026,7 @@ def request_status(
             info_table.add_row("Sent", request.sent_at.strftime("%Y-%m-%d %H:%M"))
         if request.acknowledged_at:
             info_table.add_row("Acknowledged", request.acknowledged_at.strftime("%Y-%m-%d %H:%M"))
-        from .clocks import request_clocks, rule_text, tolls_of
+        from .clocks import request_clocks, rule_text, tolls_of  # lazy: startup time
 
         clocks = request_clocks(request)
         law = clocks.law
@@ -1132,10 +1144,8 @@ def request_mark(
         openfoia request mark REQ-1 still-interested --due 2026-11-15
         openfoia request mark REQ-1 replied
     """
-    from .clocks import request_clocks
-    from .db import get_session
-    from .models import Request as RequestModel
-    from .models import RequestStatus, TimelineEvent
+    from .clocks import request_clocks  # lazy: startup time
+    from .db import get_session  # lazy: startup time
 
     if event not in MARK_EVENTS:
         rprint(f"[red]Unknown event '{event}'. Choose from: {', '.join(MARK_EVENTS)}[/red]")
@@ -1293,11 +1303,8 @@ def request_send(
         # Dry run (preview without sending)
         openfoia request send -a FBI -s "Test" -t standard -n "Test User" -e test@example.com --dry-run
     """
-    import asyncio
-
-    from .db import get_db_path, get_session
-    from .gateways.base import DeliveryPayload
-    from .models import Agency
+    from .db import get_db_path, get_session  # lazy: startup time
+    from .gateways.base import DeliveryPayload  # lazy: startup time
 
     if method not in ("email", "fax", "mail"):
         rprint(f"[red]Unknown method '{method}'. Use: email, fax, mail[/red]")
@@ -1346,7 +1353,12 @@ def request_send(
 
     # Get body content
     if template:
-        from .templates import RequestDetails, RequesterInfo, records_about_self, standard_request
+        from .templates import (  # lazy: startup time
+            RequestDetails,
+            RequesterInfo,
+            records_about_self,
+            standard_request,
+        )
 
         requester = RequesterInfo(name=name, email=email)
         details = RequestDetails(subject=subject, description=subject)
@@ -1364,7 +1376,6 @@ def request_send(
         body = body_file.read_text()
     elif not body:
         rprint("[yellow]Enter request body (Ctrl+D when done):[/yellow]")
-        import sys
 
         body = sys.stdin.read()
 
@@ -1388,13 +1399,13 @@ def request_send(
 
     # Show cost estimate for paid methods
     if method == "fax":
-        from .gateways.fax import TwilioFaxGateway
+        from .gateways.fax import TwilioFaxGateway  # lazy: startup time
 
         est_pages = max(1, len(body) // 3000 + 1) + (1 if payload.cover_page else 0)
         est_cost = est_pages * TwilioFaxGateway.COST_PER_PAGE_CENTS
         rprint(f"[cyan]Est. Cost:[/cyan] ${est_cost / 100:.2f} ({est_pages} pages @ $0.07/page)")
     elif method == "mail":
-        from .gateways.mail import LobMailGateway
+        from .gateways.mail import LobMailGateway  # lazy: startup time
 
         est_pages = max(1, len(body) // 3000 + 1)
         est_cost = 63 + max(0, (est_pages - 1) * 15) + 400 + 50  # certified + return envelope
@@ -1410,11 +1421,9 @@ def request_send(
         return
 
     # Load config
-    from .db import get_data_dir
+    from .db import get_data_dir  # lazy: startup time
 
     config_path = get_data_dir() / "config.json"
-    import json
-    import os
 
     config = {}
     if config_path.exists():
@@ -1423,7 +1432,7 @@ def request_send(
 
     # Build and send via the appropriate gateway
     if method == "email":
-        from .gateways.email import EmailGateway
+        from .gateways.email import EmailGateway  # lazy: startup time
 
         smtp_user = os.environ.get("OPENFOIA_SMTP_USER")
         smtp_password = os.environ.get("OPENFOIA_SMTP_PASSWORD")
@@ -1447,7 +1456,7 @@ def request_send(
         )
 
     elif method == "fax":
-        from .gateways.fax import TwilioFaxGateway
+        from .gateways.fax import TwilioFaxGateway  # lazy: startup time
 
         account_sid = os.environ.get("OPENFOIA_TWILIO_ACCOUNT_SID")
         auth_token = os.environ.get("OPENFOIA_TWILIO_AUTH_TOKEN")
@@ -1478,7 +1487,7 @@ def request_send(
         )
 
     elif method == "mail":
-        from .gateways.mail import LobMailGateway
+        from .gateways.mail import LobMailGateway  # lazy: startup time
 
         lob_api_key = os.environ.get("OPENFOIA_LOB_API_KEY")
 
@@ -1528,10 +1537,7 @@ def request_send(
                     rprint(f"  Expected delivery: {result.metadata['expected_delivery_date']}")
 
         # Update the matching Request in the DB if one exists
-        from .db import get_db_path, get_session
-        from .models import Agency as AgencyModel
-        from .models import Request as RequestModel
-        from .models import RequestStatus
+        from .db import get_db_path, get_session  # lazy: startup time
 
         db_path = get_db_path()
         if db_path.exists():
@@ -1552,7 +1558,7 @@ def request_send(
                     req.status = RequestStatus.SENT
                     req.sent_at = _utcnow()
                     req.delivery_reference = result.reference_id
-                    from .clocks import request_clocks
+                    from .clocks import request_clocks  # lazy: startup time
 
                     req.due_date = request_clocks(req).response_due
                     if req.due_date is None:
@@ -1596,11 +1602,9 @@ def docs_ingest(
         openfoia docs ingest ./evidence/ -r REQ-2026-001
         openfoia docs ingest ./doc.pdf --keep-metadata
     """
-    import asyncio
-
-    from .db import ensure_db, get_data_dir
-    from .pipeline.ingest import DocumentIngester
-    from .pipeline.metadata import describe
+    from .db import ensure_db, get_data_dir  # lazy: startup time
+    from .pipeline.ingest import DocumentIngester  # lazy: startup time
+    from .pipeline.metadata import describe  # lazy: startup time
 
     ensure_db()
 
@@ -1683,11 +1687,8 @@ def docs_ingest(
 
     # Persist Document rows to database
     if results:
-        from uuid import uuid4
-
-        from .db import get_session
-        from .doctext import replace_pages
-        from .models import Document, DocumentType
+        from .db import get_session  # lazy: startup time
+        from .doctext import replace_pages  # lazy: startup time
 
         with get_session() as session:
             for r in results:
@@ -1706,8 +1707,6 @@ def docs_ingest(
                 # Check if request_id is valid, otherwise create without it
                 if not request_id:
                     # Create a placeholder request for unassociated documents
-                    from .models import DeliveryMethod, Request, RequestStatus, User
-
                     user = session.query(User).first()
                     if not user:
                         user = User(
@@ -1715,7 +1714,6 @@ def docs_ingest(
                         )
                         session.add(user)
                         session.flush()
-                    from .models import Agency
 
                     agency = session.query(Agency).first()
                     placeholder_req = Request(
@@ -1762,10 +1760,9 @@ def docs_ingest(
     # Run OCR if requested
     if ocr and results:
         rprint("\n[cyan]Running OCR...[/cyan]")
-        from .db import get_session
-        from .doctext import replace_pages
-        from .models import Document
-        from .pipeline.ocr import OCREngine
+        from .db import get_session  # lazy: startup time
+        from .doctext import replace_pages  # lazy: startup time
+        from .pipeline.ocr import OCREngine  # lazy: startup time
 
         engine = OCREngine(backend="tesseract")
 
@@ -1819,9 +1816,7 @@ def docs_ocr(
         openfoia docs ocr scanned.pdf -o extracted.txt
         openfoia docs ocr document.pdf --backend google
     """
-    import asyncio
-
-    from .pipeline.ocr import OCREngine, RedactionDetector
+    from .pipeline.ocr import OCREngine, RedactionDetector  # lazy: startup time
 
     if not file_path.exists():
         rprint(f"[red]File not found: {file_path}[/red]")
@@ -1889,7 +1884,7 @@ def docs_ocr(
 
 def _open_docs_db() -> None:
     """Exit if there is no database (get_session() handles schema upgrades)."""
-    from .db import get_db_path
+    from .db import get_db_path  # lazy: startup time
 
     if not get_db_path().exists():
         rprint("[yellow]Database not initialized. Run 'openfoia init' first.[/yellow]")
@@ -1898,8 +1893,6 @@ def _open_docs_db() -> None:
 
 def _resolve_doc(session, doc_id: str):
     """Find one Document by full id or unique id prefix, or exit."""
-    from .models import Document
-
     matches = session.query(Document).filter(Document.id.like(f"{doc_id}%")).limit(2).all()
     if len(matches) != 1:
         problem = "not found" if not matches else "is ambiguous; use more characters"
@@ -1917,9 +1910,6 @@ SINGLE_PAGE_CAVEAT = (
 
 
 def _case_document_ids(session, case_id: str) -> list[str]:
-    from .models import Document
-    from .models import Request as RequestModel
-
     rows = (
         session.query(Document.id)
         .join(RequestModel, Document.request_id == RequestModel.id)
@@ -1947,10 +1937,7 @@ def docs_list(
     as_json: bool = typer.Option(False, "--json", help="Print JSON"),
 ):
     """List stored documents: id, title, pages, source, text length."""
-    from sqlalchemy import func
-
-    from .db import get_session
-    from .models import Document, DocumentPage, Request
+    from .db import get_session  # lazy: startup time
 
     _open_docs_db()
     with get_session() as session:
@@ -2040,8 +2027,8 @@ def docs_show(
         openfoia docs show 3f2a
         openfoia docs show 3f2a --page 12
     """
-    from .db import get_session
-    from .doctext import backfill_single_pages
+    from .db import get_session  # lazy: startup time
+    from .doctext import backfill_single_pages  # lazy: startup time
 
     _open_docs_db()
     with get_session() as session:
@@ -2145,9 +2132,9 @@ def docs_grep(
         openfoia docs grep 'NEAR(contract audit, 15)' --doc 3f2a --json
         openfoia docs grep --semantic "payments to the mayor's brother"
     """
-    from .cases import active_case_id_in_db
-    from .db import get_session
-    from .doctext import search_pages
+    from .cases import active_case_id_in_db  # lazy: startup time
+    from .db import get_session  # lazy: startup time
+    from .doctext import search_pages  # lazy: startup time
 
     _open_docs_db()
     saving = save or note is not None
@@ -2184,8 +2171,6 @@ def docs_grep(
         typer.echo(f"Note: {notice}", err=True)
 
     if saving and hits:
-        from .models import CaseNote
-
         saved = skipped = dupes = 0
         with get_session() as session:
             seen = {
@@ -2242,7 +2227,7 @@ def docs_grep(
 
 def _semantic_grep(session, query: str, limit: int, doc_ids, model: str | None):
     """Embed any pages not yet indexed (offline), then rank by meaning."""
-    from .semantic import (
+    from .semantic import (  # lazy: startup time
         SemanticUnavailable,
         count_missing,
         embed_missing,
@@ -2289,7 +2274,7 @@ def docs_embed_model(
       potion-retrieval-32M      English, tuned for search, ~131 MB, ~350 MB RAM
       potion-multilingual-128M  101 languages, ~531 MB, ~1.9 GB peak RAM
     """
-    from .semantic import (
+    from .semantic import (  # lazy: startup time
         DEFAULT_MODEL,
         INSTALL_HINT,
         MODELS,
@@ -2334,8 +2319,8 @@ def docs_embed_model(
         typer.echo("Check it with --verify. No network request was made.")
         return
 
-    from .config import load_config
-    from .net import TorUnavailableError
+    from .config import load_config  # lazy: startup time
+    from .net import TorUnavailableError  # lazy: startup time
 
     policy = _egress_policy_from(load_config(), tor=tor)
     route = (
@@ -2402,8 +2387,8 @@ def docs_embed(
         openfoia docs embed --status      # what is indexed, which search path runs
         openfoia docs embed --drop        # remove every stored embedding
     """
-    from .db import get_session
-    from .semantic import (
+    from .db import get_session  # lazy: startup time
+    from .semantic import (  # lazy: startup time
         INSTALL_HINT,
         SemanticUnavailable,
         drop_vectors,
@@ -2495,9 +2480,8 @@ def agency_list(
     limit: int = typer.Option(50, "--limit", "-n", help="Maximum results"),
 ):
     """List agencies in the database."""
-    from .db import get_db_path, get_session
-    from .jurisdictions import BODY_TYPES
-    from .models import Agency, AgencyLevel
+    from .db import get_db_path, get_session  # lazy: startup time
+    from .jurisdictions import BODY_TYPES  # lazy: startup time
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -2586,10 +2570,9 @@ def agency_add(
         openfoia agency add --name "Detroit Public Schools Community District" -j us-mi \
             -l school_district --email foia.request@detroitk12.org --custodian-title "FOIA Coordinator"
     """
-    from .db import get_session
-    from .jurisdictions import BODY_TYPES
-    from .jurisdictions import get as get_jurisdiction
-    from .models import Agency, AgencyLevel, DeliveryMethod
+    from .db import get_session  # lazy: startup time
+    from .jurisdictions import BODY_TYPES  # lazy: startup time
+    from .jurisdictions import get as get_jurisdiction  # lazy: startup time
 
     _require_db()
     body_type = level.lower()
@@ -2658,7 +2641,7 @@ def jurisdiction_list(
     unverified: bool = typer.Option(False, "--unverified", help="Only stubs still to be filled"),
 ):
     """List every jurisdiction openfoia knows, with its statute and response clock."""
-    from .jurisdictions import load_all
+    from .jurisdictions import load_all  # lazy: startup time
 
     rows = [j for j in load_all().values() if not unverified or not j["verified"]]
     table = Table(title=f"Jurisdictions ({len(rows)})")
@@ -2695,7 +2678,7 @@ def jurisdiction_show(
     as_json: bool = typer.Option(False, "--json", help="Print the raw record"),
 ):
     """Everything known about one jurisdiction: clocks, fees, residency, appeals, sources."""
-    from .jurisdictions import get as get_jurisdiction
+    from .jurisdictions import get as get_jurisdiction  # lazy: startup time
 
     j = get_jurisdiction(jurisdiction_id)
     if j is None:
@@ -2769,7 +2752,7 @@ def jurisdiction_show(
 @jurisdiction_app.command("search")
 def jurisdiction_search(text: str = typer.Argument(..., help="Part of a name, id or statute")):
     """Find a jurisdiction by name, id or statute name."""
-    from .jurisdictions import search as search_jurisdictions
+    from .jurisdictions import search as search_jurisdictions  # lazy: startup time
 
     hits = search_jurisdictions(text)
     if not hits:
@@ -2788,8 +2771,7 @@ def agency_search(
     limit: int = typer.Option(20, "--limit", "-n", help="Maximum results"),
 ):
     """Search for agencies by name or abbreviation."""
-    from .db import get_db_path, get_session
-    from .models import Agency
+    from .db import get_db_path, get_session  # lazy: startup time
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -2832,8 +2814,7 @@ def agency_info(
     agency_id: str = typer.Argument(..., help="Agency abbreviation or name"),
 ):
     """Show detailed information about an agency."""
-    from .db import get_db_path, get_session
-    from .models import Agency
+    from .db import get_db_path, get_session  # lazy: startup time
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -2867,7 +2848,7 @@ def agency_info(
         if agency.state:
             table.add_row("State", agency.state)
         if agency.jurisdiction_id:
-            from .jurisdictions import get as get_jurisdiction
+            from .jurisdictions import get as get_jurisdiction  # lazy: startup time
 
             j = get_jurisdiction(agency.jurisdiction_id)
             law = (j["statute"]["name"] or "statute unknown") if j else "unknown jurisdiction"
@@ -2915,11 +2896,11 @@ def agency_info(
 @template_app.command("list")
 def template_list():
     """List available request templates."""
-    from .templates import list_templates
+    from .templates import list_templates  # lazy: startup time
 
     templates = list_templates()
 
-    from .templates import JURISDICTION_AWARE
+    from .templates import JURISDICTION_AWARE  # lazy: startup time
 
     table = Table(title="Available Templates")
     table.add_column("Name", style="cyan")
@@ -2948,7 +2929,7 @@ def template_show(
     Example:
         openfoia template show school-program --jurisdiction us-mi
     """
-    from .templates import (
+    from .templates import (  # lazy: startup time
         JURISDICTION_AWARE,
         RequestDetails,
         RequesterInfo,
@@ -2976,7 +2957,7 @@ def template_show(
 
 
 def _jurisdiction_or_exit(jurisdiction_id: str) -> dict:
-    from .jurisdictions import get as get_jurisdiction
+    from .jurisdictions import get as get_jurisdiction  # lazy: startup time
 
     j = get_jurisdiction(jurisdiction_id)
     if j is None:
@@ -3019,7 +3000,7 @@ def template_generate(
         openfoia template generate standard -a EPA -s "Pollution data" -n "John Smith" -e john@example.com -j
         openfoia template generate school-program -a "Detroit Public Schools Community District" -s "Gifted and Talented Program" -n "Jane Doe" -e jane@example.com --jurisdiction us-mi
     """
-    from .templates import (
+    from .templates import (  # lazy: startup time
         RequestDetails,
         RequesterInfo,
         records_about_self,
@@ -3037,13 +3018,12 @@ def template_generate(
     )
 
     # Get agency name from database if abbreviation
-    from .db import get_db_path
+    from .db import get_db_path  # lazy: startup time
 
     agency_name = agency
     db_path = get_db_path()
     if db_path.exists():
-        from .db import get_session
-        from .models import Agency
+        from .db import get_session  # lazy: startup time
 
         with get_session() as session:
             found = (
@@ -3204,10 +3184,7 @@ def campaign_create(
     organizer_email: str = typer.Option(..., "--email", "-e", help="Organizer email"),
 ):
     """Create a new crowdsourced campaign."""
-    from uuid import uuid4
-
-    from .db import get_db_path, get_session, init_db
-    from .models import Campaign, User
+    from .db import get_db_path, get_session, init_db  # lazy: startup time
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -3249,8 +3226,7 @@ def campaign_create(
 @campaign_app.command("list")
 def campaign_list():
     """List all campaigns."""
-    from .db import get_db_path, get_session
-    from .models import Campaign
+    from .db import get_db_path, get_session  # lazy: startup time
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -3291,8 +3267,7 @@ def campaign_status(
     campaign_id: str = typer.Argument(..., help="Campaign ID (or prefix)"),
 ):
     """Check campaign progress."""
-    from .db import get_db_path, get_session
-    from .models import Campaign, RequestStatus
+    from .db import get_db_path, get_session  # lazy: startup time
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -3351,10 +3326,7 @@ def campaign_join(
     email: str = typer.Option(..., "--email", "-e", help="Your email address"),
 ):
     """Join a campaign as a participant."""
-    from uuid import uuid4
-
-    from .db import get_db_path, get_session
-    from .models import Campaign, User
+    from .db import get_db_path, get_session  # lazy: startup time
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -3408,20 +3380,7 @@ def campaign_distribute(
     Generates individual requests from the campaign template for each
     target agency and assigns them round-robin to participants.
     """
-    from uuid import uuid4
-
-    from .db import get_db_path, get_session
-    from .models import (
-        Agency as AgencyModel,
-    )
-    from .models import (
-        Campaign,
-        DeliveryMethod,
-        RequestStatus,
-    )
-    from .models import (
-        Request as RequestModel,
-    )
+    from .db import get_db_path, get_session  # lazy: startup time
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -3518,9 +3477,7 @@ def campaign_progress(
     campaign_id: str = typer.Argument(..., help="Campaign ID (or prefix)"),
 ):
     """Show per-participant, per-agency status grid for a campaign."""
-    from .db import get_db_path, get_session
-    from .models import Agency as AgencyModel
-    from .models import Campaign
+    from .db import get_db_path, get_session  # lazy: startup time
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -3654,9 +3611,13 @@ def analyze_extract(
     which disables the LLM even if an API key is configured in the config
     file or in OPENFOIA_ANTHROPIC_API_KEY / OPENFOIA_OPENAI_API_KEY.
     """
-    from .db import get_db_path, get_session
-    from .extraction_runs import describe_extraction, record_run, resolve_run, set_current_run
-    from .models import Document, utcnow
+    from .db import get_db_path, get_session  # lazy: startup time
+    from .extraction_runs import (  # lazy: startup time
+        describe_extraction,
+        record_run,
+        resolve_run,
+        set_current_run,
+    )
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -3704,9 +3665,11 @@ def analyze_extract(
         rprint(f"[cyan]Extracting entities from {doc.filename}...[/cyan]")
 
         # Run extraction
-        import asyncio
-
-        from .pipeline.extract import TIERS, BackendUnavailableError, EntityExtractor
+        from .pipeline.extract import (  # lazy: startup time
+            TIERS,
+            BackendUnavailableError,
+            EntityExtractor,
+        )
 
         if tier is not None and tier not in TIERS:
             rprint(f"[red]Unknown --tier '{tier}'. Choose from: {', '.join(TIERS)}[/red]")
@@ -3783,10 +3746,8 @@ def analyze_extract(
         _emit_table(table, csv_path)
 
         if output:
-            import json as json_mod
-
             output.write_text(
-                json_mod.dumps(
+                json.dumps(
                     [
                         {
                             "type": e.entity_type.value,
@@ -3826,9 +3787,8 @@ def analyze_runs(
         openfoia analyze extract 3f2a --prefer-run 9c41
         openfoia analyze runs 3f2a --prune
     """
-    from .db import get_session
-    from .extraction_runs import prune_runs, runs_for_document
-    from .models import Document
+    from .db import get_session  # lazy: startup time
+    from .extraction_runs import prune_runs, runs_for_document  # lazy: startup time
 
     _require_db()
     with get_session() as session:
@@ -3899,7 +3859,7 @@ def analyze_graphs_list():
     Examples:
         openfoia analyze graphs
     """
-    from .db import get_data_dir
+    from .db import get_data_dir  # lazy: startup time
 
     graphs_dir = get_data_dir() / "graphs"
     if not graphs_dir.exists():
@@ -3998,10 +3958,8 @@ def analyze_graph(
         openfoia analyze graph --all                           # ignore the active case
         openfoia analyze graphs                                # list saved graphs
     """
-    from .db import get_db_path, get_session
-    from .extraction_runs import current_entities
-    from .models import Document, Entity, entity_links
-    from .models import Request as RequestModel
+    from .db import get_db_path, get_session  # lazy: startup time
+    from .extraction_runs import current_entities  # lazy: startup time
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -4013,8 +3971,6 @@ def analyze_graph(
 
         if request_id:
             # Accept either UUID or request number (e.g., REQ-20260322-ABC)
-            from .models import Request as ReqModel
-
             matching_req_ids = session.query(ReqModel.id).filter(
                 (ReqModel.id == request_id) | (ReqModel.request_number == request_id)
             )
@@ -4032,7 +3988,7 @@ def analyze_graph(
         elif campaign_id:
             scope = f"campaign {campaign_id}"
         else:
-            from .cases import get_active_case, get_active_case_id
+            from .cases import get_active_case, get_active_case_id  # lazy: startup time
 
             if case_name:
                 case = _resolve_case_or_exit(session, case_name)
@@ -4105,9 +4061,6 @@ def analyze_graph(
         doc_ids = {e.document_id for e in entities if e.document_id}
         documents = {}
         if doc_ids:
-            from .models import Document as DocModel
-            from .models import Request as ReqModel
-
             for doc in session.query(DocModel).filter(DocModel.id.in_(doc_ids)).all():
                 req = session.get(ReqModel, doc.request_id) if doc.request_id else None
                 source_url = _doc_source_url(doc, req)
@@ -4123,11 +4076,9 @@ def analyze_graph(
 
         graph_data = {"nodes": nodes, "edges": edges, "documents": documents}
 
-        import json as json_mod
-
         # Determine output paths
         if name:
-            from .db import get_data_dir
+            from .db import get_data_dir  # lazy: startup time
 
             graphs_dir = get_data_dir() / "graphs"
             graphs_dir.mkdir(parents=True, exist_ok=True)
@@ -4138,7 +4089,7 @@ def analyze_graph(
             json_path = output
             html_path = output.with_suffix(".html")
 
-        json_path.write_text(json_mod.dumps(graph_data, indent=2))
+        json_path.write_text(json.dumps(graph_data, indent=2))
 
         rprint(f"[green]Graph exported to {json_path}[/green]")
         # The graph page draws one node per (type, label); say so, so the two counts match.
@@ -4159,8 +4110,6 @@ def analyze_graph(
             _generate_graph_html(graph_data, html_path)
             rprint(f"[green]Visualization: {html_path}[/green]")
 
-            import webbrowser
-
             webbrowser.open(f"file://{html_path.resolve()}")
             rprint("[cyan]Opened in browser.[/cyan]")
 
@@ -4174,9 +4123,6 @@ def _print_mentions(
     are then checked against their stored page text, so a name the extractor
     never tagged still counts as a mention.
     """
-    from .models import Document, DocumentPage
-    from .models import Request as RequestModel
-
     needles = [lbl.lower() for lbl in labels]
     patterns = [re.compile(rf"\b{re.escape(n)}\b") for n in needles]
     found: dict[str, list[set[int] | None]] = {}
@@ -4228,7 +4174,7 @@ def _print_mentions(
     if not graph_name:
         rprint("[dim]Pass --name <graph> to search a saved graph for a path between them.[/dim]")
         return
-    from .db import get_data_dir
+    from .db import get_data_dir  # lazy: startup time
 
     path = get_data_dir() / "graphs" / f"{_graph_safe_name(graph_name)}.json"
     if not path.exists():
@@ -4274,11 +4220,9 @@ def _graph_safe_name(name: str) -> str:
 
 def _generate_graph_html(graph_data: dict, output_path: Path) -> None:
     """Generate a standalone HTML file with an interactive entity graph visualization."""
-    import json as json_mod
+    from .graph_template import render  # lazy: startup time
 
-    from .graph_template import render
-
-    render(json_mod.dumps(graph_data), output_path)
+    render(json.dumps(graph_data), output_path)
 
 
 # === Entity Type Commands ===
@@ -4286,7 +4230,7 @@ def _generate_graph_html(graph_data: dict, output_path: Path) -> None:
 
 def _load_config_data() -> tuple[Path, dict]:
     """Load config.json as raw dict."""
-    from .db import get_data_dir
+    from .db import get_data_dir  # lazy: startup time
 
     config_path = get_data_dir() / "config.json"
     data = json.loads(config_path.read_text()) if config_path.exists() else {}
@@ -4335,8 +4279,6 @@ def entities_add(
         openfoia entities add -n CONTRACT_NUMBER -p '\\b[A-Z]{2,4}-\\d{4,}-\\d{4,}\\b' -d "Federal contract numbers"
         openfoia entities add -n CASE_NUMBER -p '\\b\\d{2}-cv-\\d{4,}\\b' -d "Federal court case numbers"
     """
-    import re
-
     # Validate the regex
     try:
         re.compile(pattern)
@@ -4434,8 +4376,8 @@ def _fuzzy_match_column(header: str) -> str | None:
 
 def _llm_map_columns(headers: list[str], sample_rows: list[list[str]]) -> dict[str, int] | None:
     """Use the configured LLM to figure out which columns map to name/pattern/description."""
-    from .config import load_config
-    from .pipeline.extract import _call_ollama, _llm_available
+    from .config import load_config  # lazy: startup time
+    from .pipeline.extract import _call_ollama, _llm_available  # lazy: startup time
 
     cfg = load_config()
     if not _llm_available(cfg.ai.provider, cfg.ai.api_key, cfg.ai.base_url):
@@ -4470,9 +4412,7 @@ What are the correct column numbers for this CSV? Reply with ONLY the JSON."""
         else:
             return None  # only use local LLM for this
 
-        import re as _re
-
-        match = _re.search(r"\{[^}]+\}", resp)
+        match = re.search(r"\{[^}]+\}", resp)
         if match:
             mapping = json.loads(match.group())
             return {k: int(v) for k, v in mapping.items() if int(v) >= 0}
@@ -4489,8 +4429,8 @@ def _llm_generate_regex(description: str) -> str | None:
     2. Matches at least one example from the description (if examples are present)
     3. Is reasonably short (not hallucinated garbage)
     """
-    from .config import load_config
-    from .pipeline.extract import _llm_available
+    from .config import load_config  # lazy: startup time
+    from .pipeline.extract import _llm_available  # lazy: startup time
 
     cfg = load_config()
     if not _llm_available(cfg.ai.provider, cfg.ai.api_key, cfg.ai.base_url):
@@ -4517,7 +4457,7 @@ Your regex:"""
     try:
         if cfg.ai.provider == "ollama":
             # Call ollama WITHOUT json format — we want raw text for regex
-            import urllib.request
+            import urllib.request  # lazy: startup time
 
             url = (cfg.ai.base_url or "http://localhost:11434").rstrip("/")
             payload = json.dumps(
@@ -4541,8 +4481,6 @@ Your regex:"""
             return None
 
         # Clean up: take only the first line, strip quotes/backticks/json
-        import re as _re
-
         lines = resp.strip().split("\n")
         pattern = lines[0].strip().strip("`\"'{}").strip()
 
@@ -4555,13 +4493,13 @@ Your regex:"""
         if not pattern or not any(c in pattern for c in r"\[]()+*?{}dswb"):
             return None  # doesn't look like regex
 
-        _re.compile(pattern)  # validate
+        re.compile(pattern)  # validate
 
         # Sanity check: try to find an example in the description and see if regex matches
         # Extract things that look like examples (alphanumeric patterns with dashes/digits)
-        examples = _re.findall(r"[A-Z]{1,4}[-]?\d{2,}[-]?\d*[-]?[A-Z]?[-]?\d*", description)
+        examples = re.findall(r"[A-Z]{1,4}[-]?\d{2,}[-]?\d*[-]?[A-Z]?[-]?\d*", description)
         if examples:
-            matched_any = any(_re.search(pattern, ex) for ex in examples)
+            matched_any = any(re.search(pattern, ex) for ex in examples)
             if not matched_any:
                 return None  # regex doesn't match its own examples
 
@@ -4591,9 +4529,6 @@ def entities_import(
         openfoia entities import my_entities.csv
         openfoia entities import spreadsheet.csv --no-smart
     """
-    import csv
-    import re
-
     if not file.exists():
         rprint(f"[red]File not found: {file}[/red]")
         raise typer.Exit(1)
@@ -4773,8 +4708,6 @@ def entities_export(
     output: Path = typer.Option("entity_types.csv", "--output", "-o", help="Output CSV file"),
 ):
     """Export custom entity types to a CSV file."""
-    import csv
-
     _, data = _load_config_data()
     custom_types = data.get("entities", {}).get("custom_types", [])
 
@@ -4805,13 +4738,9 @@ def entities_test(
         echo "some text" | openfoia entities test
         openfoia entities test -f document.txt
     """
-    import re
-
     if file:
         text = file.read_text()
     elif not text:
-        import sys
-
         rprint("[dim]Reading from stdin (Ctrl+D when done)...[/dim]")
         text = sys.stdin.read()
 
@@ -4858,7 +4787,7 @@ def entities_test(
 
 
 def _days_left(when: datetime) -> str:
-    from .clocks import is_overdue
+    from .clocks import is_overdue  # lazy: startup time
 
     now = _utcnow()
     if is_overdue(when, now):
@@ -4891,8 +4820,7 @@ def deadline_list(
     FOIA's 20 business days, Michigan's 5, or none when the statute sets
     no clock). Appeal windows and "still interested" replies are listed too.
     """
-    from .db import get_db_path, get_session
-    from .models import Request as RequestModel
+    from .db import get_db_path, get_session  # lazy: startup time
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -4905,7 +4833,7 @@ def deadline_list(
             rprint("[dim]No active requests with deadlines.[/dim]")
             if not csv_path:
                 return
-        from .clocks import is_overdue
+        from .clocks import is_overdue  # lazy: startup time
 
         def clock_table(group) -> Table:
             table = Table()
@@ -4962,9 +4890,7 @@ def _collect_clocks(session, show_all: bool = False):
 
     Clocks are recomputed from the jurisdiction every time; the stored due_date is a cache.
     """
-    from .clocks import request_clocks
-    from .models import Request as RequestModel
-    from .models import RequestStatus
+    from .clocks import request_clocks  # lazy: startup time
 
     active = [
         RequestStatus.SENT,
@@ -5006,13 +4932,13 @@ def deadline_check():
     Useful for cron jobs or shell startup. Example (add to .bashrc):
         openfoia deadlines check 2>/dev/null
     """
-    from .db import get_db_path, get_session
+    from .db import get_db_path, get_session  # lazy: startup time
 
     if not get_db_path().exists():
         return
     with get_session() as session:
         rows, _, _ = _collect_clocks(session)
-        from .clocks import is_overdue
+        from .clocks import is_overdue  # lazy: startup time
 
         overdue = [x for x in rows if is_overdue(x[2], _utcnow())]
         for kind, r, when, _law in overdue:
@@ -5043,7 +4969,7 @@ def _egress_policy_from(config, *, tor: bool | None = None) -> EgressPolicy:
     `--tor/--no-tor` flag left unset by the user should pass tor=None here so
     the configured default wins.
     """
-    from .net import EgressMode, EgressPolicy
+    from .net import EgressMode, EgressPolicy  # lazy: startup time
 
     use_tor = config.network.tor if tor is None else tor
     return EgressPolicy(
@@ -5064,7 +4990,7 @@ def _check_tor_or_exit(policy: EgressPolicy) -> None:
     clearnet request — that silent fallback is exactly the deanonymization
     leak Principle 1 rules out.
     """
-    from .net import check_tor
+    from .net import check_tor  # lazy: startup time
 
     if not policy.is_tor:
         return
@@ -5099,8 +5025,8 @@ def egress_status(
     proxy is actually reachable right now, and exactly what is and is not
     protected — see docs/THREAT_MODEL.md for the full picture.
     """
-    from .config import load_config
-    from .net import check_tor, describe_egress
+    from .config import load_config  # lazy: startup time
+    from .net import check_tor, describe_egress  # lazy: startup time
 
     cfg = load_config()
     policy = _egress_policy_from(cfg, tor=tor)
@@ -5152,10 +5078,8 @@ def browse(
         openfoia browse https://example.com --save          # Save page content
         openfoia browse https://example.com --tor --headless --save  # Headless Tor
     """
-    import asyncio
-
-    from .config import load_config
-    from .tor_browse import browse as _browse
+    from .config import load_config  # lazy: startup time
+    from .tor_browse import browse as _browse  # lazy: startup time
 
     policy = _egress_policy_from(load_config(), tor=tor)
     _check_tor_or_exit(policy)
@@ -5211,9 +5135,7 @@ def purge(
       openfoia purge --secure       Overwrite all files 3x, scrub shell history.
       openfoia purge --secure --fill  Also fill free space with random data.
     """
-    import shutil
-
-    from openfoia.security import (
+    from openfoia.security import (  # lazy: startup time
         clear_shell_history,
         fill_free_space,
         get_decoy_db_path,
@@ -5221,7 +5143,7 @@ def purge(
         secure_delete_dir,
     )
 
-    from .db import get_data_dir as _get_data_dir
+    from .db import get_data_dir as _get_data_dir  # lazy: startup time
 
     data_dir = _get_data_dir()
 
@@ -5317,12 +5239,10 @@ def ingest_url(
         openfoia ingest --url https://example.gov/report.html
         openfoia ingest --url https://example.onion/docs --tor
     """
-    import asyncio
-
-    from .config import load_config
-    from .db import get_data_dir
-    from .net import TorUnavailableError
-    from .pipeline.web import archive_url
+    from .config import load_config  # lazy: startup time
+    from .db import get_data_dir  # lazy: startup time
+    from .net import TorUnavailableError  # lazy: startup time
+    from .pipeline.web import archive_url  # lazy: startup time
 
     cfg = load_config()
     policy = _egress_policy_from(cfg, tor=tor)
@@ -5400,7 +5320,7 @@ _KEYED_SOURCES = {
 
 def _courtlistener_note(requests: int = 1) -> str:
     """What a CourtListener call discloses and costs, for the notice before it is sent."""
-    from .records.courtlistener import DAY_LIMIT, budget_used
+    from .records.courtlistener import DAY_LIMIT, budget_used  # lazy: startup time
 
     used = budget_used()["day"]
     what = "1 request" if requests == 1 else f"up to {requests} requests"
@@ -5493,13 +5413,12 @@ def _rank_keywords(rank: str | None) -> list[str]:
 
 def _log_case_queries(rows: list[tuple[str, str, int | None]]) -> None:
     """Record searches against the active case. total None = the search failed."""
-    from .cases import active_case_id_in_db
+    from .cases import active_case_id_in_db  # lazy: startup time
 
     case_id = active_case_id_in_db()
     if not case_id:
         return
-    from .db import get_session
-    from .models import CaseQuery
+    from .db import get_session  # lazy: startup time
 
     with get_session() as session:
         for source, query, total in rows:
@@ -5509,10 +5428,8 @@ def _log_case_queries(rows: list[tuple[str, str, int | None]]) -> None:
 def _records_search_all(
     query: str, kwargs: dict[str, Any], limit: int, json_lines: bool, rank: list[str]
 ) -> None:
-    import asyncio
-
-    from .config import load_config
-    from .records import get_adapter, list_sources
+    from .config import load_config  # lazy: startup time
+    from .records import get_adapter, list_sources  # lazy: startup time
 
     sources = list_sources()
     policy = _records_policy_or_exit()
@@ -5529,7 +5446,7 @@ def _records_search_all(
         f"{', '.join(sources)}"
     )
     if "nara" in sources and getattr(adapters["nara"], "has_key", False):
-        from .records.nara import ATTRIBUTION
+        from .records.nara import ATTRIBUTION  # lazy: startup time
 
         say(
             f"Note: {query!r} also goes to catalog.archives.gov with your API key "
@@ -5703,11 +5620,8 @@ def records_search(
         openfoia records search "facial recognition" -s federalregister --agency DHS -t rule
         openfoia records search -s federalregister --docket EPA-HQ-OAR-2021-0317
     """
-    import asyncio
-    import math
-
-    from .config import load_config
-    from .records import get_adapter, list_sources
+    from .config import load_config  # lazy: startup time
+    from .records import get_adapter, list_sources  # lazy: startup time
 
     if (ancestor or all_pages) and source != "nara":
         rprint("[red]--ancestor and --all are only supported with --source nara.[/red]")
@@ -5779,7 +5693,7 @@ def records_search(
         else:
             rprint(f"\n[yellow]{notice}[/yellow]")
     elif source == "nara":
-        from .records.nara import ATTRIBUTION
+        from .records.nara import ATTRIBUTION  # lazy: startup time
 
         _nara_key_or_exit(adapter)
         typer.echo(
@@ -5787,7 +5701,7 @@ def records_search(
             f"(counted against the 10,000/month quota). {ATTRIBUTION}",
             err=True,
         )
-        from .records.nara import PAGE_MAX
+        from .records.nara import PAGE_MAX  # lazy: startup time
 
         planned = math.ceil(max_hits / PAGE_MAX)
         if all_pages and planned > 5:
@@ -5947,7 +5861,7 @@ def _print_search_result(
         rprint("\n[dim]Fetch full text: openfoia records fetch <ID> --source documentcloud[/dim]")
 
     elif source == "courtlistener":
-        from .records.courtlistener import DOCKET_FETCH_REQUESTS
+        from .records.courtlistener import DOCKET_FETCH_REQUESTS  # lazy: startup time
 
         # Text cells: upstream strings are never read as Rich markup.
         table = Table(expand=True)
@@ -6165,11 +6079,9 @@ def records_filings(
     The ticker or CIK is sent to SEC. This command never downloads filing
     documents; it only retrieves SEC metadata and archive indexes.
     """
-    from datetime import date
-
-    from .config import load_config
-    from .net import describe_egress
-    from .records.sec_edgar import SECEdgarAdapter
+    from .config import load_config  # lazy: startup time
+    from .net import describe_egress  # lazy: startup time
+    from .records.sec_edgar import SECEdgarAdapter  # lazy: startup time
 
     if limit < 1:
         rprint("[red]--limit must be at least 1.[/red]")
@@ -6181,8 +6093,6 @@ def records_filings(
             rprint("[red]--since must be an ISO date in YYYY-MM-DD format.[/red]")
             raise typer.Exit(2) from None
     try:
-        import re
-
         SECEdgarAdapter._validate_forms(forms)
         if ticker_or_cik.strip().isdigit():
             SECEdgarAdapter.normalize_cik(ticker_or_cik)
@@ -6211,8 +6121,6 @@ def records_filings(
     if not yes and not typer.confirm("Send this query to SEC?"):
         rprint("[green]Aborted. Nothing left your machine.[/green]")
         raise typer.Exit(0)
-
-    import asyncio
 
     adapter = SECEdgarAdapter(egress=policy)
     try:
@@ -6318,8 +6226,6 @@ def records_fetch(
         openfoia records fetch 2026-21024 -s federalregister
         openfoia records fetch 4214664 rd:2974081 -s courtlistener
     """
-    import asyncio
-
     if (list_objects or objects) and source != "nara":
         rprint("[red]--list-objects and --objects are only supported with --source nara.[/red]")
         raise typer.Exit(1)
@@ -6337,9 +6243,7 @@ def records_fetch(
         rprint("[red]Give at least one document id or --from <results.json>.[/red]")
         raise typer.Exit(2)
     if source == "courtlistener":
-        from rich.markup import escape
-
-        from .records.courtlistener import canonical_id
+        from .records.courtlistener import canonical_id  # lazy: startup time
 
         try:
             ids = list(dict.fromkeys(canonical_id(i) for i in ids))
@@ -6351,7 +6255,7 @@ def records_fetch(
             _records_fetch_cia(doc_id)
         return
     if source == "federalregister":
-        from .records.federal_register import normalize_document_number
+        from .records.federal_register import normalize_document_number  # lazy: startup time
 
         def _number(i: str) -> str:
             try:
@@ -6375,10 +6279,9 @@ def records_fetch(
         raise typer.Exit(1)
     prefix = prefixes[source]
 
-    from .cases import active_case_id_in_db
-    from .db import get_db_path, get_session
-    from .models import Request as RequestModel
-    from .records import get_adapter
+    from .cases import active_case_id_in_db  # lazy: startup time
+    from .db import get_db_path, get_session  # lazy: startup time
+    from .records import get_adapter  # lazy: startup time
 
     policy = _records_policy_or_exit()
     adapter = get_adapter(source, egress=policy)
@@ -6392,7 +6295,7 @@ def records_fetch(
             err=True,
         )
     if source == "nara":
-        from .records.nara import ATTRIBUTION
+        from .records.nara import ATTRIBUTION  # lazy: startup time
 
         _nara_key_or_exit(adapter)
         typer.echo(
@@ -6406,7 +6309,7 @@ def records_fetch(
             )
             return
     if source == "courtlistener":
-        from .records.courtlistener import DOCKET_FETCH_REQUESTS
+        from .records.courtlistener import DOCKET_FETCH_REQUESTS  # lazy: startup time
 
         cost = sum(1 if ":" in i else DOCKET_FETCH_REQUESTS for i in ids)
         typer.echo(f"Note: fetching from {_courtlistener_note(cost)}", err=True)
@@ -6414,8 +6317,6 @@ def records_fetch(
 
     stored: dict[str, str | None] = {}  # id -> name of another case holding it
     if get_db_path().exists():
-        from .models import Case
-
         with get_session() as session:
             numbers = [f"{prefix}{i}" for i in ids]
             for req in session.query(RequestModel).filter(RequestModel.request_number.in_(numbers)):
@@ -6466,12 +6367,9 @@ def _records_nara_objects(
     adapter, ids: list[str], *, download: bool, as_json: bool, route: str
 ) -> None:
     """List (or download and ingest) each NAID's digital objects, like NARA's own scripts."""
-    import asyncio
-    from urllib.parse import urlsplit
-
-    from .cases import active_case_id_in_db
-    from .db import ensure_db, get_data_dir
-    from .records.nara import PLACEHOLDER_SIZE as NARA_PLACEHOLDER_SIZE
+    from .cases import active_case_id_in_db  # lazy: startup time
+    from .db import ensure_db, get_data_dir  # lazy: startup time
+    from .records.nara import PLACEHOLDER_SIZE as NARA_PLACEHOLDER_SIZE  # lazy: startup time
 
     listing, failed, ok, notified = [], 0, 0, False
     for raw in ids:
@@ -6531,13 +6429,8 @@ def _ingest_nara_objects(entity, naid: str, results) -> int:
     A file already on disk with no Document row (a run died between download and
     ingest) is ingested too; one that has a row is left alone.
     """
-    import asyncio
-
-    from sqlalchemy import or_
-
-    from .db import get_data_dir, get_session
-    from .models import Document, Request
-    from .pipeline.ingest import DocumentIngester
+    from .db import get_data_dir, get_session  # lazy: startup time
+    from .pipeline.ingest import DocumentIngester  # lazy: startup time
 
     number = f"NARA-{naid}"
     with get_session() as session:
@@ -6577,10 +6470,6 @@ def _ingest_nara_objects(entity, naid: str, results) -> int:
 
 def _courtlistener_pull(adapter, doc_id: str, case_id: str | None, route: str):
     """Fetch one CourtListener id and store it; a filing with no text falls back to its PDF."""
-    import asyncio
-
-    from rich.markup import escape
-
     entity = asyncio.run(adapter.fetch(doc_id))
     if entity is None:
         return None, None
@@ -6597,8 +6486,8 @@ def _courtlistener_pull(adapter, doc_id: str, case_id: str | None, route: str):
             rprint(f"  {doc_id}  [yellow]not in the RECAP archive (only on PACER, paid)[/yellow]")
         return None, None
 
-    from .db import ensure_db, get_data_dir
-    from .pipeline.ingest import DocumentIngester
+    from .db import ensure_db, get_data_dir  # lazy: startup time
+    from .pipeline.ingest import DocumentIngester  # lazy: startup time
 
     rprint(
         f"  {doc_id}  [dim]no text on CourtListener; downloading the PDF from "
@@ -6617,7 +6506,7 @@ def _courtlistener_pull(adapter, doc_id: str, case_id: str | None, route: str):
 
 
 def _courtlistener_key_or_exit(adapter) -> None:
-    from .records.courtlistener import NO_KEY_MESSAGE, TOR_KEY_MESSAGE
+    from .records.courtlistener import NO_KEY_MESSAGE, TOR_KEY_MESSAGE  # lazy: startup time
 
     if not adapter.has_key:
         rprint(f"[red]{TOR_KEY_MESSAGE if adapter.credentials_withheld else NO_KEY_MESSAGE}[/red]")
@@ -6625,7 +6514,7 @@ def _courtlistener_key_or_exit(adapter) -> None:
 
 
 def _nara_key_or_exit(adapter) -> None:
-    from .records.nara import NO_KEY_MESSAGE, TOR_KEY_MESSAGE
+    from .records.nara import NO_KEY_MESSAGE, TOR_KEY_MESSAGE  # lazy: startup time
 
     if not adapter.has_key:
         rprint(f"[red]{TOR_KEY_MESSAGE if adapter.credentials_withheld else NO_KEY_MESSAGE}[/red]")
@@ -6634,7 +6523,7 @@ def _nara_key_or_exit(adapter) -> None:
 
 def _records_policy_or_exit() -> EgressPolicy:
     """Egress policy from config.network.tor, fail-closed when Tor is configured but down."""
-    from .config import load_config
+    from .config import load_config  # lazy: startup time
 
     policy = _egress_policy_from(load_config())
     _check_tor_or_exit(policy)
@@ -6650,12 +6539,10 @@ def _route_note(policy: EgressPolicy, *adapters: Any) -> str:
 
 def _records_fetch_cia(identifier: str) -> None:
     """Download a CIA reading room PDF, ingest it (text/OCR/pages), attach to the active case."""
-    import asyncio
-
-    from .cases import active_case_id_in_db
-    from .db import ensure_db, get_data_dir
-    from .pipeline.ingest import DocumentIngester
-    from .records.cia import CIAReadingRoomAdapter, normalize_identifier
+    from .cases import active_case_id_in_db  # lazy: startup time
+    from .db import ensure_db, get_data_dir  # lazy: startup time
+    from .pipeline.ingest import DocumentIngester  # lazy: startup time
+    from .records.cia import CIAReadingRoomAdapter, normalize_identifier  # lazy: startup time
 
     try:
         kind, page_url, _ = normalize_identifier(identifier)
@@ -6714,10 +6601,8 @@ def _records_fetch_federalregister(adapter, doc_id: str) -> tuple[str, str | Non
 
     Returns (document_id, extracted_text) for records_fetch's summary.
     """
-    import asyncio
-
-    from .db import ensure_db, get_data_dir
-    from .pipeline.ingest import DocumentIngester
+    from .db import ensure_db, get_data_dir  # lazy: startup time
+    from .pipeline.ingest import DocumentIngester  # lazy: startup time
 
     ensure_db()
     entity, pdf_path = asyncio.run(
@@ -6780,13 +6665,11 @@ def records_download(
         openfoia records download 68490 --source muckrock
         openfoia records download 68490 -o ./epa-docs --ingest
     """
-    import asyncio
-
     if source != "muckrock":
         rprint(f"[yellow]Download only supported for muckrock (got '{source}')[/yellow]")
         raise typer.Exit(1)
 
-    from .records.muckrock import MuckRockAdapter
+    from .records.muckrock import MuckRockAdapter  # lazy: startup time
 
     policy = _records_policy_or_exit()
     adapter = MuckRockAdapter(egress=policy)
@@ -6846,8 +6729,8 @@ def records_download(
     # Auto-ingest if requested
     if ingest and downloaded:
         rprint("\n[cyan]Ingesting into OpenFOIA...[/cyan]")
-        from .db import ensure_db, get_data_dir
-        from .pipeline.ingest import DocumentIngester
+        from .db import ensure_db, get_data_dir  # lazy: startup time
+        from .pipeline.ingest import DocumentIngester  # lazy: startup time
 
         ensure_db()
 
@@ -6885,20 +6768,9 @@ def _persist_ingested(ingest_results, *, request_number: str, subject: str, body
     The Request is attached to the active case. Re-running with the same
     *request_number* reuses the existing Request.
     """
-    from uuid import uuid4
-
-    from .cases import active_case_id_in_db
-    from .db import get_session
-    from .doctext import replace_pages
-    from .models import (
-        Agency,
-        DeliveryMethod,
-        Document,
-        DocumentType,
-        Request,
-        RequestStatus,
-        User,
-    )
+    from .cases import active_case_id_in_db  # lazy: startup time
+    from .db import get_session  # lazy: startup time
+    from .doctext import replace_pages  # lazy: startup time
 
     case_id = active_case_id_in_db()
     with get_session() as session:
@@ -6965,7 +6837,7 @@ def _persist_ingested(ingest_results, *, request_number: str, subject: str, body
 
 
 def _require_db() -> None:
-    from .db import get_db_path
+    from .db import get_db_path  # lazy: startup time
 
     if not get_db_path().exists():
         rprint("[yellow]Database not initialized. Run 'openfoia init' first.[/yellow]")
@@ -6974,7 +6846,7 @@ def _require_db() -> None:
 
 def _resolve_case_or_exit(session, name: str | None):
     """The named case, else the active case; exits when neither resolves."""
-    from .cases import find_case, get_active_case
+    from .cases import find_case, get_active_case  # lazy: startup time
 
     case = find_case(session, name) if name else get_active_case(session)
     if case is None:
@@ -6989,8 +6861,6 @@ def _resolve_case_or_exit(session, name: str | None):
 
 
 def _doc_source_url(doc, req) -> str | None:
-    import re
-
     if req is not None and req.body:
         url_match = re.search(r"https?://\S+", req.body)
         if url_match:
@@ -7020,8 +6890,6 @@ NOTE_TIERS = ("says", "infer", "speculation")
 
 def _doc_cite(session, doc, req) -> dict[str, Any]:
     """Everything a citation needs for one stored document."""
-    from .models import DocumentPage
-
     number = req.request_number if req else ""
     source = _doc_source(number)
     crest = next(
@@ -7053,9 +6921,7 @@ def _doc_cite(session, doc, req) -> dict[str, Any]:
 
 
 def _case_summary(session, case) -> dict[str, Any]:
-    from .extraction_runs import current_entities
-    from .models import CaseNote, CaseQuery, Document, Entity
-    from .models import Request as RequestModel
+    from .extraction_runs import current_entities  # lazy: startup time
 
     rows = (
         session.query(Document, RequestModel)
@@ -7142,9 +7008,8 @@ def case_new(
     desc: str | None = typer.Option(None, "--desc", "-d", help="Short description"),
 ):
     """Create a case and make it the active one."""
-    from .cases import set_active_case_id, slugify
-    from .db import get_db_path, get_session, init_db
-    from .models import Case
+    from .cases import set_active_case_id, slugify  # lazy: startup time
+    from .db import get_db_path, get_session, init_db  # lazy: startup time
 
     if not get_db_path().exists():
         init_db()
@@ -7165,9 +7030,8 @@ def case_new(
 @case_app.command("list")
 def case_list():
     """List cases. The active one is marked with *."""
-    from .cases import get_active_case_id
-    from .db import get_session
-    from .models import Case
+    from .cases import get_active_case_id  # lazy: startup time
+    from .db import get_session  # lazy: startup time
 
     _require_db()
     active_id = get_active_case_id()
@@ -7184,8 +7048,8 @@ def case_list():
 @case_app.command("use")
 def case_use(name: str = typer.Argument(..., help="Case name or slug")):
     """Make a case active. Searches, fetches and graphs then attach to it."""
-    from .cases import set_active_case_id
-    from .db import get_session
+    from .cases import set_active_case_id  # lazy: startup time
+    from .db import get_session  # lazy: startup time
 
     _require_db()
     with get_session() as session:
@@ -7197,7 +7061,7 @@ def case_use(name: str = typer.Argument(..., help="Case name or slug")):
 @case_app.command("close")
 def case_close():
     """Clear the active case. Nothing is deleted."""
-    from .cases import clear_active_case
+    from .cases import clear_active_case  # lazy: startup time
 
     clear_active_case()
     rprint("[green]No active case.[/green]")
@@ -7210,9 +7074,8 @@ def case_edit(
     desc: str | None = typer.Option(None, "--desc", "-d", help="New description ('' to clear)"),
 ):
     """Rename a case or change its description."""
-    from .cases import slugify
-    from .db import get_session
-    from .models import Case
+    from .cases import slugify  # lazy: startup time
+    from .db import get_session  # lazy: startup time
 
     _require_db()
     if new_name is None and desc is None:
@@ -7238,10 +7101,8 @@ def case_rm(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ):
     """Delete a case with its notes and query log. Documents are kept and detached."""
-    from .cases import clear_active_case, get_active_case_id
-    from .db import get_session
-    from .models import CaseNote, CaseQuery
-    from .models import Request as RequestModel
+    from .cases import clear_active_case, get_active_case_id  # lazy: startup time
+    from .db import get_session  # lazy: startup time
 
     _require_db()
     with get_session() as session:
@@ -7279,9 +7140,7 @@ def case_move(
     to: str = typer.Option(..., "--to", help="Destination case name or slug"),
 ):
     """Move a document to another case. Documents fetched together move together."""
-    from .db import get_session
-    from .models import CaseNote, Document
-    from .models import Request as RequestModel
+    from .db import get_session  # lazy: startup time
 
     _require_db()
     with get_session() as session:
@@ -7312,7 +7171,7 @@ def case_move(
 @case_app.command("show")
 def case_show(name: str | None = typer.Argument(None, help="Case name (default: active)")):
     """Documents, entities, logged queries and last activity for a case."""
-    from .db import get_session
+    from .db import get_session  # lazy: startup time
 
     _require_db()
     with get_session() as session:
@@ -7362,8 +7221,7 @@ def case_note(
         openfoia case note edit 3 --to "MKULTRA sites"
         openfoia case note rm 3
     """
-    from .db import get_session
-    from .models import CaseNote
+    from .db import get_session  # lazy: startup time
 
     _require_db()
     with get_session() as session:
@@ -7446,7 +7304,7 @@ def case_notes(
     as_json: bool = typer.Option(False, "--json", help="Print JSON"),
 ):
     """List a case's findings with their citations."""
-    from .db import get_session
+    from .db import get_session  # lazy: startup time
 
     _require_db()
     with get_session() as session:
@@ -7476,7 +7334,7 @@ def case_export(
     output: Path | None = typer.Option(None, "--output", "-o", help="Write to file"),
 ):
     """Export a case's findings with citations, document list and query log."""
-    from .db import get_session
+    from .db import get_session  # lazy: startup time
 
     if fmt not in ("md", "json"):
         rprint("[red]--format must be md or json.[/red]")
@@ -7544,7 +7402,7 @@ def case_export(
 
 
 def _search_status_line(s) -> str:
-    from .search import clean
+    from .search import clean  # lazy: startup time
 
     if s.status == "ok":
         total = f" of {s.total:,}" if s.total is not None and s.total > s.returned else ""
@@ -7617,9 +7475,9 @@ def search_cmd(
         openfoia search "Acme Corp" --egress tor --json --yes > hits.json
         openfoia search "water contamination" -s documentcloud,regulations --since 2020-01-01
     """
-    from . import search as search_mod
-    from .config import load_config
-    from .net import TorUnavailableError
+    from . import search as search_mod  # lazy: startup time
+    from .config import load_config  # lazy: startup time
+    from .net import TorUnavailableError  # lazy: startup time
 
     def fail(message: str) -> None:
         typer.echo(message, err=True)
@@ -7749,13 +7607,11 @@ def crossref(
         openfoia crossref --tor                     # hide your IP from the APIs
         openfoia crossref --csv hits.csv            # one row per hit, for spreadsheets
     """
-    from .config import load_config
-    from .crossref import OFFLINE_SOURCES, crossref_entities
-    from .db import get_db_path, get_session
-    from .extraction_runs import current_entities
-    from .models import Document, Entity
-    from .models import Request as RequestModel
-    from .net import TorUnavailableError, describe_egress
+    from .config import load_config  # lazy: startup time
+    from .crossref import OFFLINE_SOURCES, crossref_entities  # lazy: startup time
+    from .db import get_db_path, get_session  # lazy: startup time
+    from .extraction_runs import current_entities  # lazy: startup time
+    from .net import TorUnavailableError, describe_egress  # lazy: startup time
 
     source_list = sources.split(",") if sources else None
 
@@ -7977,7 +7833,7 @@ def crossref(
 
     # Export as FollowTheMoney
     if ftm:
-        from .ftm import export_ftm
+        from .ftm import export_ftm  # lazy: startup time
 
         count = export_ftm(entities, [], ftm)
         rprint(f"\n[green]Exported {count} entities to {ftm} (FollowTheMoney format)[/green]")
@@ -8033,12 +7889,10 @@ def analyze_export(
         openfoia analyze export
         openfoia analyze export -o investigation.ftm.json -r REQ-20260322-ABC
     """
-    from .db import get_db_path, get_session
-    from .extraction_runs import current_entities
-    from .ftm import export_ftm
-    from .models import Document, Entity, entity_links
-    from .models import Request as RequestModel
-    from .pipeline.extract import ExtractedEntity
+    from .db import get_db_path, get_session  # lazy: startup time
+    from .extraction_runs import current_entities  # lazy: startup time
+    from .ftm import export_ftm  # lazy: startup time
+    from .pipeline.extract import ExtractedEntity  # lazy: startup time
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -8120,7 +7974,7 @@ def analyze_import(
         openfoia analyze import investigation.ftm.json
         openfoia analyze import sanctions.ftm.json --tag opensanctions
     """
-    from .ftm_import import import_ftm_to_db, parse_ftm_file
+    from .ftm_import import import_ftm_to_db, parse_ftm_file  # lazy: startup time
 
     if not file.exists():
         rprint(f"[red]File not found: {file}[/red]")
@@ -8137,8 +7991,6 @@ def analyze_import(
         return
 
     # Show schema breakdown
-    from collections import Counter
-
     schemas = Counter(e["schema"] for e in entities)
     for schema, count in schemas.most_common(10):
         rprint(f"  {schema}: {count}")

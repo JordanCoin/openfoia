@@ -18,6 +18,7 @@ import os
 import platform
 import shutil
 import subprocess
+import webbrowser
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -211,8 +212,6 @@ def launch_browser(
 
     if not browser:
         # Fallback: use Python's webbrowser module
-        import webbrowser
-
         webbrowser.open(url)
         return True
 
@@ -224,8 +223,6 @@ def launch_browser(
         elif system == "Windows":
             return _launch_windows(url, browser, private, tor_mode)
         else:
-            import webbrowser
-
             webbrowser.open(url)
             return True
     except Exception as e:
@@ -308,8 +305,6 @@ def _launch_linux(url: str, browser: Browser, private: bool, tor_mode: bool) -> 
     cmd = browser.path
 
     if not cmd:
-        import webbrowser
-
         webbrowser.open(url)
         return True
 
@@ -399,7 +394,6 @@ def select_browser_interactive(
 
     if not browsers:
         print("No browsers detected. Opening with system default...")
-        import webbrowser
 
         webbrowser.open(url)
         return

@@ -22,8 +22,10 @@ from typing import Any
 
 import httpx
 
+from ..doctext import join_pages
 from ..net import EgressPolicy, egress_client
 from .base import RecordAdapter, RecordEntity, SearchResult, validate_download_url
+from .store import store_text_document
 
 logger = logging.getLogger(__name__)
 
@@ -324,8 +326,6 @@ class DocumentCloudAdapter(RecordAdapter):
                         doc.get("page_count") or 0,
                     )
                     if full_text is None and page_texts:
-                        from ..doctext import join_pages
-
                         full_text = join_pages(page_texts)
 
         except Exception as e:
@@ -367,8 +367,6 @@ class DocumentCloudAdapter(RecordAdapter):
 
         Returns (document_id, full_text) or (None, None) on failure.
         """
-        from .store import store_text_document
-
         entity = await self.fetch(identifier)
         if not entity:
             return None, None

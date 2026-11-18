@@ -15,12 +15,37 @@ from __future__ import annotations
 
 import contextlib
 import os
+import random
 import shutil
 import tempfile
+from datetime import timedelta
 from pathlib import Path
+from uuid import uuid4
 
 from rich import print as rprint
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
+from .db import (
+    _DB_SIDECAR_SUFFIXES,
+    get_data_dir,
+    get_sqlcipher_driver,
+    has_sqlcipher,
+    sqlcipher_key_pragma,
+)
+from .models import (
+    Agency,
+    AgencyLevel,
+    Base,
+    DeliveryMethod,
+    Document,
+    DocumentType,
+    Entity,
+    EntityType,
+    Request,
+    RequestStatus,
+    User,
+)
 from .models import utcnow as _utcnow
 
 # ---------------------------------------------------------------------------
@@ -219,15 +244,11 @@ _PROFILE_SLOTS = ["profile_0.db", "profile_1.db"]
 
 def _has_sqlcipher() -> bool:
     """Return True if SQLCipher support is importable."""
-    from .db import has_sqlcipher
-
     return has_sqlcipher()
 
 
 def get_profile_paths() -> list[Path]:
     """Return paths for both profile slots."""
-    from .db import get_data_dir
-
     data_dir = get_data_dir()
     return [data_dir / name for name in _PROFILE_SLOTS]
 
@@ -247,8 +268,6 @@ def migrate_db_to_profile_slot() -> Path:
 
     Idempotent, and never clobbers an existing slot.
     """
-    from .db import _DB_SIDECAR_SUFFIXES, get_data_dir
-
     data_dir = get_data_dir()
     legacy = data_dir / "data.db"
     real = real_profile_path()
@@ -290,8 +309,6 @@ def setup_duress_mode(duress_password: str) -> Path:
     both that duress mode is configured and which file is the decoy — the
     opposite of the "opaque filenames" the design promises.
     """
-    from .db import get_data_dir
-
     if not _has_sqlcipher():
         # A plaintext decoy contradicts the guarantee. Fail closed.
         raise RuntimeError(
@@ -322,7 +339,7 @@ def resolve_db_with_password(password: str | None = None) -> tuple[Path, bool]:
     This is the single entry point that all commands should use.
     SQLCipher itself acts as the password verifier — no hash stored.
     """
-    from .db import get_db_path
+    from .db import get_db_path  # lazy: monkeypatched in tests
 
     if not password:
         return get_db_path(), False
@@ -347,8 +364,6 @@ def _can_open_db(db_path: Path, password: str) -> bool:
     # Encryption support missing entirely is a configuration error, not a
     # wrong password. Swallowing it would make the duress password silently
     # never match, so the decoy would never open under coercion.
-    from .db import get_sqlcipher_driver, sqlcipher_key_pragma
-
     sqlcipher = get_sqlcipher_driver()
 
     try:
@@ -373,8 +388,6 @@ def is_duress_password(password: str) -> bool:
 
 def get_decoy_db_path() -> Path:
     """Return the path to the decoy profile (slot 1)."""
-    from .db import get_data_dir
-
     return get_data_dir() / _PROFILE_SLOTS[1]
 
 
@@ -393,35 +406,12 @@ def seed_decoy_db(db_path: Path, password: str | None = None) -> None:
 
     If password is provided, the decoy is encrypted with SQLCipher.
     """
-    import random
-    from datetime import timedelta
-    from uuid import uuid4
-
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
-
-    from .models import (
-        Agency,
-        AgencyLevel,
-        Base,
-        DeliveryMethod,
-        Document,
-        DocumentType,
-        Entity,
-        EntityType,
-        Request,
-        RequestStatus,
-        User,
-    )
-
     # Remove existing decoy if present
     if db_path.exists():
         db_path.unlink()
 
     if password:
         try:
-            from .db import get_sqlcipher_driver, sqlcipher_key_pragma
-
             sqlcipher = get_sqlcipher_driver()
 
             def _creator():

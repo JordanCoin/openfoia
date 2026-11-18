@@ -9,6 +9,7 @@ FtM spec: https://followthemoney.tech
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -78,7 +79,7 @@ def entities_to_ftm_native(entities: list[Any], relationships: list[dict]) -> li
 
     Requires: pip install followthemoney
     """
-    from followthemoney import model
+    from followthemoney import model  # optional: followthemoney (no extra)
 
     ftm_entities = []
 
@@ -132,8 +133,6 @@ def entities_to_ftm_json(entities: list[Any], relationships: list[dict]) -> list
         schema = _ENTITY_TYPE_TO_FTM_SCHEMA.get(ent.entity_type.value, "LegalEntity")
 
         # Generate a stable ID from entity text + type
-        import hashlib
-
         ftm_id = hashlib.sha256(
             f"{ent.entity_type.value}:{ent.normalized_text}".encode()
         ).hexdigest()[:32]
@@ -178,8 +177,6 @@ def entities_to_ftm_json(entities: list[Any], relationships: list[dict]) -> list
             continue
 
         ftm_rel = _RELATION_TO_FTM.get(relation, _RELATION_TO_FTM["related_to"])
-
-        import hashlib
 
         rel_id = hashlib.sha256(f"{source_id}:{target_id}:{relation}".encode()).hexdigest()[:32]
 

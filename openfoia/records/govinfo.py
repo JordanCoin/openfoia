@@ -13,6 +13,7 @@ GitHub:   https://github.com/usgpo/api
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 from urllib.parse import quote
 
@@ -67,8 +68,6 @@ class GovInfoAdapter(DataGovAdapter):
 
         Over Tor any personal key is withheld and DEMO_KEY is used (see DataGovAdapter).
         """
-        import os
-
         super().__init__(api_key or os.environ.get("OPENFOIA_GOVINFO_API_KEY"), egress=egress)
 
     async def search(

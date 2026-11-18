@@ -6,13 +6,17 @@ import asyncio
 import hashlib
 import mimetypes
 import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from ..doctext import join_pages
 from ..models import DocumentType
 from ..models import utcnow as _utcnow
+from .metadata import strip_metadata as _strip_metadata
+from .ocr import OCREngine
 
 
 @dataclass
@@ -89,8 +93,6 @@ class DocumentIngester:
         # Strip metadata from the stored copy
         stripped_info: dict[str, Any] = {}
         if strip_metadata:
-            from .metadata import strip_metadata as _strip_metadata
-
             stripped_info = await asyncio.to_thread(_strip_metadata, dest_path)
 
         # Get page count for PDFs
@@ -309,11 +311,13 @@ class DocumentIngester:
         to OCR; gated text is kept when OCR is unavailable or finds nothing.
         """
         global _ocr_hint_shown
-        import sys
 
-        from ..config import load_config
-        from ..doctext import join_pages
-        from .pdf_extract import NEEDS_OCR, PDFExtractTimeout, extract_text
+        from ..config import load_config  # lazy: monkeypatched in tests
+        from .pdf_extract import (  # lazy: monkeypatched in tests
+            NEEDS_OCR,
+            PDFExtractTimeout,
+            extract_text,
+        )
 
         pdf_config = load_config().pdf_extract
         try:
@@ -334,8 +338,6 @@ class DocumentIngester:
             if need:
                 await self._ocr_pages_into(pdf_path, need, pages, verdicts)
             return join_pages(pages), pages, verdicts
-
-        from .ocr import OCREngine
 
         try:
             ocr_result = await OCREngine().process_pdf(pdf_path, force_ocr=True)
@@ -361,9 +363,6 @@ class DocumentIngester:
     ) -> None:
         """OCR the listed pages in place; leave them untouched if tesseract is missing."""
         global _ocr_hint_shown
-        import sys
-
-        from .ocr import OCREngine
 
         try:
             texts = await OCREngine().ocr_pages(pdf_path, need)
@@ -382,7 +381,7 @@ class DocumentIngester:
     def _extract_text_docx(self, docx_path: Path) -> str | None:
         """Extract text from DOCX including tables."""
         try:
-            from docx import Document as DocxDocument
+            from docx import Document as DocxDocument  # lazy: heavy (lxml)
 
             doc = DocxDocument(str(docx_path))
             parts = []
@@ -407,8 +406,8 @@ class DocumentIngester:
     async def _extract_text_image(self, image_path: Path) -> str | None:
         """Extract text from image via OCR (tesseract)."""
         try:
-            import pytesseract
-            from PIL import Image
+            import pytesseract  # optional: ocr
+            from PIL import Image  # optional: ocr
 
             def _ocr():
                 img = Image.open(image_path)
@@ -422,7 +421,7 @@ class DocumentIngester:
     def _extract_text_msg(self, msg_path: Path) -> str | None:
         """Extract text from Outlook MSG files (email headers + body + attachment names)."""
         try:
-            import extract_msg
+            import extract_msg  # optional: email-files
 
             msg = extract_msg.Message(str(msg_path))
             parts = []
@@ -461,7 +460,7 @@ class DocumentIngester:
         """Get the number of pages in a PDF."""
 
         def _count():
-            from pypdf import PdfReader
+            from pypdf import PdfReader  # lazy: heavy (pulls in Pillow)
 
             reader = PdfReader(str(pdf_path))
             return len(reader.pages)

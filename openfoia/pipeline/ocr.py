@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar
+
+from ..db import _ensure_private_dir, get_data_dir
+from ..doctext import join_pages
 
 #: Hard cap on pages rasterized in one OCR run. A hostile "FOIA response"
 #: declaring tens of thousands of pages would otherwise exhaust memory/disk
@@ -23,8 +27,6 @@ def get_ocr_temp_dir() -> Path:
     `openfoia purge --secure` never touches, because purge only covers the
     data directory.
     """
-    from ..db import _ensure_private_dir, get_data_dir
-
     return _ensure_private_dir(get_data_dir() / "ocr_tmp")
 
 
@@ -77,7 +79,7 @@ class OCREngine:
 
         # Try direct text extraction (not OCR — reads PDF structures directly)
         from ..config import load_config
-        from .pdf_extract import PDFExtractTimeout, extract_text
+        from .pdf_extract import PDFExtractTimeout, extract_text  # lazy: monkeypatched in tests
 
         extract_result = None
         direct = None
@@ -96,8 +98,6 @@ class OCREngine:
         except PDFExtractTimeout as e:
             print(f"Warning: {e}; falling back to OCR", file=sys.stderr)
         if extract_result:
-            from ..doctext import join_pages
-
             verdicts = extract_result.verdicts or [None] * len(extract_result.pages)
             pages = [
                 {"page_number": i + 1, "text": page_text, "confidence": 1.0, "verdict": v}
@@ -155,8 +155,8 @@ class OCREngine:
         so callers can keep the text they already have.
         """
         try:
-            import pytesseract
-            from pdf2image import convert_from_path
+            import pytesseract  # optional: ocr
+            from pdf2image import convert_from_path  # optional: ocr
         except ImportError:
             return None
         if self.tesseract_cmd:
@@ -181,15 +181,15 @@ class OCREngine:
 
     @staticmethod
     def _ocr_image(image) -> tuple[dict, str]:
-        import pytesseract
+        import pytesseract  # optional: ocr
 
         data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
         return data, pytesseract.image_to_string(image)
 
     async def _process_tesseract(self, pdf_path: Path) -> OCRResult:
         """Process using Tesseract OCR."""
-        import pytesseract
-        from pdf2image import convert_from_path
+        import pytesseract  # optional: ocr
+        from pdf2image import convert_from_path  # optional: ocr
 
         if self.tesseract_cmd:
             pytesseract.pytesseract.tesseract_cmd = self.tesseract_cmd
@@ -252,7 +252,7 @@ class OCREngine:
 
     async def _process_google_vision(self, pdf_path: Path) -> OCRResult:
         """Process using Google Cloud Vision API."""
-        from google.cloud import vision
+        from google.cloud import vision  # optional: google-cloud-vision (no extra)
 
         # Initialize client
         client = vision.ImageAnnotatorClient()
@@ -305,7 +305,7 @@ class OCREngine:
 
     async def _process_aws_textract(self, pdf_path: Path) -> OCRResult:
         """Process using AWS Textract."""
-        import boto3
+        import boto3  # optional: boto3 (no extra)
 
         textract = boto3.client("textract", **self.aws_credentials if self.aws_credentials else {})
 
@@ -394,8 +394,6 @@ class RedactionDetector:
 
     async def analyze(self, text: str, pdf_path: Path | None = None) -> dict[str, Any]:
         """Analyze a document for redactions."""
-        import re
-
         exemptions_found = []
         for pattern, description in self.EXEMPTION_PATTERNS.items():
             matches = re.findall(pattern, text, re.IGNORECASE)
@@ -425,8 +423,8 @@ class RedactionDetector:
 
         Uses image analysis to detect large black rectangular regions.
         """
-        import numpy as np
-        from pdf2image import convert_from_path
+        import numpy as np  # optional: semantic
+        from pdf2image import convert_from_path  # optional: ocr
 
         def _analyze():
             with tempfile.TemporaryDirectory(dir=get_ocr_temp_dir()) as scratch:

@@ -24,7 +24,7 @@ from typing import Any
 
 def _default_config_path() -> Path:
     """Get config path respecting portable mode and OPENFOIA_DATA_DIR."""
-    from .db import get_data_dir
+    from .db import get_data_dir  # lazy: keeps config free of db
 
     return get_data_dir() / "config.json"
 

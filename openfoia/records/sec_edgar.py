@@ -7,6 +7,7 @@ https://efts.sec.gov/LATEST/search-index?q=<query>
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 from datetime import date
 from typing import Any
@@ -32,8 +33,6 @@ DEFAULT_USER_AGENT = "Research Client/1.0 (contact: research@example.org)"
 
 def _edgar_headers() -> dict[str, str]:
     """Headers for EDGAR requests, honouring OPENFOIA_SEC_USER_AGENT."""
-    import os
-
     return {"User-Agent": os.environ.get("OPENFOIA_SEC_USER_AGENT", DEFAULT_USER_AGENT)}
 
 
