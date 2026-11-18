@@ -345,6 +345,28 @@ exhaustive lists.
   it sends the address literal `[127.0.0.1]` instead. In Tor mode
   `request send` now warns that email, fax and physical mail are sent
   directly, not through Tor, and asks before sending when run in a terminal.
+- Archived web pages could still make network requests when the saved file
+  was opened later, from your real IP even if the page was fetched over Tor:
+  the regex sanitizer missed `<svg/onload=…>`, `</script >`, `<meta
+  http-equiv=refresh>`, CSS `@import`, SVG `<image href>`, `<input
+  type=image>` and `<body background>`. Archived pages are now rebuilt from
+  the parsed page using a short list of text and structure tags (headings,
+  paragraphs, lists, tables, emphasis, links) with no attribute that can hold
+  a URL, script or style, and each file starts with a Content-Security-Policy
+  that blocks every load. Images, styling, forms, SVG and embedded media are
+  no longer kept; a link keeps its text and shows its old target on hover but
+  cannot be followed. Pages archived before this release are still unsafe to
+  open in a browser: delete them, or archive the URL again. The extracted text
+  is unchanged.
+- A small image could use gigabytes of memory while its metadata was stripped
+  (a 198 KiB, 8000x8000 PNG peaked at 5.4 GiB), on `docs ingest` and on web
+  UI uploads. The image is now copied without a Python object per pixel
+  (that PNG's 7000x7000 neighbour now peaks at about 420 MiB instead of
+  4.1 GiB), and an image over 50 megapixels is refused from its header before
+  it is decoded: it is stored with its metadata and reported as "metadata NOT
+  stripped: image too large to clean safely". JPEG comments, XMP, ICC profiles
+  and PNG text chunks, which were already dropped, are now listed in what was
+  stripped.
 
 ## [4.7.0] - 2026-10-23
 
