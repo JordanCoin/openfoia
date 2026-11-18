@@ -153,28 +153,6 @@ exhaustive lists.
 - **`analyze export` wrote no relationships.** It passed each link's ends as
   database ids, but the FollowTheMoney writer joins them to entities by name, so
   every relationship was dropped and the export held only the entities.
-- Archived web pages could still make network requests when the saved file
-  was opened later, from your real IP even if the page was fetched over Tor:
-  the regex sanitizer missed `<svg/onload=…>`, `</script >`, `<meta
-  http-equiv=refresh>`, CSS `@import`, SVG `<image href>`, `<input
-  type=image>` and `<body background>`. Archived pages are now rebuilt from
-  the parsed page using a short list of text and structure tags (headings,
-  paragraphs, lists, tables, emphasis, links) with no attribute that can hold
-  a URL, script or style, and each file starts with a Content-Security-Policy
-  that blocks every load. Images, styling, forms, SVG and embedded media are
-  no longer kept; a link keeps its text and shows its old target on hover but
-  cannot be followed. Pages archived before this release are still unsafe to
-  open in a browser: delete them, or archive the URL again. The extracted text
-  is unchanged.
-- A small image could use gigabytes of memory while its metadata was stripped
-  (a 198 KiB, 8000x8000 PNG peaked at 5.4 GiB), on `docs ingest` and on web
-  UI uploads. The image is now copied without a Python object per pixel
-  (that PNG's 7000x7000 neighbour now peaks at about 420 MiB instead of
-  4.1 GiB), and an image over 50 megapixels is refused from its header before
-  it is decoded: it is stored with its metadata and reported as "metadata NOT
-  stripped: image too large to clean safely". JPEG comments, XMP, ICC profiles
-  and PNG text chunks, which were already dropped, are now listed in what was
-  stripped.
 - The graph page's document reader no longer builds its text with `innerHTML`;
   it uses text nodes and elements only. A `source_url` that is not `http(s)` is
   no longer turned into a link. The page is written as UTF-8 on every platform.
@@ -264,6 +242,16 @@ exhaustive lists.
 
 ### Security
 
+- **Duress mode could leave the real investigation unencrypted.**
+  `openfoia init --duress-password X` without `--password`/`--encrypt` printed
+  "Duress mode configured" while the real database (`profile_0.db`) stayed a
+  plaintext SQLite file next to an encrypted decoy, which pointed an examiner
+  straight at it. `init` now refuses and creates nothing, `init --duress` on
+  an existing database refuses unless that database is encrypted, and success
+  is only printed after both files are checked on disk. **If you set up duress
+  mode this way, check:** `head -c 15 profile_0.db` printing `SQLite format 3`
+  means the real database is plaintext. Run `openfoia db encrypt`, then set up
+  the decoy again with `openfoia init --duress`.
 - `openfoia browse --tor` works. It asked Chromium for a `socks5h://` proxy,
   a scheme Chromium does not support, so every Tor browse failed with
   `ERR_NO_SUPPORTED_PROXIES` (closed, never in the clear). It now uses
@@ -399,16 +387,6 @@ exhaustive lists.
   a file is not limited yet.
 These come from an outside security audit (November 2026).
 
-- **Duress mode could leave the real investigation unencrypted.**
-  `openfoia init --duress-password X` without `--password`/`--encrypt` printed
-  "Duress mode configured" while the real database (`profile_0.db`) stayed a
-  plaintext SQLite file next to an encrypted decoy, which pointed an examiner
-  straight at it. `init` now refuses and creates nothing, `init --duress` on
-  an existing database refuses unless that database is encrypted, and success
-  is only printed after both files are checked on disk. **If you set up duress
-  mode this way, check:** `head -c 15 profile_0.db` printing `SQLite format 3`
-  means the real database is plaintext. Run `openfoia db encrypt`, then set up
-  the decoy again with `openfoia init --duress`.
 - **One unwritable file stopped `purge --secure`.** Ingest copied a read-only
   original's mode (0444) onto the stored copy, and the first file purge could
   not open for writing aborted the purge, leaving every file after it and the

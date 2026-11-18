@@ -617,3 +617,36 @@ def test_openfoia_search_skips_courtlistener_without_a_usable_token(monkeypatch)
     plan = plan_search("Acme", ["courtlistener"], policy=EgressPolicy())
     assert list(plan.adapters) == ["courtlistener"]
     assert any("identifies you" in line for line in plan.warning_lines())
+
+
+def test_clean_line_keeps_zero_width_joiners_but_drops_controls():
+    from openfoia.records.courtlistener import clean_line
+
+    assert clean_line("بنیامین\u200cپور") == "بنیامین\u200cپور"
+    assert clean_line("a\x1b]52;c;cm0gLXJmIH4=\x07b\u202e") == "a]52;c;cm0gLXJmIH4=b"
+
+
+def test_storage_pdf_download_passes_the_egress_policy(monkeypatch, tmp_path):
+    """The A13 DNS check needs the route: in direct mode the host must resolve to public addresses."""
+    import asyncio
+
+    from openfoia.net import EgressPolicy
+    from openfoia.records import courtlistener as cl
+
+    seen = {}
+
+    async def fake(client, url, dest, max_bytes, *, egress=None):
+        seen["egress"] = egress
+
+    monkeypatch.setattr(cl, "download_to_file", fake)
+    policy = EgressPolicy()
+    adapter = cl.CourtListenerAdapter(api_key="k", egress=policy)
+    entity = cl.RecordEntity(
+        source="courtlistener",
+        entity_type="DOCUMENT",
+        name="x",
+        identifiers={"recap_document": "rd:7"},
+        extra_data={"pdf_url": "https://storage.courtlistener.com/recap/gov.uscourts.x/1.pdf"},
+    )
+    asyncio.run(adapter.download_pdf(entity, tmp_path))
+    assert seen["egress"] is policy

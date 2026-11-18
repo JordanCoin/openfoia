@@ -234,15 +234,22 @@ def test_secure_purge_shreds_the_database_holding_vectors(db, monkeypatch, tmp_p
 
 def test_decoy_profile_carries_no_vectors(tmp_path, monkeypatch):
     """The duress decoy is a fresh database: no copy of the real embeddings."""
-    monkeypatch.setenv("OPENFOIA_DATA_DIR", str(tmp_path))
-    from sqlalchemy import create_engine
-
+    from openfoia.db import get_sqlcipher_driver, has_sqlcipher, sqlcipher_key_pragma
     from openfoia.security import seed_decoy_db
 
+    if not has_sqlcipher():
+        pytest.skip("no SQLCipher driver installed (the decoy is always encrypted)")
+    monkeypatch.setenv("OPENFOIA_DATA_DIR", str(tmp_path))
     decoy = tmp_path / "profile_1.db"
-    seed_decoy_db(decoy, password=None)
-    with create_engine(f"sqlite:///{decoy}").connect() as conn:
-        assert not semantic.vector_table_exists(conn)
+    seed_decoy_db(decoy, password="decoy-passphrase")
+    conn = get_sqlcipher_driver().connect(str(decoy))
+    try:
+        conn.execute(sqlcipher_key_pragma("decoy-passphrase"))
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master")}
+    finally:
+        conn.close()
+    assert "documents" in tables  # opened with the key: this is the real schema
+    assert "document_page_vectors" not in tables
 
 
 # --- missing extra / model: a hint, never a crash (no extras needed) -------
