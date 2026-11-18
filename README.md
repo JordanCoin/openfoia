@@ -146,6 +146,7 @@ that disclosure.
 | [GovInfo](https://www.govinfo.gov/) | Congressional, court, regulatory, and other US government documents | Free API key; demo key available |
 | [OpenFEC](https://api.open.fec.gov/developers/) | Federal campaign-finance contributions and committees | Free API key; demo key available |
 | [Regulations.gov](https://www.regulations.gov/) | Federal rulemaking documents and public comments | Free API key; demo key available |
+| [Federal Register](https://www.federalregister.gov/) | Federal rules, proposed rules, notices and presidential documents, filterable by agency, type, publication date and docket, with comment deadlines. `records fetch <document number> --source federalregister` downloads the PDF from GovInfo and ingests it | No API key |
 | [OpenSanctions](https://opensanctions.org/) | Sanctions lists and politically exposed persons | Cross-reference source. API needs a key (`OPENFOIA_OPENSANCTIONS_API_KEY`; free for journalists). Offline: download `targets.simple.csv` (449 MB) from the [default dataset](https://www.opensanctions.org/datasets/default/) and pass `--opensanctions-data <dir>` with `--sources opensanctions-local`, nothing leaves the machine. Data license [CC BY-NC 4.0](https://www.opensanctions.org/licensing/): free for journalists and non-commercial use |
 | [ICIJ Offshore Leaks](https://offshoreleaks.icij.org/) | Panama, Pandora, and Paradise Papers | Cross-reference source; local CSV download |
 

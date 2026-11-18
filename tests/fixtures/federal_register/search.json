@@ -1,0 +1,78 @@
+{
+ "description": "Documents matching 'biometric', from Homeland Security Department, and of type Rule or Proposed Rule",
+ "count": 258,
+ "total_pages": 129,
+ "next_page_url": "https://www.federalregister.gov/api/v1/documents?conditions%5Bagencies%5D%5B%5D=homeland-security-department&conditions%5Bterm%5D=biometric&conditions%5Btype%5D%5B%5D=RULE&conditions%5Btype%5D%5B%5D=PRORULE&fields%5B%5D=document_number&fields%5B%5D=title&fields%5B%5D=type&fields%5B%5D=subtype&fields%5B%5D=action&fields%5B%5D=abstract&fields%5B%5D=excerpts&fields%5B%5D=publication_date&fields%5B%5D=effective_on&fields%5B%5D=comments_close_on&fields%5B%5D=comment_url&fields%5B%5D=agencies&fields%5B%5D=docket_ids&fields%5B%5D=regulation_id_numbers&fields%5B%5D=citation&fields%5B%5D=significant&fields%5B%5D=html_url&fields%5B%5D=pdf_url&format=json&order=relevance&page=2&per_page=2",
+ "results": [
+  {
+   "document_number": "2026-16231",
+   "title": "9-11 Response and Biometric Entry-Exit Fee for H-1B and L-1 Visas",
+   "type": "Rule",
+   "subtype": null,
+   "action": "Final rule.",
+   "abstract": "The Department of Homeland Security (DHS) is amending the regulations concerning the 9-11 Response and Biometric Entry-Exit Fee for certain H-1B and L-1 Visas (9-11 Biometric Fee). The regulatory changes correct DHS's interpretation of statutory language to require that covered employers submit the 9-11 Biometric Fee for all extension of status petitions, regardless of whether the related fraud prevention and detection fee applies, which includes extension of status petitions that do not involve a change of employer. The 9-11 Biometric Fee continues to apply unchanged to petitions seeking an initial grant of status. The changes also help DHS comply with its congressional mandate to implement a biometric entry-exit system.",
+   "excerpts": "recognition for <span class=\"match\">biometric</span> entry and exit of all aliens to and from the United States. \n See \n Collection of <span class=\"match\">Biometric</span> Data From Aliens Upon Entry to and Departure From the United States, 90 FR 48604 (Oct. 27, 2025) (hereinafter the <span class=\"match\">Biometrics</span> Final Rule). For more information on the need for a <span class=\"match\">biometric</span> entry-exit system, see the <span class=\"match\">Biometrics</span> Final Rule.\n \n In 2015, Congress established the 9-11 <span class=\"match\">Biometric</span> Account for the purpose of funding the <span class=\"match\">biometric</span> entry-exit system mandated by Congress. Congress also implemented the 9-11 <span class=\"match\">Biometric</span> Fee, which replaced",
+   "publication_date": "2026-08-10",
+   "effective_on": "2026-09-09",
+   "comments_close_on": null,
+   "comment_url": null,
+   "agencies": [
+    {
+     "raw_name": "DEPARTMENT OF HOMELAND SECURITY",
+     "name": "Homeland Security Department",
+     "id": 227,
+     "url": "https://www.federalregister.gov/agencies/homeland-security-department",
+     "json_url": "https://www.federalregister.gov/api/v1/agencies/227",
+     "parent_id": null,
+     "slug": "homeland-security-department"
+    }
+   ],
+   "docket_ids": [
+    "Docket No. USCBP-2024-0009",
+    "CBP Dec. No. 26-11"
+   ],
+   "regulation_id_numbers": [
+    "1651-AB48"
+   ],
+   "citation": "91 FR 51360",
+   "significant": false,
+   "html_url": "https://www.federalregister.gov/documents/2026/08/10/2026-16231/9-11-response-and-biometric-entry-exit-fee-for-h-1b-and-l-1-visas",
+   "pdf_url": "https://www.govinfo.gov/content/pkg/FR-2026-08-10/pdf/2026-16231.pdf"
+  },
+  {
+   "document_number": "2025-19747",
+   "title": "Collection and Use of Biometrics by U.S. Citizenship and Immigration Services",
+   "type": "Proposed Rule",
+   "subtype": null,
+   "action": "Notice of proposed rulemaking.",
+   "abstract": "The U.S. Department of Homeland Security (DHS) proposes to amend its regulations governing biometrics use and collection. DHS proposes to require submission of biometrics by any individual, regardless of age, filing or associated with an immigration benefit request, other request, or collection of information, unless exempted; expand biometrics collection authority upon alien arrest; define \"biometrics;\" codify reuse requirements; codify and expand DNA testing, use and storage; establish an \"extraordinary circumstances\" standard to excuse a failure to appear at a biometric services appointment; modify how VAWA self-petitioners and T nonimmigrant status applicants demonstrate good moral character; and clarify biometrics collection purposes.",
+   "excerpts": "Chapter 2—<span class=\"match\">Biometrics</span> Collection, A—<span class=\"match\">Biometric</span> Services Appointments.\n \n \n DHS further proposes to define instances that justify USCIS <span class=\"match\">biometric</span> reuse for an individual who may have a pending benefit request, other request, or collection of information that requires <span class=\"match\">biometric</span> submission and has previously submitted <span class=\"match\">biometrics</span> for another benefit request, other request, or collection of information. In those situations, USCIS must obtain a positive <span class=\"match\">biometric</span>-based identity verification before reusing an individual's previously submitted <span class=\"match\">biometrics</span> to process",
+   "publication_date": "2025-11-03",
+   "effective_on": null,
+   "comments_close_on": "2026-01-02",
+   "comment_url": null,
+   "agencies": [
+    {
+     "raw_name": "DEPARTMENT OF HOMELAND SECURITY",
+     "name": "Homeland Security Department",
+     "id": 227,
+     "url": "https://www.federalregister.gov/agencies/homeland-security-department",
+     "json_url": "https://www.federalregister.gov/api/v1/agencies/227",
+     "parent_id": null,
+     "slug": "homeland-security-department"
+    }
+   ],
+   "docket_ids": [
+    "CIS No. 2814-25",
+    "DHS Docket No. USCIS-2025-0205"
+   ],
+   "regulation_id_numbers": [
+    "1615-AC99"
+   ],
+   "citation": "90 FR 49062",
+   "significant": true,
+   "html_url": "https://www.federalregister.gov/documents/2025/11/03/2025-19747/collection-and-use-of-biometrics-by-us-citizenship-and-immigration-services",
+   "pdf_url": "https://www.govinfo.gov/content/pkg/FR-2025-11-03/pdf/2025-19747.pdf"
+  }
+ ]
+}

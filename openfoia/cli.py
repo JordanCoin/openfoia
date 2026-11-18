@@ -5029,15 +5029,24 @@ def ingest_url(
 
 #: Search filters only some adapters understand; other sources are skipped
 #: rather than returning unfiltered results under a filtered query.
-_FILTER_SOURCES = {"jurisdiction": "opencorporates", "filing_type": "sec"}
+_FILTER_SOURCES = {
+    "jurisdiction": ("opencorporates",),
+    "filing_type": ("sec", "federalregister"),
+    "agency": ("federalregister",),
+    "since": ("federalregister",),
+    "until": ("federalregister",),
+    "docket": ("federalregister",),
+}
+#: Sources whose search is paged until the CLI's --limit, with their page-size cap.
+_PAGED_SOURCES = {"documentcloud": 100, "federalregister": 1000}
 
 
 async def _search_one(adapter, source: str, query: str, limit: int, kwargs: dict[str, Any]):
-    """Run one source's search, paging DocumentCloud until *limit* results."""
-    if source != "documentcloud":
+    """Run one source's search, paging DocumentCloud and the Federal Register until *limit*."""
+    if source not in _PAGED_SOURCES:
         return await adapter.search(query, **kwargs)
 
-    per_page = min(limit, 100)
+    per_page = min(limit, _PAGED_SOURCES[source])
     entities = []
     page = 1
     while True:
@@ -5071,6 +5080,7 @@ def _compact_result(e) -> dict[str, Any]:
                 "filing_date",
                 "date_issued",
                 "posted_date",
+                "publication_date",
                 "date",
             )
             if x.get(k)
@@ -5157,8 +5167,8 @@ def _records_search_all(
         )
 
     async def one(source: str):
-        for key, owner in _FILTER_SOURCES.items():
-            if kwargs.get(key) and source != owner:
+        for key, owners in _FILTER_SOURCES.items():
+            if kwargs.get(key) and source not in owners:
                 return source, None, f"skipped ({key} filter not supported)"
         try:
             adapter = adapters[source]
@@ -5224,14 +5234,34 @@ def records_search(
         "-s",
         help=(
             "Data source (opencorporates, sec, muckrock, documentcloud, usaspending, "
-            "nonprofits, govinfo, fec, regulations, cia, nara)"
+            "nonprofits, govinfo, fec, regulations, federalregister, cia, nara)"
         ),
     ),
     jurisdiction: str | None = typer.Option(
         None, "--jurisdiction", "-j", help="Jurisdiction filter (e.g. us_ca, gb)"
     ),
     filing_type: str | None = typer.Option(
-        None, "--type", "-t", help="Filing type filter for SEC (e.g. 10-K, 8-K)"
+        None,
+        "--type",
+        "-t",
+        help=(
+            "sec: filing type (e.g. 10-K, 8-K). federalregister: document type "
+            "(rule, proposed-rule, notice, presidential; comma-separated)"
+        ),
+    ),
+    agency: str | None = typer.Option(
+        None,
+        "--agency",
+        help="federalregister: agency slug, name or short name (e.g. EPA); comma-separated",
+    ),
+    since: str | None = typer.Option(
+        None, "--since", help="federalregister: published on or after (YYYY-MM-DD)"
+    ),
+    until: str | None = typer.Option(
+        None, "--until", help="federalregister: published on or before (YYYY-MM-DD)"
+    ),
+    docket: str | None = typer.Option(
+        None, "--docket", help="federalregister: agency docket id (e.g. EPA-HQ-OAR-2021-0317)"
     ),
     limit: int = typer.Option(10, "--limit", "-n", help="Maximum results to display"),
     raw: bool = typer.Option(False, "--raw", help="Print raw JSON output"),
@@ -5278,6 +5308,7 @@ def records_search(
       govinfo         - US government publications (key: OPENFOIA_GOVINFO_API_KEY or demo)
       fec             - Campaign finance (shared demo key, rate-limited)
       regulations     - Rulemaking dockets (shared demo key, rate-limited)
+      federalregister - Federal rules, proposed rules, notices, presidential documents
 
     Examples:
         openfoia records search "Acme Corp" --source opencorporates
@@ -5290,6 +5321,8 @@ def records_search(
         openfoia records search "PAS" -s documentcloud --rank child,school,gifted
         openfoia records search -s nara --ancestor 7283224 --all --max 500 --json
         openfoia records search "Acme Corp" -s sec --csv results.csv
+        openfoia records search "facial recognition" -s federalregister --agency DHS -t rule
+        openfoia records search -s federalregister --docket EPA-HQ-OAR-2021-0317
     """
     import asyncio
     import math
@@ -5300,8 +5333,18 @@ def records_search(
     if (ancestor or all_pages) and source != "nara":
         rprint("[red]--ancestor and --all are only supported with --source nara.[/red]")
         raise typer.Exit(1)
-    if not query and not ancestor:
-        rprint("[red]Give a search term (or --ancestor <NAID> with -s nara).[/red]")
+    fr_filters = {"agency": agency, "since": since, "until": until, "docket": docket}
+    if any(fr_filters.values()) and source != "federalregister" and not all_sources:
+        rprint(
+            "[red]--agency, --since, --until and --docket are only supported with "
+            "--source federalregister.[/red]"
+        )
+        raise typer.Exit(1)
+    if not query and not ancestor and not any(fr_filters.values()):
+        rprint(
+            "[red]Give a search term (or --ancestor <NAID> with -s nara, or a filter "
+            "such as --docket with -s federalregister).[/red]"
+        )
         raise typer.Exit(1)
     if csv_path and (raw or json_lines or all_sources):
         rprint("[red]--csv cannot be combined with --raw, --json or --all-sources.[/red]")
@@ -5316,6 +5359,7 @@ def records_search(
         kwargs["jurisdiction"] = jurisdiction
     if filing_type:
         kwargs["filing_type"] = filing_type
+    kwargs.update({k: v for k, v in fr_filters.items() if v})
     keywords = _rank_keywords(rank)
 
     if all_sources:
@@ -5335,7 +5379,17 @@ def records_search(
     # Pipe-safe modes: stdout carries only JSON, so no spinner or Rich markup.
     quiet = raw or json_lines
 
-    if source != "cia":
+    if source == "federalregister":
+        # The filters are sent too, and a docket id says as much as a query.
+        sent = ([repr(query)] if query else []) + [
+            f"{'type' if k == 'filing_type' else k}={v}" for k, v in kwargs.items()
+        ]
+        typer.echo(
+            f"Sending {', '.join(sent)} to www.federalregister.gov "
+            f"({_route_note(policy, adapter)}).",
+            err=True,
+        )
+    elif source != "cia":
         typer.echo(f"Sending {query!r} to {source} ({_route_note(policy, adapter)}).", err=True)
     if source == "cia":
         notice = f"WARNING: This will send the query {query!r} to cia.gov ({_route_note(policy)})."
@@ -5594,6 +5648,36 @@ def _print_search_result(
             )
         _emit_table(table, csv_path)
 
+    elif source == "federalregister":
+        table = Table(expand=True)
+        table.add_column("Document", style="dim", width=11, no_wrap=True)
+        table.add_column("Type", width=14)
+        table.add_column("Agency", ratio=1)
+        table.add_column("Title", style="cyan", ratio=3)
+        table.add_column("Published", width=10)
+        table.add_column("Comments close", width=10)
+
+        for e in entities:
+            x = e.extra_data
+            # Text(), not str: upstream strings must not be read as Rich markup.
+            table.add_row(
+                Text(e.identifiers.get("document_number", "-")),
+                Text(x.get("subtype") or x.get("document_type") or "-"),
+                Text(", ".join(x.get("agencies") or []) or "-"),
+                Text(e.name),
+                Text(x.get("publication_date") or "-"),
+                Text(x.get("comments_close_on") or "-"),
+            )
+        _emit_table(table, csv_path)
+        if result.total_results >= 10_000:
+            rprint(
+                "[dim]The Federal Register API caps its count at 10,000; there may be more.[/dim]"
+            )
+        rprint(
+            "\n[dim]Download and ingest the PDF: "
+            "openfoia records fetch <Document> --source federalregister[/dim]"
+        )
+
     elif source == "opencorporates":
         table = Table()
         table.add_column("Name", style="cyan", max_width=30)
@@ -5804,7 +5888,8 @@ def records_fetch(
     """Fetch documents' full text and save them to the local database.
 
     Pulls pre-extracted text from the source (no local OCR needed for
-    DocumentCloud). Documents already stored are skipped unless --refresh.
+    DocumentCloud); federalregister downloads the document's PDF from GovInfo
+    and extracts its text here. Documents already stored are skipped unless --refresh.
     Failures do not stop the batch; the summary lists fetched, skipped and
     failed counts. Exit 2 when some failed, 1 when all did.
 
@@ -5815,6 +5900,7 @@ def records_fetch(
         openfoia records fetch --from hits.json
         openfoia records fetch 7283224 -s nara --list-objects
         openfoia records fetch 7283224 -s nara --objects
+        openfoia records fetch 2026-21024 -s federalregister
     """
     import asyncio
 
@@ -5838,8 +5924,19 @@ def records_fetch(
         for doc_id in ids:
             _records_fetch_cia(doc_id)
         return
-    # Sources whose adapter has pull_text(); the prefix is the stored request number's.
-    prefixes = {"documentcloud": "DC-", "nara": "NARA-"}
+    if source == "federalregister":
+        from .records.federal_register import normalize_document_number
+
+        def _number(i: str) -> str:
+            try:
+                return normalize_document_number(i)
+            except ValueError:
+                return i  # reported as a failure by fetch, with the reason
+
+        ids = list(dict.fromkeys(_number(i) for i in ids))
+    # Sources whose adapter has pull_text() (federalregister: PDF download and
+    # ingest); the prefix is the stored request number's.
+    prefixes = {"documentcloud": "DC-", "nara": "NARA-", "federalregister": "FR-"}
     if source not in prefixes:
         rprint(
             f"[yellow]Fetch not yet supported for '{source}'. Use 'records download' for MuckRock.[/yellow]"
@@ -5855,6 +5952,12 @@ def records_fetch(
     policy = _records_policy_or_exit()
     adapter = get_adapter(source, egress=policy)
     typer.echo(f"Fetching from {source} ({_route_note(policy, adapter)}).", err=True)
+    if source == "federalregister":
+        typer.echo(
+            "Note: each document's details come from www.federalregister.gov and its PDF "
+            "from www.govinfo.gov, both on that route.",
+            err=True,
+        )
     if source == "nara":
         from .records.nara import ATTRIBUTION
 
@@ -5893,7 +5996,10 @@ def records_fetch(
             rprint(f"  {doc_id}  [dim]{where} (--refresh to re-fetch)[/dim]")
             continue
         try:
-            result_id, text = asyncio.run(adapter.pull_text(doc_id, case_id=case_id))
+            if source == "federalregister":
+                result_id, text = _records_fetch_federalregister(adapter, doc_id)
+            else:
+                result_id, text = asyncio.run(adapter.pull_text(doc_id, case_id=case_id))
         except Exception as e:
             failed.append(doc_id)
             rprint(f"  {doc_id}  [red]failed: {e}[/red]")
@@ -6112,6 +6218,59 @@ def _records_fetch_cia(identifier: str) -> None:
     if active_case_id_in_db():
         rprint("  [dim]Attached to the active case.[/dim]")
     rprint(f"\n[dim]Extract entities: openfoia analyze extract {result.document_id}[/dim]")
+
+
+def _records_fetch_federalregister(adapter, doc_id: str) -> tuple[str, str | None]:
+    """Download a Federal Register document's PDF, ingest it, store it under FR-<number>.
+
+    Returns (document_id, extracted_text) for records_fetch's summary.
+    """
+    import asyncio
+
+    from .db import ensure_db, get_data_dir
+    from .pipeline.ingest import DocumentIngester
+
+    ensure_db()
+    entity, pdf_path = asyncio.run(
+        adapter.download(doc_id, get_data_dir() / "downloads" / "federalregister")
+    )
+    x = entity.extra_data
+    number = entity.identifiers["document_number"]
+    # Upstream strings: printed as Text so they are never read as Rich markup.
+    console.print(Text(f"  {number}  {entity.name}", style="cyan"))
+    details = [
+        x.get("subtype") or x.get("document_type"),
+        ", ".join(x.get("agencies") or []),
+        x.get("citation"),
+        f"published {x['publication_date']}" if x.get("publication_date") else None,
+        f"comments close {x['comments_close_on']}" if x.get("comments_close_on") else None,
+        f"docket {', '.join(x['docket_ids'])}" if x.get("docket_ids") else None,
+    ]
+    console.print(Text("    " + " | ".join(d for d in details if d)), style="dim")
+
+    result = asyncio.run(
+        DocumentIngester(storage_path=get_data_dir() / "docs").ingest_file(pdf_path)
+    )
+    if not (result.extracted_text or "").strip():
+        # Not stored, so a re-run after installing pdf-extract or OCR retries it
+        # instead of skipping it as "already stored".
+        Path(result.file_path).unlink(missing_ok=True)
+        console.print(
+            Text(
+                f"    PDF kept at {pdf_path}, but no text was extracted, so it was not "
+                "stored. Check that pdf-extract is installed (scanned pages also need "
+                "OCR: openfoia install-extras ocr), then fetch again.",
+                style="yellow",
+            )
+        )
+        return result.document_id, None
+    _persist_ingested(
+        [result],
+        request_number=f"FR-{number}",
+        subject=entity.name,
+        body=f"Downloaded from the Federal Register: {entity.source_url or number}",
+    )
+    return result.document_id, result.extracted_text
 
 
 @records_app.command("download")

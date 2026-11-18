@@ -70,6 +70,19 @@ exhaustive lists.
   sources no longer echo the key. `network.max_attempts`
   (`OPENFOIA_NETWORK_MAX_ATTEMPTS`, default 3, 1 disables retry) sets the retry
   count for commands that read `network` config (#56).
+- Federal Register source (`records search -s federalregister`): federal rules,
+  proposed rules, notices and presidential documents from 1994 on, from the
+  Federal Register API, with no API key. Filters: `--agency` (slug, name or a
+  short name such as EPA), `--type` (rule, proposed-rule, notice,
+  presidential), `--since` / `--until` (publication date) and `--docket`; the
+  search term is optional when a filter is given. Results show each document's
+  agencies, docket ids and the date comments close. An unknown document type
+  is reported as an error, because the API answers it with zero results.
+  `records fetch <document number or URL> -s federalregister` downloads the
+  PDF from GovInfo (only from GovInfo or the Federal Register's
+  public-inspection host) and ingests it into the active case; a PDF with no
+  extractable text is kept on disk but not stored, so a later fetch retries
+  it (#55).
 
 ### Changed
 
