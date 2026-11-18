@@ -49,7 +49,6 @@ def data_dir(tmp_path, monkeypatch):
 
 
 @needs_sqlcipher
-@audit("A1 duress mode leaves the real profile in plaintext")
 def test_a1_duress_without_real_password_keeps_real_profile_encrypted(data_dir):
     """`init --duress-password X` (no --password/--encrypt) reports success.
 
@@ -72,12 +71,11 @@ def test_a1_duress_without_real_password_keeps_real_profile_encrypted(data_dir):
 # ---------------------------------------------------------------------------
 
 
-@audit("A2 secure purge aborts on the first file it cannot overwrite")
 def test_a2_secure_purge_survives_an_unwritable_file(tmp_path, monkeypatch):
-    """`docs ingest` copies with shutil.copy2, so a read-only original (from a
-    CD, a read-only share, or `chmod 444`) yields a read-only stored copy.
+    """`docs ingest` copied with shutil.copy2, so a read-only original (from a
+    CD, a read-only share, or `chmod 444`) yielded a read-only stored copy.
     For a non-root user `open(path, "r+b")` on it raises PermissionError, and
-    secure_delete_dir lets the exception escape, leaving every file it had not
+    secure_delete_dir let the exception escape, leaving every file it had not
     reached yet. Root ignores mode bits, so the non-root check is simulated.
     """
     from openfoia import security
@@ -90,7 +88,8 @@ def test_a2_secure_purge_survives_an_unwritable_file(tmp_path, monkeypatch):
     data = tmp_path / "data"
     result = asyncio.run(DocumentIngester(data / "docs").ingest_file(original))
     stored = Path(result.file_path)
-    assert stat.S_IMODE(stored.stat().st_mode) == 0o444  # the trigger, as shipped
+    assert stat.S_IMODE(stored.stat().st_mode) == 0o600  # ingest no longer copies the mode
+    stored.chmod(0o444)  # a read-only copy stored by an older version: the trigger
 
     (data / "aa_config.json").write_text('{"email": {"smtp_password": "hunter2"}}')
     (data / "zz_notes.txt").write_text("names of sources")
@@ -227,7 +226,6 @@ def test_a4_docx_tracked_change_author_is_not_reported_clean(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@audit("A5 docs tell users to type --password/--duress-password values")
 def test_a5_docs_do_not_put_passphrases_in_argv():
     """The CLI itself warns that --password lands in shell history and the
     process list; TAILS.md, USB.md, AIRGAP.md and THREAT_MODEL.md still tell
@@ -249,7 +247,6 @@ def test_a5_docs_do_not_put_passphrases_in_argv():
 
 
 @needs_sqlcipher
-@audit("A6 decoy profile has a different file mode than the real one")
 def test_a6_profile_files_have_identical_modes(data_dir):
     from openfoia.cli import app
 
@@ -262,7 +259,6 @@ def test_a6_profile_files_have_identical_modes(data_dir):
 
 
 @needs_sqlcipher
-@audit("A6 decoy profile has a different schema than any real database")
 def test_a6_decoy_schema_matches_a_real_database(data_dir):
     from openfoia.cli import app
     from openfoia.db import get_sqlcipher_driver, sqlcipher_key_pragma
@@ -512,7 +508,6 @@ def test_a14_smtp_ehlo_does_not_leak_hostname(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@audit("A15 purge --secure leaves fish history and the USB.md run.sh helper lines")
 def test_a15_history_scrub_covers_fish_and_run_sh(tmp_path, monkeypatch):
     from openfoia.security import clear_shell_history
 
@@ -573,7 +568,6 @@ def test_a17_release_workflow_pins_actions_and_drops_credentials():
 # ---------------------------------------------------------------------------
 
 
-@audit("A18 `analyze graph` writes graph.json to the cwd; purge never removes it")
 def test_a18_purge_removes_default_graph_export(data_dir, tmp_path, monkeypatch):
     from uuid import uuid4
 
