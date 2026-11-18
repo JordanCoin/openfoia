@@ -321,7 +321,7 @@ exhaustive lists.
   owner's name, such as `janes-macbook-pro.local`) in the SMTP EHLO greeting,
   which mail servers log and may copy into the headers the agency receives;
   it sends the address literal `[127.0.0.1]` instead. In Tor mode
-  `request send` now warns that email (and fax and physical mail) are sent
+  `request send` now warns that email, fax and physical mail are sent
   directly, not through Tor, and asks before sending when run in a terminal.
 
 ## [4.7.0] - 2026-10-23
