@@ -518,6 +518,12 @@ openfoia browse https://example.gov/records --tor --save
 
 Requires Tor service running locally and `pip install openfoia[browser]`.
 
+With `--tor`, Chromium sends hostnames to Tor's SOCKS proxy (Tor does the DNS
+lookup), and the browser's own DNS resolver is switched off for the session,
+so a name that somehow bypassed the proxy fails instead of being looked up on
+your network. The browser gets a throwaway home directory inside the data
+directory, removed when it exits.
+
 ---
 
 ## Delivery methods

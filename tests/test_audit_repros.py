@@ -544,7 +544,6 @@ def test_a15_history_scrub_covers_fish_and_run_sh(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@audit("A16 Chromium rejects socks5h://, so every Tor browse fails")
 def test_a16_tor_browse_proxy_scheme_is_supported_by_chromium():
     """Verified against Playwright's Chromium: socks5h:// gives
     net::ERR_NO_SUPPORTED_PROXIES; socks5:// reaches the SOCKS server. Chromium

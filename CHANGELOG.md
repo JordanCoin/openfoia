@@ -240,6 +240,17 @@ exhaustive lists.
   uncertain read timeouts from ordinary API failures, with a browser and local
   `docs ingest` fallback.
 
+### Security
+
+- `openfoia browse --tor` works. It asked Chromium for a `socks5h://` proxy,
+  a scheme Chromium does not support, so every Tor browse failed with
+  `ERR_NO_SUPPORTED_PROXIES` (closed, never in the clear). It now uses
+  `socks5://`, through which Chromium sends hostnames to Tor rather than
+  resolving them itself, and switches the browser's own DNS resolver off for
+  the session (`--host-resolver-rules`). The browser also gets a throwaway
+  home directory inside the data directory, so its crash reports and caches
+  do not land in your home directory.
+
 ## [4.7.0] - 2026-10-23
 
 ### Added
