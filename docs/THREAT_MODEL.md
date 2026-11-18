@@ -111,9 +111,11 @@ OpenFOIA is local-first, but certain features make network requests:
 | `openfoia docs embed-model` (semantic search, opt-in, once) | huggingface.co and the storage host it redirects to | Your IP address (the Tor exit node's with `--tor`) and which model files you download. Nothing from your documents or searches. Embedding and `docs grep --semantic` then run offline |
 | AI entity extraction with a provider not on this machine (opt-in) | The configured LLM API (Anthropic, OpenAI, an OpenAI-compatible server, or Ollama on another host) | Document text, from your real IP. Only `localhost` and loopback addresses count as this machine. OpenFOIA warns, then asks; without a yes (or `ai.allow_remote: true`) it uses the local tiers. Never used in Tor mode, because these requests cannot be routed through Tor |
 | `openfoia serve` | `localhost` only | Nothing leaves the machine, but browser records local activity |
+| `openfoia mcp serve` (opt-in, optional extra, started by an MCP client) | The MCP client that started it over stdin/stdout, **and through it the client's model provider** (Anthropic for Claude Desktop and Claude Code; whoever runs the model for other clients) | **Everything the tools return**: passages and full page text of stored documents, case names, descriptions and notes, the queries logged to a case, entity names, FOIA request subjects. The local tools themselves make no network request. `openfoia_search` also sends its query to the records sources, exactly as `openfoia search` does, but only when the server was started with `--allow-network` and only on a second, `confirmed` call. See "MCP server" below |
 | `install.sh` | GitHub API, GitHub releases | Your IP address; what binary you download |
 
-If you never use `send`, `ingest`, `crossref`, `docs embed-model` or cloud AI,
+If you never use `send`, `ingest`, `search`, `crossref`, `docs embed-model`,
+cloud AI or an MCP client with a remote model,
 no data leaves your machine during normal operation. `--tor` (or the `network.tor` config
 default) changes *who the destination sees* for `ingest` and `crossref` — it
 does not change *what* they receive: the URL or the subject names still
@@ -210,6 +212,65 @@ What it does not do:
   passages in its top ten only some of the time
   (`docs/benchmarks/semantic-search.md`). Do not rely on it to clear a
   document.
+
+---
+
+## MCP server
+
+`openfoia mcp serve` (optional extra, `openfoia install-extras mcp`) lets an
+MCP client such as Claude Desktop or Claude Code call OpenFOIA as tools. The
+server is local; the model behind the client usually is not.
+
+What it does:
+- **stdio only.** The client starts the server as a child process and talks
+  over its stdin and stdout. It never listens on a network port, so nothing on
+  your network can reach it.
+- **Network is the operator's choice.** `openfoia_search` sends nothing unless
+  the server was started with `--allow-network`, a command-line flag in the
+  client's configuration that no tool can set. With it, the first call returns
+  the same warning as `openfoia search` (sources, Tor or direct) and sends
+  nothing; the query goes out on a second call with `confirmed: true`. A call
+  cannot move a configured Tor route (`network.tor`) to direct, and Tor fails
+  closed. These are the same function and the same checks as the agent
+  interface's `search_records` tool.
+- **Read-only, no paths.** The other tools only read the database. There are no
+  tools that delete, purge, send FOIA requests, send email, fax or mail, ingest
+  files or change config, and no tool takes a file path, so a prompt-injected
+  document cannot make the agent read `~/.ssh` or the config file through
+  OpenFOIA. Unknown arguments are refused. The local tools default to the
+  active case, as the CLI does.
+- **stdout carries only protocol messages.** The server keeps the real stdout
+  for the protocol and points the process's own stdout (and stdin) at the null
+  device, so stray library output cannot corrupt a message or end up in the
+  client's logs. Logs go to stderr with only the message and the error type,
+  never the query or document text, unless `--verbose`.
+- **No telemetry.** The MCP SDK wraps each request in an OpenTelemetry span
+  (method and tool name). OpenFOIA removes that middleware, so a machine with
+  OpenTelemetry configured does not export it.
+
+What it does not do:
+- **Everything a tool returns goes to the model provider.** Passages, whole
+  pages, case notes, your logged queries and the names in your entity graph
+  become part of the conversation, which the client sends to its model
+  provider and which may be retained under that provider's terms. OpenFOIA
+  cannot see or control what happens there. If a document must not leave the
+  machine, do not read it through an agent, or use a client with a local model.
+- **`confirmed` is set by the model, not by you.** The tool description and the
+  skill tell the agent to show you the warning and to confirm only after you
+  agree, but OpenFOIA cannot verify that a human agreed. A prompt-injected or
+  careless model can send `confirmed: true` on its own. What does not depend on
+  the model: network off without `--allow-network`, Tor stays Tor, Tor fails
+  closed, no destructive or sending tools. Keep your client's per-tool approval
+  prompt on for `openfoia_search`.
+- **The client config is the switch.** Anyone, or any agent with file-editing
+  tools (Claude Code has them), who can edit the client's MCP configuration can
+  add `--allow-network`. Putting `OPENFOIA_DB_PASSWORD` in that configuration
+  stores your database password there in plaintext.
+- **Client logs.** MCP clients keep a server's stderr in log files. The default
+  log lines carry no content, but `--verbose` can log queries and page text.
+- **Document text can address the model.** Tool descriptions label all results
+  as untrusted data, never instructions, but a model can still be manipulated
+  by text it reads. The gates above are what limit the damage.
 
 ---
 

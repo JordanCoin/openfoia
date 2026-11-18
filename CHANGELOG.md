@@ -25,6 +25,21 @@ exhaustive lists.
   older results after retrieval. The agent interface has the same search as
   the `search_records` tool, which needs `allow_network` in the agent config
   and a `confirmed` call after the user saw the warning (#66).
+- `openfoia mcp serve`: a local MCP server for Claude Desktop, Claude Code and
+  other MCP clients, over stdin/stdout only (no network port). Optional extra:
+  `openfoia install-extras mcp`; `openfoia mcp tools` lists the tools without
+  it. `openfoia_search` is the agent's `search_records` (same warning, same
+  JSON as `openfoia search --json`): it sends nothing unless the server was
+  started with `--allow-network`, the first call only returns the warning,
+  a configured Tor route cannot be switched to direct, and Tor fails closed.
+  Read-only local tools: `openfoia_docs_grep` (keyword, or semantic when that
+  extra and model are installed), `openfoia_read_page`, `openfoia_list_cases`,
+  `openfoia_case_summary`, `openfoia_list_requests`, `openfoia_entities`. No
+  tool deletes, purges, sends requests, email, fax or mail, ingests files,
+  takes a file path or changes config. stdout carries only protocol messages;
+  logs go to stderr without queries or document text. Everything a tool
+  returns goes to the client's model provider: see `docs/THREAT_MODEL.md`
+  (#66).
 - `records search --source courtlistener` and `records fetch -s courtlistener`:
   federal court dockets and filings from CourtListener's RECAP archive, and
   case law (#120). `--type` picks r (dockets with matching filings, the
@@ -150,6 +165,9 @@ exhaustive lists.
 
 ### Fixed
 
+- The GLiNER download notice said about 300 MB; gliner 0.2.30 downloads both
+  weight formats of `urchade/gliner_medium-v2.1`, about 1.6 GB. It now says so
+  (measured in `docs/benchmarks/gliner2.md`).
 - **`analyze export` wrote no relationships.** It passed each link's ends as
   database ids, but the FollowTheMoney writer joins them to entities by name, so
   every relationship was dropped and the export held only the entities.
