@@ -52,6 +52,17 @@ exhaustive lists.
 - Entity extraction drops full sentences, run-on lines over 80 characters,
   and OCR garbage like `EC .Orchestrating a or g-?te' 22`, and down-weights
   punctuation-heavy text and PERSON hits over 5 words (#57).
+- **Names in non-Latin scripts were thrown away by every extractor.** Entity
+  scoring counted only `A-Z` letters and looked for an `A-Z` capital, so every
+  name in Cyrillic, Greek, Arabic, Persian, Hebrew, Devanagari, Bengali, Thai,
+  Chinese, Japanese, Korean, Georgian, Armenian or Ethiopic script scored 0 and
+  was dropped, whether spaCy, GLiNER or an LLM found it. Scoring now counts
+  letters in any script, treats vowel signs and harakat as part of the word,
+  counts a Han, kana or hangul character as a syllable (so a two-character
+  Chinese name is a name), and applies the no-capital-letter penalty only to
+  scripts that have capitals. Scores for Latin text are unchanged: an
+  old-versus-new comparison over 8.5 million ASCII scorings found no
+  difference. The regex fallback still only finds Latin-script names.
 - `network.tor: true` was ignored by `records search -s <source>` (every source
   except cia), `records search --all-sources` (all sources, cia included),
   `records fetch -s documentcloud`, `records fetch -s nara` without

@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -213,6 +214,62 @@ _CONNECTORS = frozenset(
 # One plausible name token in any script: "U.S.", "AT&T", "O'Brien", "Smith-Jones", "Müller"
 _NAME_TOKEN = re.compile(r"^[^\W_]+(?:[.&'\u2019\-][^\W_]+)*\.?['\u2019]?$")
 
+# The checks below measure names in any script, not only Latin. Three things differ:
+# - Han, kana and hangul carry a syllable or a word in one character, so a two-character
+#   Chinese or Korean name is a whole name. Those characters count as two.
+# - Indic, Thai and Arabic write vowels and harakat as combining marks. They are part of
+#   the word (`\w` does not match them), not punctuation.
+# - Arabic, Hebrew, CJK, Indic and Thai have no capital letters, and Georgian is
+#   written in lowercase Mkhedruli, so "no capital letter" means nothing there.
+_ZERO_WIDTH_JOINERS = "\u200c\u200d"  # ZWNJ/ZWJ, inside Persian and Indic words
+
+
+def _is_wide(c: str) -> bool:
+    """Han, kana or hangul: one character is a syllable or a word."""
+    return (
+        "\u3040" <= c <= "\u30ff"  # hiragana, katakana
+        or "\u3400" <= c <= "\u4dbf"  # CJK extension A
+        or "\u4e00" <= c <= "\u9fff"  # CJK unified ideographs
+        or "\uac00" <= c <= "\ud7af"  # hangul syllables
+        or "\uf900" <= c <= "\ufaff"  # CJK compatibility ideographs
+        or "\uff66" <= c <= "\uff9f"  # halfwidth katakana
+        or "\U00020000" <= c <= "\U0003134f"  # CJK extensions B and later
+    )
+
+
+def _is_mark(c: str) -> bool:
+    return unicodedata.category(c)[0] == "M" or c in _ZERO_WIDTH_JOINERS
+
+
+def _width(s: str) -> int:
+    """len(s), with wide characters counted twice."""
+    return sum(2 if _is_wide(c) else 1 for c in s)
+
+
+def _letter_count(s: str) -> int:
+    """Letters and combining marks, with wide characters counted twice."""
+    return sum(2 if _is_wide(c) else 1 for c in s if c.isalpha() or _is_mark(c))
+
+
+def _strip_marks(w: str) -> str:
+    return "".join(c for c in w if not _is_mark(c))
+
+
+def _is_lowercase_letter(c: str) -> bool:
+    """A lowercase letter in a script that has capitals (Georgian Mkhedruli does not count)."""
+    return c.islower() and not "\u10d0" <= c <= "\u10ff"
+
+
+def _lacks_capital(s: str) -> bool:
+    """Written in a cased script but with no capital letter anywhere."""
+    cased = [c for c in s if c.isupper() or _is_lowercase_letter(c)]
+    return bool(cased) and not any(c.isupper() for c in cased)
+
+
+def _punctuation_ratio(s: str) -> float:
+    """Share of punctuation and symbols; combining marks are letters, not punctuation."""
+    return sum(1 for c in s if unicodedata.category(c)[0] in "PS") / len(s)
+
 
 def _surface_clean(text: str) -> str:
     """Normalize whitespace and strip trailing punctuation."""
@@ -249,7 +306,7 @@ def _mention_score(m: Mention) -> float:
         return 0.0
 
     # NER types with ≤2 letters (not an acronym)
-    if m.entity_type in _NER_TYPES and (len(s) < 3 or len(re.sub(r"[^A-Za-z]", "", s)) <= 2):
+    if m.entity_type in _NER_TYPES and (_width(s) < 3 or _letter_count(s) <= 2):
         return 0.0
 
     # Names are short; anything this long is a sentence or a run-on line
@@ -268,12 +325,14 @@ def _mention_score(m: Mention) -> float:
     # when the only period sits on an abbreviation ("... by Acme Inc.").
     if m.entity_type in _NER_TYPES and len(words) >= 6:
         content = [w for w in words if w.lower() not in _CONNECTORS and w != "&"]
-        if content and sum(w[:1].islower() for w in content) * 2 > len(content):
+        if content and sum(_is_lowercase_letter(w[:1]) for w in content) * 2 > len(content):
             return 0.0
 
     garbled = 0
     if m.entity_type in _NER_TYPES:
-        garbled = sum(1 for w in words if w != "&" and not _NAME_TOKEN.match(w.strip(',;:()"')))
+        garbled = sum(
+            1 for w in words if w != "&" and not _NAME_TOKEN.match(_strip_marks(w.strip(',;:()"')))
+        )
         if garbled >= 2:
             return 0.0
 
@@ -296,18 +355,15 @@ def _mention_score(m: Mention) -> float:
         base -= 0.45
     if k in _CONCEPTS:
         base -= 0.60
-    # No uppercase at all in a NER entity is suspicious
-    if m.entity_type in _NER_TYPES and not re.search(r"[A-Z]", s):
+    # No capital letter at all, in a script that has them, is suspicious
+    if m.entity_type in _NER_TYPES and _lacks_capital(s):
         base -= 0.35
     # Single short word (non-acronym)
-    if m.entity_type in _NER_TYPES and len(words) == 1 and len(s) <= 3:
+    if m.entity_type in _NER_TYPES and len(words) == 1 and _width(s) <= 3:
         base -= 0.45
     if garbled:
         base -= 0.30
-    if (
-        m.entity_type in _NER_TYPES
-        and sum(1 for c in s if not c.isalnum() and not c.isspace()) / len(s) > 0.25
-    ):
+    if m.entity_type in _NER_TYPES and _punctuation_ratio(s) > 0.25:
         base -= 0.50
     if (
         m.entity_type == EntityType.PERSON
