@@ -108,10 +108,14 @@ jobs:
         with:
           python-version: "3.12"
 
+      # fonts-droid-fallback (~2 MB) covers the CJK labels; fonts-noto-cjk was
+      # 61 MB and took over 17 minutes from a slow runner mirror. A stuck mirror
+      # now fails this step quickly instead of holding the job.
       - name: Install fonts for the Arabic, Hebrew and CJK label checks
+        timeout-minutes: 8
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q fonts-dejavu-core fonts-noto-cjk
+          sudo apt-get update -q -o Acquire::Retries=3
+          sudo apt-get install -y -q -o Acquire::Retries=3 fonts-dejavu-core fonts-droid-fallback
 
       - name: Install dependencies
         run: |
