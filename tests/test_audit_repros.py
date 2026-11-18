@@ -557,7 +557,6 @@ def test_a16_tor_browse_proxy_scheme_is_supported_by_chromium():
 # ---------------------------------------------------------------------------
 
 
-@audit("A17 workflows use tag-pinned actions and persist a contents:write token")
 def test_a17_release_workflow_pins_actions_and_drops_credentials():
     import yaml
 

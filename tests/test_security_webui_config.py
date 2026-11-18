@@ -691,3 +691,62 @@ def test_tor_browse_makes_no_local_dns_lookup(tmp_path):
     assert tor.get("title") == "via-socks", tor
     assert [0x03, _TEST_HOST, 80] in tor["connects"], tor
     assert tor_dns == [], f"local DNS lookup in Tor mode: {tor_dns[:3]}"
+
+
+# ---------------------------------------------------------------------------
+# A17: workflows run pinned code, and the write token never meets PyPI code
+# ---------------------------------------------------------------------------
+
+_WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
+
+
+def _jobs(path):
+    import yaml
+
+    return yaml.safe_load(path.read_text())["jobs"]
+
+
+@pytest.mark.parametrize("path", _WORKFLOWS, ids=lambda p: p.name)
+def test_every_action_is_pinned_to_a_commit_with_its_version_named(path):
+    import re
+
+    uses = [ln.strip() for ln in path.read_text().splitlines() if re.match(r"\s*-?\s*uses:", ln)]
+    assert uses, "no actions found: is the parser still right?"
+    pinned = re.compile(r"-?\s*uses: [\w.-]+/[\w./-]+@[0-9a-f]{40} # v\d+\.\d+\.\d+")
+    for line in uses:
+        assert pinned.fullmatch(line), line
+
+
+@pytest.mark.parametrize("path", _WORKFLOWS, ids=lambda p: p.name)
+def test_no_checkout_leaves_a_token_in_git_config(path):
+    for name, job in _jobs(path).items():
+        for step in job["steps"]:
+            if step.get("uses", "").startswith("actions/checkout@"):
+                assert (step.get("with") or {}).get("persist-credentials") is False, name
+
+
+@pytest.mark.parametrize("path", _WORKFLOWS, ids=lambda p: p.name)
+def test_workflow_token_defaults_to_read_only(path):
+    import yaml
+
+    assert yaml.safe_load(path.read_text())["permissions"] == {"contents": "read"}
+
+
+def test_only_the_publish_job_can_write_and_it_installs_nothing():
+    jobs = _jobs(REPO / ".github" / "workflows" / "release.yml")
+    writers = [n for n, j in jobs.items() if j.get("permissions", {}).get("contents") == "write"]
+    assert writers == ["publish"]
+
+    publish = jobs["publish"]
+    needs = publish["needs"]
+    assert "verify" in ([needs] if isinstance(needs, str) else needs)
+    assert publish["steps"][0]["with"]["ref"] == "${{ needs.verify.outputs.sha }}"
+    scripts = "\n".join(s.get("run", "") for s in publish["steps"])
+    for forbidden in ("pip ", "pip3 ", "pytest", "-e .", "requirements", "uv ", "poetry"):
+        assert forbidden not in scripts, f"publish job runs {forbidden!r} next to the write token"
+    assert "scripts/release.py" in scripts and "gh release create" in scripts
+
+    verify = jobs["verify"]
+    assert verify["permissions"] == {"contents": "read"}
+    verify_scripts = "\n".join(s.get("run", "") for s in verify["steps"])
+    assert "pytest" in verify_scripts and "ruff check" in verify_scripts

@@ -50,15 +50,28 @@ behavior bumps the major.
 
    Its job summary shows a preview of the release notes.
 
-5. Merge the pull request. The **Publish release** job then:
+5. Merge the pull request. Two jobs then run:
 
-   1. checks out the exact commit the merge put on `main`
-   2. re-runs the release check, lint, format check and test suite on that
-      commit, the same selection as `ci.yml`
-   3. creates tag `v4.3.0` on that commit and publishes the release titled
-      `OpenFOIA v4.3.0`
+   1. **Verify release commit** checks out the exact commit the merge put on
+      `main` and re-runs the release check, lint, format check and test suite
+      on it, the same selection as `ci.yml`. It installs the project and its
+      dependencies, so its token can only read the repository.
+   2. **Publish release** starts only if that passed. It checks out the same
+      commit, confirms the version and commit match what was verified, checks
+      the tag again, then creates tag `v4.3.0` on that commit and publishes
+      the release titled `OpenFOIA v4.3.0`. It is the only job that can write
+      to the repository, and it installs nothing: it runs the stdlib-only
+      `scripts/release.py` and the runner's `gh`.
 
    If any step fails, nothing is tagged or published.
+
+   Every action in `.github/workflows/` is pinned to a full commit SHA, with
+   the release it came from in a comment (`# v4.4.0`), and no checkout keeps
+   the token in `.git/config` (`persist-credentials: false`). To update an
+   action, look up the new tag's commit (`git ls-remote
+   https://github.com/actions/checkout 'refs/tags/v4*'`; for an annotated tag
+   take the commit on its `^{}` line) and change the SHA and the comment
+   together.
 
 Edit the release title or notes on GitHub afterwards if you want a friendlier
 headline; the tag and commit are what matter.

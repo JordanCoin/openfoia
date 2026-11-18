@@ -272,6 +272,12 @@ exhaustive lists.
   unless you set them yourself; set `HF_HOME` to keep using models already
   downloaded on this machine. What the OS itself records (swap, temp files,
   browser and shell history) is unchanged; see `docs/THREAT_MODEL.md`.
+- Release workflow: every GitHub Action is pinned to a full commit SHA, no
+  checkout keeps the token in `.git/config`, and the release is split so the
+  job that installs dependencies and runs the tests has a read-only token,
+  while the job that tags and publishes (the only one that can write)
+  installs nothing and acts on the commit that was tested. CI's token is
+  read-only too. See `docs/RELEASING.md`.
 
 ## [4.7.0] - 2026-10-23
 
