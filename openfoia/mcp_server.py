@@ -46,6 +46,7 @@ import json
 import logging
 import os
 import sys
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -444,8 +445,10 @@ async def call_tool(name: str, arguments: Any, opts: ServerOptions) -> tuple[dic
         if spec.network:
             payload = await spec.handler(args, opts)
         else:
-            # Local tools are synchronous SQLite work; keep the protocol loop responsive.
-            payload = await asyncio.to_thread(spec.handler, args)
+            # Local tools are synchronous SQLite work: run them off the protocol
+            # loop, one at a time (a client may send calls concurrently, and
+            # grep and semantic search write their indexes on first use).
+            payload = await asyncio.to_thread(_one_at_a_time, spec.handler, args)
     except ToolError as e:
         return {"error": str(e)}, True
     except Exception as e:
@@ -454,6 +457,14 @@ async def call_tool(name: str, arguments: Any, opts: ServerOptions) -> tuple[dic
         logger.error(f"Tool {name} failed ({type(e).__name__})")
         return {"error": f"Tool '{name}' failed ({type(e).__name__})."}, True
     return payload, "error" in payload
+
+
+_DB_LOCK = threading.Lock()
+
+
+def _one_at_a_time(handler: Callable[[dict[str, Any]], dict[str, Any]], args: dict[str, Any]):
+    with _DB_LOCK:
+        return handler(args)
 
 
 def dumps(payload: dict[str, Any]) -> str:
@@ -583,10 +594,12 @@ def _semantic(session: Any, query: str, limit: int, doc_ids: list[str] | None):
 
 def _tool_read_page(args: dict[str, Any]) -> dict[str, Any]:
     from .cli import _doc_cite
+    from .doctext import backfill_single_pages
     from .models import DocumentPage, Request
 
     number = args.get("page", 1)
     with _session() as session:
+        backfill_single_pages(session.connection())  # as `docs show` does
         doc = _resolve_doc(session, args["document"])
         req = session.get(Request, doc.request_id) if doc.request_id else None
         cite = _doc_cite(session, doc, req)
