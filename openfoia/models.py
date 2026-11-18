@@ -5,6 +5,7 @@ Core entities:
 - Request: A single FOIA request with full lifecycle tracking
 - Document: A received document (response, fee letter, denial, etc.)
 - DocumentPage: Per-page text of a Document
+- ExtractionRun: One entity-extraction pass over a document
 - Entity: Extracted person, org, location, etc. from documents
 - Campaign: Coordinated crowdsourced request effort
 - Case: One investigation, grouping fetched documents and logged searches
@@ -19,17 +20,20 @@ from uuid import uuid4
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     Column,
     DateTime,
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Table,
     Text,
     UniqueConstraint,
     create_engine,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -311,6 +315,9 @@ class Document(Base):
     # Relationships
     request: Mapped[Request] = relationship(back_populates="documents")
     entities: Mapped[list[Entity]] = relationship(back_populates="source_document")
+    extraction_runs: Mapped[list[ExtractionRun]] = relationship(
+        back_populates="document", cascade="all, delete-orphan", passive_deletes=True
+    )
     pages: Mapped[list[DocumentPage]] = relationship(
         back_populates="document",
         order_by="DocumentPage.page_number",
@@ -342,6 +349,45 @@ class DocumentPage(Base):
     document: Mapped[Document] = relationship(back_populates="pages")
 
 
+class ExtractionRun(Base):
+    """One entity-extraction pass over a document (migration 008).
+
+    Re-extracting adds a run and keeps the earlier ones. At most one run per
+    document is current: the newest, unless the user picked another. Readers
+    use only the current run's entities (see ``openfoia.extraction_runs``).
+    """
+
+    __tablename__ = "extraction_runs"
+    __table_args__ = (
+        Index(
+            "uq_extraction_runs_current",
+            "document_id",
+            unique=True,
+            sqlite_where=text("is_current = 1"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    document_id: Mapped[str] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), index=True
+    )
+    #: llm / gliner / spacy / regex / ensemble; "unknown" for entities stored
+    #: before runs were recorded
+    backend: Mapped[str] = mapped_column(String(32))
+    #: GLiNER model id, spaCy pipeline or LLM model name; None for regex
+    model: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    #: SHA-256 of the LLM prompt template (LLM runs only)
+    prompt_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    #: None when not known (entities stored before runs were recorded)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    entity_count: Mapped[int] = mapped_column(Integer, default=0)
+    is_current: Mapped[bool] = mapped_column(Boolean, default=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    document: Mapped[Document] = relationship(back_populates="extraction_runs")
+
+
 class Entity(Base):
     """An entity extracted from documents (person, org, etc.)."""
 
@@ -349,6 +395,11 @@ class Entity(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     document_id: Mapped[str] = mapped_column(ForeignKey("documents.id"))
+    #: The run that produced this entity; None for rows stored before 008
+    #: and for FtM imports.
+    extraction_run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("extraction_runs.id", ondelete="CASCADE"), nullable=True, index=True
+    )
 
     # Entity info
     entity_type: Mapped[EntityType] = mapped_column(Enum(EntityType))

@@ -98,9 +98,25 @@ exhaustive lists.
   public-inspection host) and ingests it into the active case; a PDF with no
   extractable text is kept on disk but not stored, so a later fetch retries
   it (#55).
+- Extraction runs (#63). Each `analyze extract` is stored as a run with its
+  backend (`llm`, `gliner`, `spacy`, `regex` or `ensemble`), model, start and
+  end time, entity count and, for LLM runs, a SHA-256 of the prompt template.
+  `openfoia analyze runs <doc-id>` lists a document's runs;
+  `openfoia analyze extract <doc-id> --prefer-run <run-id>` makes an earlier
+  run the one in use; `openfoia analyze runs <doc-id> --prune` deletes every
+  other run with its entities and relationships. Database migration 008 adds
+  the `extraction_runs` table and is applied automatically.
 
 ### Changed
 
+- `analyze extract --force` no longer deletes the document's earlier
+  entities: it adds a new run and keeps the old ones in the database until
+  `analyze runs --prune` or `openfoia purge`. The graph, crossref, FtM export,
+  case summary, web UI and agent tools use only the newest run of each
+  document (or the one picked with `--prefer-run`), so a re-extracted document
+  is not counted twice. Entities extracted before this release keep working;
+  the first `--force` re-extraction lists them as a run with backend `unknown`.
+- `analyze export` writes only relationships between the entities it exports.
 - The graph page draws one node per entity (same type and label). Mentions of
   the same label with different types used to be merged into one node; they are
   now separate. The header and `analyze graph` output report entities and

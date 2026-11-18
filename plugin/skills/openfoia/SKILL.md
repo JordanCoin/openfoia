@@ -127,6 +127,7 @@ Never quote a passage you did not get from `docs grep` or `docs show`, and never
 openfoia analyze extract <doc-id> --tier gliner
 openfoia analyze extract <doc-id> --tier regex
 openfoia analyze extract <doc-id>                   # LLM-validated; slow on local models, cloud providers leave the machine
+openfoia analyze runs <doc-id>                      # each extraction is a run; graphs use the newest
 openfoia analyze graph --name pas-children --no-text --view
 openfoia analyze graph --mentions "Gittinger" "Hocking"
 openfoia crossref -d <doc-id>
@@ -201,7 +202,7 @@ When a jurisdiction sets no clock the status says "no statutory deadline" and ne
 - `records fetch` supports `documentcloud` and `cia`; for MuckRock use `records download` then `docs ingest`.
 - The CIA reading room source is blocked by cia.gov's bot filter today. Do not try to automate a browser around it.
 - Documents stored before 4.3.0 have one page; re-fetch with `--refresh` for real page numbers.
-- No versioned extraction runs: `--force` overwrites entities.
+- `analyze extract --force` adds a run and keeps the earlier entities in the database; `analyze runs <doc-id> --prune` deletes them. Pick an earlier run with `analyze extract <doc-id> --prefer-run <run-id>`.
 - The database is not encrypted until `openfoia install-extras encryption` and `openfoia db encrypt --password <pw>`.
 - `openfoia purge` is an ordinary delete unless `--secure`; on SSDs even that may leave old blocks. Say so.
 
