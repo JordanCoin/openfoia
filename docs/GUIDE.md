@@ -139,6 +139,59 @@ openfoia records fetch 144765 --source cia
 openfoia records search "Acme Corp" --all-sources
 ```
 
+#### One search, every source: `openfoia search`
+
+```bash
+openfoia search "Acme Corp"                                 # every source, configured route
+openfoia search "Acme Corp" -s sec -s opencorporates -n 5   # only these, 5 results each
+openfoia search "Acme Corp" --egress tor --json --yes > hits.json
+openfoia search "water contamination" -s documentcloud,regulations --since 2020-01-01
+```
+
+Before anything leaves, it prints the sources that will get the query, the
+route, and what the route does not hide (the sources still see the query
+itself), then asks. `--yes` skips the question; answering no sends nothing.
+With `--json` the warning, the question and the per-source lines go to
+stderr and stdout carries one JSON document:
+
+```json
+{
+  "query": "Acme Corp",
+  "egress": "tor",
+  "sources": [
+    {"source": "documentcloud", "status": "ok", "total": 214, "returned": 10, ...},
+    {"source": "muckrock", "status": "skipped", "reason": "personal API token not sent over Tor", ...},
+    {"source": "sec", "status": "error", "reason": "HTTP 503", ...}
+  ],
+  "results": [
+    {"source": "documentcloud", "title": "...", "url": "https://...", "snippet": "...",
+     "retrieved_at": "2026-11-17T14:02:31Z", "egress": "tor", "id": "23058027",
+     "date": "1977-08-03", "type": "DOCUMENT"}
+  ]
+}
+```
+
+- Each source is ok, `no_results` (it answered with nothing), `error` (it
+  failed; the reason says how) or `skipped` (it was not sent the query; the
+  reason says why). One source failing does not stop the others. Exit 0
+  means every source answered or was skipped, 2 that some errored, 1 that
+  none answered.
+- `--egress tor` or `--egress direct` overrides `network.tor` for one run.
+  Tor fails closed: if the Tor proxy is not reachable or `socksio` is not
+  installed (`openfoia install-extras tor`), the command stops before the
+  warning and nothing is sent.
+- Over Tor, personal keys are not sent. MuckRock and NARA cannot work
+  without one, so they are skipped. `fec`, `govinfo` and `regulations` use
+  the shared DEMO_KEY instead, and the warning lists them.
+- Sources are searched four at a time; each keeps its own pacing (SEC and
+  NARA wait between requests) and no host gets more than ten requests a
+  second.
+- There is no relevance score: results are in each source's own order,
+  grouped by source.
+- Result text comes from third parties. The terminal view strips control
+  characters; `--json` escapes everything outside ASCII.
+- When a case is active the query is logged to it, as with `records search`.
+
 Every source call prints which third party it contacts before the request
 leaves. Current limitation: cia.gov's bot filter blocks non-browser clients,
 so `--source cia` search and fetch report "blocked" today rather than
@@ -450,6 +503,7 @@ openfoia analyze export               # Export as FtM
 openfoia analyze import data.ftm.json # Import FtM data
 
 # Data sources
+openfoia search "query"               # every source, asks first
 openfoia records search "query" --source muckrock
 openfoia records search "query" --source opencorporates
 openfoia records search "query" --source sec

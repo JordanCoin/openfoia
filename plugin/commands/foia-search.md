@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(openfoia records search:*), Bash(openfoia agency search:*)
+allowed-tools: Bash(openfoia search:*), Bash(openfoia records search:*), Bash(openfoia agency search:*)
 description: Search DocumentCloud, MuckRock, OpenCorporates, and SEC for existing records on a topic before filing a new FOIA
 ---
 
@@ -8,6 +8,12 @@ Search public records for the user's topic: $ARGUMENTS
 **Before running:** confirm with the user in one sentence that this hits external APIs (DocumentCloud, MuckRock, OpenCorporates, SEC). Only skip the warning if the user has already approved network use in this session.
 
 Follow these steps:
+
+0. For a first pass over every source, after the user agreed to the network use:
+   ```bash
+   openfoia search "$ARGUMENTS" --json --yes --limit 10
+   ```
+   Report each source's status from `sources` (ok / no_results / error with reason / skipped with reason), then group `results` by source. Errors and skips mean that source was not searched; say so. If the user wants Tor, add `--egress tor`; if that exits 1 because Tor is down, stop and tell them rather than going direct.
 
 1. Run DocumentCloud first (it mirrors the CIA CREST archive and needs no token), ranked by the user's keywords; MuckRock holds completed FOIA responses but needs `OPENFOIA_MUCKROCK_TOKEN`:
    ```bash

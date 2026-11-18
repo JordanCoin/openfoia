@@ -149,6 +149,29 @@ that disclosure.
 | [OpenSanctions](https://opensanctions.org/) | Sanctions lists and politically exposed persons | Cross-reference source. API needs a key (`OPENFOIA_OPENSANCTIONS_API_KEY`; free for journalists). Offline: download `targets.simple.csv` (449 MB) from the [default dataset](https://www.opensanctions.org/datasets/default/) and pass `--opensanctions-data <dir>` with `--sources opensanctions-local`, nothing leaves the machine. Data license [CC BY-NC 4.0](https://www.opensanctions.org/licensing/): free for journalists and non-commercial use |
 | [ICIJ Offshore Leaks](https://offshoreleaks.icij.org/) | Panama, Pandora, and Paradise Papers | Cross-reference source; local CSV download |
 
+### Search every source at once
+
+`openfoia search` sends one query to every `records search` source (or the
+ones named with `--source`) and reports each one as ok, no results, error
+(with the reason) or skipped (with the reason). It names the sources and the
+route (Tor or direct) and asks before anything is sent; `--yes` skips the
+question.
+
+```bash
+openfoia search "Acme Corp"
+openfoia search "Acme Corp" --source sec --source opencorporates --limit 5
+openfoia search "Acme Corp" --egress tor --json --yes > hits.json
+```
+
+Every result carries `source`, `title`, `url`, `snippet`, `retrieved_at` (UTC)
+and `egress` (`tor` or `direct`). `--egress tor` stops with an error when Tor
+is not running instead of going direct; without `--egress` the configured
+route (`network.tor`) is used. Over Tor, MuckRock and NARA are skipped because
+they only work with your personal key, which would identify you. `--since
+YYYY-MM-DD` drops results dated earlier after they arrive; the sources still
+get the same query. The agent interface has the same search as the
+`search_records` tool.
+
 ## Documentation
 
 | Guide | What |
