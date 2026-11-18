@@ -250,6 +250,20 @@ exhaustive lists.
   the session (`--host-resolver-rules`). The browser also gets a throwaway
   home directory inside the data directory, so its crash reports and caches
   do not land in your home directory.
+- `openfoia serve` no longer puts the web UI's session token on the browser's
+  command line, where every local account could read it. The browser opens a
+  login link (`/login?nonce=...`) that works once and expires after 60
+  seconds; it sets an HttpOnly, SameSite=Strict session cookie and redirects
+  to `/`. Press Enter in the server's terminal for a fresh link. A link used
+  twice shows "already used" and the terminal prints a warning. The token is
+  no longer accepted from a `?token=` query string: the UI uses the cookie,
+  API clients send `Authorization: Bearer`. The cookie is ignored on requests
+  a browser marks as coming from another origin (such as a page on another
+  local port), and the CORS allowance for every localhost origin is gone.
+  Every response, `/static/*` and `/api/health` included, carries
+  `Cross-Origin-Resource-Policy: same-origin` and
+  `X-Content-Type-Options: nosniff`. The startup banner shows the real data
+  directory instead of always `~/.openfoia/`.
 
 ## [4.7.0] - 2026-10-23
 

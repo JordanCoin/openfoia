@@ -385,7 +385,6 @@ def test_a9_lookalike_host_is_not_called_local(data_dir, monkeypatch, capsys):
 # ---------------------------------------------------------------------------
 
 
-@audit("A10 serve passes ?token= to the browser on its command line")
 def test_a10_token_not_in_browser_argv(monkeypatch):
     """Any local account can read /proc/<pid>/cmdline, take the token and read
     the whole investigation through 127.0.0.1, which bypasses the 0700 data

@@ -451,19 +451,20 @@ def serve(
     Your data stays on your machine. The server only binds to localhost.
     For maximum privacy, we recommend opening in a private/incognito window.
 
+    The browser is opened at a login link (/login?nonce=...) that works once
+    and expires after 60 seconds; it logs the browser in with a session cookie.
+    Press Enter in this terminal to print a fresh link (for another browser,
+    or after the first one expired).
+
     Examples:
         openfoia serve                    # Auto-select browser, private mode
         openfoia serve --browser firefox  # Use Firefox
         openfoia serve --tor              # Use Tor Browser or Brave with Tor
-        openfoia serve --no-browser       # Just print URL, don't open
+        openfoia serve --no-browser       # Just print the login link
     """
-    import secrets
     import socket
 
     from .browser import BrowserType, detect_browsers, launch_browser, print_browser_menu
-
-    # Generate session token for security
-    token = secrets.token_urlsafe(16)
 
     # Find available port if not specified
     if port == 0:
@@ -471,16 +472,7 @@ def serve(
             s.bind(("127.0.0.1", 0))
             port = s.getsockname()[1]
 
-    url = f"http://{host}:{port}/?token={token}"
-
-    rprint("\n[bold green]🔒 OpenFOIA[/bold green]")
-    rprint("─" * 50)
-    rprint(f"[cyan]Local server:[/cyan] {url}")
-    rprint("[cyan]Data stored:[/cyan]  ~/.openfoia/")
-    rprint("─" * 50)
-    rprint("[dim]Your data never leaves this machine.[/dim]")
-    rprint("[dim]Press Ctrl+C to stop the server.[/dim]\n")
-
+    open_browser = None
     if not no_browser:
         browsers = detect_browsers()
 
@@ -522,16 +514,22 @@ def serve(
 
         if target_browser:
             mode = "Tor" if tor else ("private" if private else "normal")
-            rprint(f"[green]Opening {target_browser.name} ({mode} mode)...[/green]\n")
-            launch_browser(url, target_browser, private=private, tor_mode=tor)
-        else:
-            rprint("[yellow]No browser auto-selected. Copy the URL above.[/yellow]\n")
+            rprint(f"[green]Opening {target_browser.name} ({mode} mode)...[/green]")
 
-    # Start the server
+            def open_browser(url: str) -> None:
+                # The link is a single-use login nonce, not the session token:
+                # the browser's command line is readable by every local account.
+                launch_browser(url, target_browser, private=private, tor_mode=tor)
+
+        else:
+            rprint("[yellow]No browser auto-selected. Open the login link below.[/yellow]")
+
+    # Start the server. It prints the login link (single-use, short-lived) and
+    # opens the browser once it is accepting connections.
     from .db import get_data_dir
     from .server import run_server
 
-    run_server(host=host, port=port, token=token, data_dir=get_data_dir())
+    run_server(host=host, port=port, data_dir=get_data_dir(), open_browser=open_browser)
 
 
 console = Console()

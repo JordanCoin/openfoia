@@ -529,7 +529,8 @@ def test_web_upload_strips_metadata_and_reports_it(tmp_path, data_dir):
 
     resp = client.post(
         "/api/documents/upload",
-        params={"token": "t", "request_id": "req-1"},
+        params={"request_id": "req-1"},
+        headers={"Authorization": "Bearer t"},
         files={"file": ("memo.docx", io.BytesIO(body), "application/octet-stream")},
     )
 
@@ -547,7 +548,8 @@ def test_web_upload_reports_a_file_it_could_not_clean(tmp_path, data_dir, monkey
 
     resp = client.post(
         "/api/documents/upload",
-        params={"token": "t", "request_id": "req-1"},
+        params={"request_id": "req-1"},
+        headers={"Authorization": "Bearer t"},
         files={"file": ("memo.odt", io.BytesIO(body), "application/octet-stream")},
     )
 

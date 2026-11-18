@@ -1,8 +1,9 @@
-"""Security tests for portable mode, the web UI login, and `browse --tor`.
+"""Security tests for portable mode, the web UI login, `browse --tor` and CI.
 
 Companion to tests/test_audit_repros.py findings A7 (portable mode wrote to the
-host's home directory), A10 (the web UI token sat in the browser's argv) and
-A16 (`browse --tor` could never connect).
+host's home directory), A10 (the web UI token sat in the browser's argv), A16
+(`browse --tor` could never connect) and A17 (the release job ran unpinned
+actions with a write token).
 """
 
 from __future__ import annotations
@@ -15,11 +16,303 @@ import struct
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent
+
+
+# ---------------------------------------------------------------------------
+# A10: the web UI token never travels in a URL or on a command line
+# ---------------------------------------------------------------------------
+
+TOKEN = "long-lived-session-token"
+
+
+@pytest.fixture
+def webui_dir(tmp_path, monkeypatch):
+    """A data dir with an initialised database, as `openfoia serve` would use."""
+    d = tmp_path / "data"
+    monkeypatch.setenv("OPENFOIA_DATA_DIR", str(d))
+    monkeypatch.delenv("OPENFOIA_DB_PASSWORD", raising=False)
+    from openfoia.db import init_db
+
+    init_db()
+    return d
+
+
+class _Clock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+
+def _app(webui_dir, clock=None):
+    from openfoia.server import LoginNonces, create_app
+
+    nonces = LoginNonces(clock=clock) if clock else LoginNonces()
+    return create_app(token=TOKEN, data_dir=webui_dir, nonces=nonces)
+
+
+def _client(app):
+    from fastapi.testclient import TestClient
+
+    return TestClient(app, base_url="http://127.0.0.1:8765", follow_redirects=False)
+
+
+def _login(client, app):
+    nonce = app.state.login_nonces.issue()
+    return nonce, client.get("/login", params={"nonce": nonce})
+
+
+def test_login_swaps_nonce_for_strict_httponly_cookie(webui_dir):
+    app = _app(webui_dir)
+    client = _client(app)
+
+    _, resp = _login(client, app)
+
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/", "the redirect must land on a clean URL"
+    cookie = resp.headers["set-cookie"]
+    assert cookie.startswith(f"openfoia_session={TOKEN};")
+    attrs = {a.strip().lower() for a in cookie.split(";")[1:]}
+    assert "httponly" in attrs
+    assert "samesite=strict" in attrs
+    assert "path=/" in attrs
+    assert resp.headers["referrer-policy"] == "no-referrer"
+
+    page = client.get("/")
+    assert page.status_code == 200 and "<title>OpenFOIA</title>" in page.text
+    assert client.get("/api/stats").status_code != 401
+
+
+def test_used_login_nonce_is_worthless(webui_dir, capsys):
+    app = _app(webui_dir)
+    nonce, first = _login(_client(app), app)
+    assert first.status_code == 303
+
+    attacker = _client(app)  # a second client, with no cookie of its own
+    replay = attacker.get("/login", params={"nonce": nonce})
+
+    assert replay.status_code == 403
+    assert "set-cookie" not in replay.headers
+    assert TOKEN not in replay.text
+    assert attacker.get("/api/stats").status_code == 401
+    assert attacker.get("/").status_code == 401
+    assert "already used" in capsys.readouterr().err
+
+
+def test_expired_login_nonce_is_refused(webui_dir):
+    clock = _Clock()
+    app = _app(webui_dir, clock)
+    client = _client(app)
+    nonce = app.state.login_nonces.issue()
+
+    clock.now += 61
+    resp = client.get("/login", params={"nonce": nonce})
+
+    assert resp.status_code == 401
+    assert "set-cookie" not in resp.headers
+
+
+def test_wrong_or_missing_nonce_is_refused(webui_dir):
+    app = _app(webui_dir)
+    client = _client(app)
+    real = app.state.login_nonces.issue()
+    near_miss = real[:-1] + ("A" if real[-1] != "A" else "B")
+
+    for params in ({"nonce": near_miss}, {"nonce": ""}, {}):
+        resp = client.get("/login", params=params)
+        assert resp.status_code == 401, params
+        assert "set-cookie" not in resp.headers
+    # The near miss did not burn the real nonce.
+    assert client.get("/login", params={"nonce": real}).status_code == 303
+
+
+def test_nonces_are_single_use_and_independent():
+    from openfoia.server import LoginNonces, NonceResult
+
+    clock = _Clock()
+    nonces = LoginNonces(ttl=60, clock=clock)
+    a, b = nonces.issue(), nonces.issue()
+    assert a != b and len(a) >= 32
+
+    assert nonces.consume(a) is NonceResult.OK
+    assert nonces.consume(a) is NonceResult.USED
+    assert nonces.consume(b) is NonceResult.OK
+    assert nonces.consume("\udcff not ascii \u00e9") is NonceResult.INVALID
+    assert nonces.consume(None) is NonceResult.INVALID
+
+    c = nonces.issue()
+    clock.now += 60
+    assert nonces.consume(c) is NonceResult.INVALID
+
+
+def test_query_string_token_is_not_accepted(webui_dir):
+    client = _client(_app(webui_dir))
+
+    assert client.get("/api/stats", params={"token": TOKEN}).status_code == 401
+    assert client.get("/", params={"token": TOKEN}).status_code == 401
+
+
+def test_bearer_header_is_accepted_for_api_clients(webui_dir):
+    client = _client(_app(webui_dir))
+
+    ok = client.get("/api/stats", headers={"Authorization": f"Bearer {TOKEN}"})
+    assert ok.status_code == 200
+    assert client.get("/api/stats", headers={"Authorization": "Bearer nope"}).status_code == 401
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Sec-Fetch-Site": "same-site"},  # a page on another 127.0.0.1 port
+        {"Sec-Fetch-Site": "cross-site"},
+        {"Origin": "http://127.0.0.1:9999"},
+        {"Origin": "null"},
+    ],
+)
+def test_session_cookie_is_ignored_on_requests_from_another_origin(webui_dir, headers):
+    """The cookie is same-site for every local port; the origin must match exactly."""
+    app = _app(webui_dir)
+    client = _client(app)
+    _login(client, app)
+
+    assert client.get("/api/stats").status_code == 200
+    assert client.get("/api/stats", headers=headers).status_code == 401
+    resp = client.post(
+        "/api/requests",
+        json={"agency_id": "x", "subject": "s", "body": "b"},
+        headers=headers,
+    )
+    assert resp.status_code == 401
+
+
+def test_same_origin_fetch_with_cookie_is_accepted(webui_dir):
+    app = _app(webui_dir)
+    client = _client(app)
+    _login(client, app)
+
+    resp = client.get(
+        "/api/stats",
+        headers={"Sec-Fetch-Site": "same-origin", "Origin": "http://127.0.0.1:8765"},
+    )
+    assert resp.status_code == 200
+
+
+def test_no_cors_allowance_for_other_local_origins(webui_dir):
+    client = _client(_app(webui_dir))
+
+    resp = client.options(
+        "/api/stats",
+        headers={"Origin": "http://localhost:3000", "Access-Control-Request-Method": "GET"},
+    )
+    assert "access-control-allow-origin" not in resp.headers
+    assert "access-control-allow-credentials" not in resp.headers
+
+
+def test_web_ui_script_never_reads_a_token_from_the_url():
+    from openfoia.server import get_index_html
+
+    html = get_index_html()
+    assert "token=" not in html
+    assert "get('token')" not in html
+
+
+@pytest.mark.parametrize(
+    "path,host",
+    [
+        ("/api/health", "127.0.0.1:8765"),
+        ("/static/app.css", "127.0.0.1:8765"),
+        ("/", "127.0.0.1:8765"),
+        ("/api/stats", "127.0.0.1:8765"),
+        ("/login", "127.0.0.1:8765"),
+        ("/no-such-page", "127.0.0.1:8765"),
+        ("/api/health", "rebind.attacker.example"),
+    ],
+)
+def test_every_response_refuses_cross_origin_embedding(webui_dir, path, host):
+    """A hostile page must not be able to detect OpenFOIA by loading its resources."""
+    client = _client(_app(webui_dir))
+
+    resp = client.get(path, headers={"Host": host})
+
+    assert resp.headers.get("cross-origin-resource-policy") == "same-origin", (path, host)
+    assert resp.headers.get("x-content-type-options") == "nosniff", (path, host)
+
+
+def test_static_stylesheet_is_actually_served(webui_dir):
+    resp = _client(_app(webui_dir)).get("/static/app.css")
+    assert resp.status_code == 200
+
+
+def test_serve_prints_and_opens_a_login_link_not_the_token(webui_dir, monkeypatch, capsys):
+    import uvicorn
+
+    from openfoia import server
+
+    opened = []
+
+    class _FakeServer:
+        def __init__(self, config):
+            self.config = config
+            self.started = False
+
+        def run(self):
+            self.started = True
+            for _ in range(200):  # let the opener thread see `started`
+                if opened:
+                    break
+                time.sleep(0.01)
+
+    monkeypatch.setattr(uvicorn, "Server", _FakeServer)
+    server.run_server(port=8765, token=TOKEN, data_dir=webui_dir, open_browser=opened.append)
+
+    out = capsys.readouterr().out
+    assert TOKEN not in out
+    assert opened and TOKEN not in opened[0]
+    assert opened[0].startswith("http://127.0.0.1:8765/login?nonce=")
+    assert opened[0] in out, "the printed link must be the same single-use link"
+    assert str(webui_dir) in out, "the banner names the real data dir"
+
+
+def test_browser_launchers_never_put_a_token_on_argv(monkeypatch):
+    from openfoia import browser
+
+    seen = []
+    monkeypatch.setattr(browser.subprocess, "Popen", lambda args, **kw: seen.append(args))
+    monkeypatch.setattr(browser.subprocess, "run", lambda args, **kw: seen.append(args))
+    url = "http://127.0.0.1:8765/?token=SESSION-SECRET&view=graph"
+    chromium = browser.Browser(browser.BrowserType.CHROMIUM, "Chromium", "/usr/bin/chromium")
+    chrome = browser.Browser(browser.BrowserType.CHROME, "Chrome", r"C:\chrome.exe")
+    safari = browser.Browser(browser.BrowserType.SAFARI, "Safari", None)
+
+    browser._launch_linux(url, chromium, True, False)
+    browser._launch_windows(url, chrome, True, False)
+    browser._launch_macos(url, safari, True, False)
+    browser._launch_macos(url, chrome, False, False)
+
+    flat = [str(a) for args in seen for a in args]
+    assert len(seen) == 4
+    assert not any("SESSION-SECRET" in a for a in flat), seen
+    assert any("view=graph" in a for a in flat), "unrelated parameters are kept"
+
+
+def test_browser_launch_keeps_the_login_nonce(monkeypatch):
+    from openfoia import browser
+
+    seen = []
+    monkeypatch.setattr(browser.subprocess, "Popen", lambda args, **kw: seen.append(args))
+    b = browser.Browser(browser.BrowserType.FIREFOX, "Firefox", "/usr/bin/firefox")
+    url = "http://127.0.0.1:8765/login?nonce=abc123"
+
+    browser._launch_linux(url, b, True, False)
+
+    assert seen == [["/usr/bin/firefox", "--private-window", url]]
 
 
 # ---------------------------------------------------------------------------

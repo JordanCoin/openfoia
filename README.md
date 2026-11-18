@@ -202,7 +202,7 @@ get the same query. The agent interface has the same search as the
 
 ## Privacy
 
-Everything runs on `127.0.0.1`. Token-authenticated. Encrypted at rest (optional). Forensically purgeable. Works offline. Open source.
+Everything runs on `127.0.0.1`. Token-authenticated: `openfoia serve` opens the browser with a login link that works once and expires after 60 seconds (press Enter in its terminal for a fresh one), and the session token never appears in a URL. Encrypted at rest (optional). Forensically purgeable. Works offline. Open source.
 
 **For sensitive investigations:** `openfoia serve --tor`
 

@@ -129,6 +129,17 @@ arrive at the destination either way.
    carved from the file. `openfoia docs embed --drop` zeroes the space it frees;
    other deletes do not. `purge --secure` shreds the whole file.
 
+7. **Other accounts on the same machine and the web UI.** `openfoia serve`
+   opens the browser at a login link (`/login?nonce=...`). Any local account
+   can read a browser's command line, so the link is single-use and expires
+   after 60 seconds; the browser swaps it for an HttpOnly, SameSite=Strict
+   session cookie, and the session token itself never appears in a URL or on
+   a command line. This narrows the window, it does not close it: a program
+   already watching the process list can race the browser to the link. If
+   that happens the browser shows "Login link already used" and the terminal
+   prints a warning: stop the server and start it again. An account that can
+   read your memory or attach a debugger to your processes is out of scope.
+
 ## Semantic search embeddings
 
 `docs grep --semantic` (optional extra, `openfoia install-extras semantic`)
