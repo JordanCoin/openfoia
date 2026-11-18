@@ -40,6 +40,30 @@ exhaustive lists.
   time it frees up, and a 429 with a long `Retry-After` stops further requests
   until then. API strings are stripped of control characters and capped
   before they are shown or stored.
+- Optional, experimental: `openfoia docs grep --semantic "<query>"` ranks
+  stored pages by similarity of meaning instead of matching words (#118).
+  Needs `openfoia install-extras semantic` (model2vec and sqlite-vec, about
+  90 MB installed; the core install is unchanged) and a one-time model download
+  with `openfoia docs embed-model`. That download is the only network step: it
+  says what is sent (your IP address and the model's name, nothing from your
+  documents), asks first, honours `--tor`, checks pinned SHA-256 hashes and
+  stores the model in the data directory's `models/` rather than `~/.cache`.
+  Embedding (`openfoia docs embed`, also done by `grep --semantic` for new
+  pages) and search run offline. Models: `potion-base-8M` (English, 31 MB,
+  default), `potion-retrieval-32M` (English, 131 MB), `potion-multilingual-128M`
+  (101 languages, 531 MB, about 1.9 GB peak RAM).
+  - Caveats: results are ranked, never "no match", so read them rather than
+    count them. On a generated 1,000-page test set the default model put a
+    reworded passage in its top 10 for 3 of 10 queries (keyword grep: 0 of 10);
+    exact names and numbers are still a job for plain `docs grep`.
+    sqlite-vec is pre-1.0; where it cannot load (for example macOS's system
+    Python, which cannot load SQLite extensions) search falls back to numpy and
+    says so. sqlite-vec does load inside a SQLCipher-encrypted database.
+    Measurements: `docs/benchmarks/semantic-search.md`.
+  - Embeddings are stored in the database next to the page text (encrypted
+    with it), deleted with their page or document by database triggers, and
+    removed by `openfoia docs embed --drop` or `purge`. They can leak the text
+    they came from; `docs/THREAT_MODEL.md` says what is and is not covered.
 - `openfoia analyze graph --view`: the graph page is reworked so a large case
   can be read.
   - People, organizations and places each have a colour and a shape. Amounts,

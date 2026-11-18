@@ -90,12 +90,13 @@ OpenFOIA is local-first, but certain features make network requests:
 | `openfoia ingest` (web fetch/archive) | The URL's host | The URL you are fetching. Without `--tor`, from your real IP; the exit node also sees it when `--tor` is used |
 | `openfoia search`, `openfoia records search` | The public-records sources searched (DocumentCloud, MuckRock, SEC EDGAR, OpenCorporates, USAspending, NARA and the others in the records registry) | Your search query, from your real IP unless Tor is used (`--egress tor` or `network.tor`). `openfoia search` lists the sources and asks first; with Tor it fails closed and does not send personal API keys |
 | `openfoia crossref` | MuckRock, OpenCorporates, SEC EDGAR, DocumentCloud, OpenSanctions, USASpending, and other configured record sources | **The names of the people and organizations you are investigating** (the subject names extracted from your documents), from your real IP unless `--tor` is used. CLI warns and asks you to confirm before this happens; `--sources icij` stays fully offline |
+| `openfoia docs embed-model` (semantic search, opt-in, once) | huggingface.co and the storage host it redirects to | Your IP address (the Tor exit node's with `--tor`) and which model files you download. Nothing from your documents or searches. Embedding and `docs grep --semantic` then run offline |
 | Cloud AI summarization (opt-in) | Configured LLM API (OpenAI, etc.) | Document text sent to the API endpoint |
 | `openfoia serve` | `localhost` only | Nothing leaves the machine, but browser records local activity |
 | `install.sh` | GitHub API, GitHub releases | Your IP address; what binary you download |
 
-If you never use `send`, `ingest`, `crossref`, or cloud AI, no data leaves
-your machine during normal operation. `--tor` (or the `network.tor` config
+If you never use `send`, `ingest`, `crossref`, `docs embed-model` or cloud AI,
+no data leaves your machine during normal operation. `--tor` (or the `network.tor` config
 default) changes *who the destination sees* for `ingest` and `crossref` — it
 does not change *what* they receive: the URL or the subject names still
 arrive at the destination either way.
@@ -121,6 +122,49 @@ arrive at the destination either way.
 5. **No forward secrecy for the database.** If an attacker obtains a copy of
    your encrypted database and later obtains your password, they can decrypt
    everything. There is no per-session key rotation.
+6. **Deleted rows can linger inside the database file.** SQLite marks deleted
+   rows (page text, entities, embeddings) as free space and overwrites it only
+   when the space is reused or the file is vacuumed. With an encrypted
+   database the leftovers are encrypted too; without encryption they can be
+   carved from the file. `openfoia docs embed --drop` zeroes the space it frees;
+   other deletes do not. `purge --secure` shreds the whole file.
+
+## Semantic search embeddings
+
+`docs grep --semantic` (optional extra, `openfoia install-extras semantic`)
+stores an embedding — a list of numbers computed from the text — for every
+40-word passage of every stored page. **Treat embeddings as sensitive as the
+text they came from.** They are derived data that can leak content: published
+"embedding inversion" attacks reconstruct much of the original text from
+transformer embeddings, and the static embeddings used here are close to an
+average of word vectors, which reveals which words a passage contains.
+
+What OpenFOIA does about it:
+- Embeddings live in the same database file as the page text
+  (`document_page_vectors`), so `db encrypt` / SQLCipher encrypts them with
+  everything else, and `purge` destroys them with the file. sqlite-vec works
+  inside an encrypted database (tested with sqlcipher3-binary); it never needs
+  a second, unencrypted index.
+- They are deleted with their page: database triggers remove a page's
+  embeddings when the page is deleted, replaced (re-OCR, re-fetch) or its text
+  changes, and when its document is deleted. Foreign keys cascade as a second
+  line. `openfoia docs embed --drop` removes every embedding and keeps the text.
+- The model is downloaded once, explicitly, by `openfoia docs embed-model`
+  (see the table above), with pinned file hashes, into the data directory
+  (`models/`, portable mode respected), not into a shared `~/.cache`. Search
+  never touches the network.
+
+What it does not do:
+- The duress decoy profile has no embeddings, but the `models/` folder sits in
+  the shared data directory either way, so its presence shows that semantic
+  search was set up on this machine.
+- Embeddings deleted outside `--drop` can linger in free space inside the
+  database file (Known Limitation 6).
+- Semantic search ranks by similarity; it does not prove a page is absent.
+  Every page gets a score, and on the project's test corpus it found reworded
+  passages in its top ten only some of the time
+  (`docs/benchmarks/semantic-search.md`). Do not rely on it to clear a
+  document.
 
 ---
 
