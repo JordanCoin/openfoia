@@ -229,6 +229,21 @@ https://www.archives.gov/isoo/policy-documents/eo-13526).
   endpoint names were not read (unverified). Record groups such as RG 263
   (CIA), RG 65 (FBI) and RG 12 (Office of Education) are from memory
   (unverified).
+- **Federal court records.** Courts are outside FOIA; their filings sit in
+  PACER, which charges per page. CourtListener (Free Law Project) holds the
+  RECAP archive, copies of PACER dockets, filings, parties and attorneys that
+  RECAP users already bought, plus case law. Its REST API v4 needs a free
+  personal token for every data endpoint: anonymous calls to search, dockets
+  and docket entries returned HTTP 401 (fetched 2026-11-18:
+  https://www.courtlistener.com/api/rest/v4/search/). Default limits are 5
+  requests a minute, 50 an hour and 125 a day, rolling windows, and API
+  search queries are logged against the account unless query logging is
+  turned off in the profile (fetched 2026-11-18:
+  https://www.courtlistener.com/help/api/rest/v4/ and
+  https://www.courtlistener.com/help/api/rest/v4/search/). A filing missing
+  from RECAP is only on PACER. Whether every token can read the
+  docket-entry and document endpoints was read from CourtListener's source
+  code, not tried with a token (unverified).
 - **CREST.** The CIA Records Search Tool: records reviewed under the 25-year
   automatic declassification program. About 930,000 documents went online on
   2017-01-17 (snippet: https://intelligencecommunitynews.com/cia-posts-more-than-12-million-pages-of-crest-records-online/).
@@ -304,7 +319,7 @@ colour the district question either way.
 | 2 | Nothing. One federal deadline rule; templates cite federal FOIA. | A jurisdictions data package (statute, clock, fees, residency, appeal path per state, each entry marked verified or not), per-state templates, and clocks computed from the state rule. |
 | 3 | Nothing beyond rung 2. | Same jurisdictions work; state archives stay a research request. |
 | 4 | Federal agency table, federal templates, request tracking, deadlines from a fixed federal rule, records search on MuckRock and others, case workbench, per-page text search, cited notes and export. | Per-request clocks for extensions, tolling and the appeal window. |
-| 5 | DocumentCloud search and per-page fetch (the CREST mirror). A CIA reading-room source that honestly reports "blocked". govinfo search. Federal Register search by agency, type, date and docket, and PDF fetch from GovInfo (`-s federalregister`, unreleased). | A NARA Catalog adapter with key and monthly quota handling. |
+| 5 | DocumentCloud search and per-page fetch (the CREST mirror). A CIA reading-room source that honestly reports "blocked". govinfo search. Federal Register search by agency, type, date and docket, and PDF fetch from GovInfo (`-s federalregister`, unreleased). CourtListener search and docket, filing and opinion fetch (federal courts). | A NARA Catalog adapter with key and monthly quota handling. |
 
 Nothing in the "in progress" column is shipped. Check the changelog for what
 a given version actually carries.

@@ -1,0 +1,236 @@
+{
+  "_provenance": {
+    "unauthenticated_401": "Real body of anonymous GETs to /api/rest/v4/search/?type=r, /dockets/4214664/ and /docket-entries/?docket=4214664, fetched 2026-11-18 UTC. Every data endpoint answered 401 without a token.",
+    "docket, parties, attorneys": "Shaped on the examples in https://www.courtlistener.com/help/api/rest/v4/pacer-data/ (read 2026-11-18). Party and attorney names are made up; no addresses or phone numbers.",
+    "search_r, search_rd, search_o, docket_entries, recap_document": "No token was available, so these are built from field names in CourtListener's serializers and test helpers (cl/search/api_serializers.py, cl/lib/test_helpers.py on GitHub main, read 2026-11-18) and the search docs example. Values are made up."
+  },
+  "unauthenticated_401": {"detail": "Authentication credentials were not provided."},
+  "search_r": {
+    "count": 2,
+    "next": "https://www.courtlistener.com/api/rest/v4/search/?cursor=cz0xMjM%3D&q=veterans&type=r",
+    "previous": null,
+    "results": [
+      {
+        "assignedTo": "Paul L. Friedman",
+        "assigned_to_id": 1124,
+        "attorney": ["Ann Example"],
+        "attorney_id": [1],
+        "caseName": "National Veterans Legal Services Program v. United States",
+        "case_name_full": "",
+        "cause": "28:1346 Tort Claim",
+        "chapter": null,
+        "court": "District Court, District of Columbia",
+        "court_citation_string": "D.D.C.",
+        "court_id": "dcd",
+        "dateArgued": null,
+        "dateFiled": "2016-04-21",
+        "dateTerminated": null,
+        "docketNumber": "1:16-cv-00745",
+        "docket_absolute_url": "/docket/4214664/national-veterans-legal-services-program-v-united-states/",
+        "docket_id": 4214664,
+        "firm": [],
+        "firm_id": [],
+        "jurisdictionType": "U.S. Government Defendant",
+        "juryDemand": "None",
+        "meta": {"timestamp": "2024-05-20T10:59:23Z", "date_created": "2016-08-20T14:25:37Z", "score": {"bm25": 12.5}, "more_docs": true},
+        "pacer_case_id": "178502",
+        "party": ["National Veterans Legal Services Program", "United States"],
+        "party_id": [42, 43],
+        "recap_documents": [
+          {
+            "absolute_url": "/docket/4214664/1/national-veterans-legal-services-program-v-united-states/",
+            "attachment_number": null,
+            "cites": [],
+            "description": "COMPLAINT against UNITED STATES OF AMERICA",
+            "docket_entry_id": 123,
+            "document_number": 1,
+            "document_type": "PACER Document",
+            "entry_date_filed": "2016-04-21",
+            "entry_number": 1,
+            "filepath_local": "recap/gov.uscourts.dcd.178502/gov.uscourts.dcd.178502.1.0_48.pdf",
+            "id": 2974077,
+            "is_available": true,
+            "meta": {"timestamp": "2024-05-20T10:59:23Z", "date_created": "2016-08-20T14:25:37Z"},
+            "pacer_doc_id": "04505578698",
+            "page_count": 48,
+            "short_description": "Complaint",
+            "snippet": "fees charged for <mark>PACER</mark> access exceed the cost"
+          }
+        ],
+        "referredTo": null,
+        "referred_to_id": null,
+        "suitNature": "Other Statutory Actions",
+        "trustee_str": null
+      },
+      {
+        "caseName": "In re Example Corp.",
+        "court": "District Court, S.D. New York",
+        "court_id": "nysd",
+        "dateFiled": "2020-01-02",
+        "docketNumber": "1:20-cv-00001",
+        "docket_absolute_url": "/docket/555/in-re-example-corp/",
+        "docket_id": 555,
+        "meta": {"more_docs": false},
+        "party": [],
+        "recap_documents": []
+      }
+    ]
+  },
+  "search_rd": {
+    "count": 1,
+    "next": null,
+    "previous": null,
+    "results": [
+      {
+        "absolute_url": "/docket/4214664/1/national-veterans-legal-services-program-v-united-states/",
+        "caseName": "National Veterans Legal Services Program v. United States",
+        "court": "District Court, District of Columbia",
+        "court_id": "dcd",
+        "description": "COMPLAINT against UNITED STATES OF AMERICA",
+        "docketNumber": "1:16-cv-00745",
+        "docket_id": 4214664,
+        "document_number": 1,
+        "entry_date_filed": "2016-04-21",
+        "entry_number": 1,
+        "id": 2974077,
+        "is_available": true,
+        "page_count": 48,
+        "short_description": "Complaint",
+        "snippet": "fees charged for PACER access"
+      }
+    ]
+  },
+  "search_o": {
+    "count": 1,
+    "next": null,
+    "previous": null,
+    "results": [
+      {
+        "absolute_url": "/opinion/6613686/foo-v-foo/",
+        "caseName": "Foo v. Foo",
+        "citation": ["101 Haw. 235", "65 P.3d 182"],
+        "cluster_id": 6613686,
+        "court": "Hawaii Intermediate Court of Appeals",
+        "court_id": "hawapp",
+        "dateFiled": "2003-01-10",
+        "docketNumber": "24158",
+        "docket_id": 63544014,
+        "opinions": [{"id": 6489975, "snippet": "\nAffirmed in part, reversed in part\n", "type": "lead-opinion", "download_url": null}],
+        "status": "Published"
+      }
+    ]
+  },
+  "docket": {
+    "resource_uri": "https://www.courtlistener.com/api/rest/v4/dockets/4214664/",
+    "id": 4214664,
+    "court_id": "dcd",
+    "absolute_url": "/docket/4214664/national-veterans-legal-services-program-v-united-states/",
+    "assigned_to_str": "Paul L. Friedman",
+    "referred_to_str": "",
+    "date_filed": "2016-04-21",
+    "date_terminated": null,
+    "date_last_filing": "2024-05-15",
+    "case_name": "NATIONAL VETERANS LEGAL SERVICES PROGRAM v. United States",
+    "case_name_full": "",
+    "docket_number": "1:16-cv-00745",
+    "pacer_case_id": "178502",
+    "cause": "28:1346 Tort Claim",
+    "nature_of_suit": "Other Statutory Actions",
+    "jury_demand": "None",
+    "jurisdiction_type": "U.S. Government Defendant"
+  },
+  "docket_entries": {
+    "next": null,
+    "previous": null,
+    "results": [
+      {
+        "resource_uri": "https://www.courtlistener.com/api/rest/v4/docket-entries/123/",
+        "id": 123,
+        "docket": "https://www.courtlistener.com/api/rest/v4/dockets/4214664/",
+        "date_filed": "2016-04-21",
+        "entry_number": 1,
+        "recap_sequence_number": "2016-04-21.001",
+        "description": "COMPLAINT against UNITED STATES OF AMERICA (Filing fee $ 400) filed by NATIONAL VETERANS LEGAL SERVICES PROGRAM.",
+        "recap_documents": [
+          {
+            "id": 2974077,
+            "document_type": 1,
+            "description": "Complaint",
+            "document_number": "1",
+            "attachment_number": null,
+            "page_count": 48,
+            "is_available": true,
+            "filepath_local": "recap/gov.uscourts.dcd.178502/gov.uscourts.dcd.178502.1.0_48.pdf",
+            "pacer_doc_id": "04505578698"
+          },
+          {
+            "id": 2974078,
+            "document_type": 2,
+            "description": "Civil Cover Sheet",
+            "document_number": "1",
+            "attachment_number": 1,
+            "page_count": 2,
+            "is_available": false,
+            "filepath_local": null,
+            "pacer_doc_id": "04505578699"
+          }
+        ]
+      },
+      {
+        "id": 124,
+        "date_filed": "2016-04-28",
+        "entry_number": 2,
+        "description": "NOTICE of Appearance by Ann Example on behalf of All Plaintiffs",
+        "recap_documents": []
+      }
+    ]
+  },
+  "parties": {
+    "next": null,
+    "previous": null,
+    "results": [
+      {
+        "resource_uri": "https://www.courtlistener.com/api/rest/v4/parties/42/",
+        "id": 42,
+        "party_types": [{"docket_id": 4214664, "name": "Plaintiff", "date_terminated": null, "extra_info": "", "criminal_counts": [], "criminal_complaints": []}],
+        "name": "National Veterans Legal Services Program",
+        "extra_info": ""
+      },
+      {
+        "id": 43,
+        "party_types": [{"docket_id": 4214664, "name": "Defendant"}],
+        "name": "United States",
+        "extra_info": ""
+      }
+    ]
+  },
+  "attorneys": {
+    "next": null,
+    "previous": null,
+    "results": [
+      {
+        "resource_uri": "https://www.courtlistener.com/api/rest/v4/attorneys/1/",
+        "id": 1,
+        "parties_represented": [
+          {"role": 10, "docket": "https://www.courtlistener.com/api/rest/v4/dockets/4214664/", "party": "https://www.courtlistener.com/api/rest/v4/parties/42/", "date_action": null}
+        ],
+        "name": "Ann Example"
+      }
+    ]
+  },
+  "recap_document": {
+    "resource_uri": "https://www.courtlistener.com/api/rest/v4/recap-documents/2974077/",
+    "id": 2974077,
+    "absolute_url": "/docket/4214664/1/national-veterans-legal-services-program-v-united-states/",
+    "description": "Complaint",
+    "document_number": "1",
+    "attachment_number": null,
+    "page_count": 48,
+    "plain_text": "UNITED STATES DISTRICT COURT\nFOR THE DISTRICT OF COLUMBIA\n\nCOMPLAINT\n\nThe fees charged for PACER access exceed the cost of providing it.\n",
+    "ocr_status": null,
+    "is_available": true,
+    "is_sealed": false,
+    "filepath_local": "recap/gov.uscourts.dcd.178502/gov.uscourts.dcd.178502.1.0_48.pdf",
+    "pacer_doc_id": "04505578698"
+  }
+}
