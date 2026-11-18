@@ -248,6 +248,18 @@ https://www.archives.gov/isoo/policy-documents/eo-13526).
   all fetched) and https://www.congress.gov. The Church Committee reports
   (1975-76), the Rockefeller Commission (1975) and the 1977 Senate hearing
   on Project MKULTRA are published sources (unverified citations).
+- **The Federal Register.** Every federal rule, proposed rule, agency notice
+  and presidential document is published there, so what an agency did in
+  public, and when comments on it close, needs no request at all. The API at
+  https://www.federalregister.gov/api/v1 needs no key, filters by agency,
+  document type, publication date and docket id, and lists each document's
+  docket ids, comment deadline and a PDF on GovInfo; its oldest document is
+  from 1994-01-03 (API responses read on 2026-11-17). The website, its
+  developer documentation included, answers scripted clients with a CAPTCHA,
+  so only the API is used and the documentation was not read (unverified
+  beyond what the API returned). A notice tells you a proceeding exists; the
+  comments and the records behind it are at Regulations.gov or need FOIA
+  (rung 4).
 - **Mirrors and finders.** DocumentCloud (search and per-page text; the
   project uses its page-text endpoint daily), MuckRock's request archive,
   the Internet Archive, the Black Vault, HathiTrust for government
@@ -292,7 +304,7 @@ colour the district question either way.
 | 2 | Nothing. One federal deadline rule; templates cite federal FOIA. | A jurisdictions data package (statute, clock, fees, residency, appeal path per state, each entry marked verified or not), per-state templates, and clocks computed from the state rule. |
 | 3 | Nothing beyond rung 2. | Same jurisdictions work; state archives stay a research request. |
 | 4 | Federal agency table, federal templates, request tracking, deadlines from a fixed federal rule, records search on MuckRock and others, case workbench, per-page text search, cited notes and export. | Per-request clocks for extensions, tolling and the appeal window. |
-| 5 | DocumentCloud search and per-page fetch (the CREST mirror). A CIA reading-room source that honestly reports "blocked". govinfo search. | A NARA Catalog adapter with key and monthly quota handling. |
+| 5 | DocumentCloud search and per-page fetch (the CREST mirror). A CIA reading-room source that honestly reports "blocked". govinfo search. Federal Register search by agency, type, date and docket, and PDF fetch from GovInfo (`-s federalregister`, unreleased). | A NARA Catalog adapter with key and monthly quota handling. |
 
 Nothing in the "in progress" column is shipped. Check the changelog for what
 a given version actually carries.
@@ -371,6 +383,8 @@ Rung 5
 - fetched: https://www.govinfo.gov/developers
 - fetched: https://www.govinfo.gov/api-signup
 - fetched: https://api.govinfo.gov/docs
+- fetched (API responses, 2026-11-17): https://www.federalregister.gov/api/v1/documents.json
+- not read (CAPTCHA for scripted clients, 2026-11-17): https://www.federalregister.gov/developers/documentation/api/v1
 - unverified: https://www.govinfo.gov
 - unverified: https://www.congress.gov
 - snippet: https://intelligencecommunitynews.com/cia-posts-more-than-12-million-pages-of-crest-records-online/

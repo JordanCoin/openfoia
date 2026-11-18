@@ -1,0 +1,157 @@
+{
+ "abstract": "On June 27, 2025, the Departments issued an interim final rule (\"IFR\") to streamline assessment of civil penalties under the Immigration and Nationality Act (\"INA\") for aliens who fail to depart during a voluntary departure period, willfully fail or refuse to depart after a final removal order and certain other proscribed activities, or are apprehended while improperly entering or attempting to en",
+ "action": "Final rule.",
+ "agencies": [
+  {
+   "raw_name": "DEPARTMENT OF HOMELAND SECURITY",
+   "name": "Homeland Security Department",
+   "id": 227,
+   "url": "https://www.federalregister.gov/agencies/homeland-security-department",
+   "json_url": "https://www.federalregister.gov/api/v1/agencies/227",
+   "parent_id": null,
+   "slug": "homeland-security-department"
+  },
+  {
+   "raw_name": "DEPARTMENT OF JUSTICE",
+   "name": "Justice Department",
+   "id": 268,
+   "url": "https://www.federalregister.gov/agencies/justice-department",
+   "json_url": "https://www.federalregister.gov/api/v1/agencies/268",
+   "parent_id": null,
+   "slug": "justice-department"
+  },
+  {
+   "raw_name": "Executive Office for Immigration Review",
+   "name": "Executive Office for Immigration Review",
+   "id": 149,
+   "url": "https://www.federalregister.gov/agencies/executive-office-for-immigration-review",
+   "json_url": "https://www.federalregister.gov/api/v1/agencies/149",
+   "parent_id": 268,
+   "slug": "executive-office-for-immigration-review"
+  }
+ ],
+ "body_html_url": "https://www.federalregister.gov/documents/full_text/html/2026/10/14/2026-21024.html",
+ "cfr_references": [
+  {
+   "chapter": null,
+   "citation_url": null,
+   "part": "281",
+   "title": 8
+  },
+  {
+   "chapter": null,
+   "citation_url": null,
+   "part": "1003",
+   "title": 8
+  },
+  {
+   "chapter": null,
+   "citation_url": null,
+   "part": "1280",
+   "title": 8
+  }
+ ],
+ "citation": "91 FR 65390",
+ "comment_url": null,
+ "comments_close_on": null,
+ "correction_of": null,
+ "corrections": [],
+ "dates": "The effective date of this final rule is October 14, 2026.",
+ "disposition_notes": null,
+ "docket_ids": [
+  "Docket No: ICEB-2025-0034",
+  "Dir. Order No. 11-2026"
+ ],
+ "dockets": [
+  {
+   "supporting_documents": [],
+   "agency_name": "EOIR",
+   "documents": [
+    {
+     "comment_count": 0,
+     "comment_start_date": "2026-10-14",
+     "updated_at": "2026-10-14T08:59:51.940-04:00",
+     "comment_url": "https://www.regulations.gov/commenton/EOIR_FRDOC_0001-0097",
+     "allow_late_comments": false,
+     "id": "EOIR_FRDOC_0001-0097",
+     "comment_end_date": null,
+     "regulations_dot_gov_open_for_comment": false
+    }
+   ],
+   "supporting_documents_count": 0,
+   "id": "EOIR_FRDOC_0001",
+   "title": "Recently Posted EOIR Rules and Notices."
+  },
+  {
+   "supporting_documents": [],
+   "agency_name": "ICEB",
+   "documents": [
+    {
+     "comment_count": 0,
+     "comment_start_date": "2026-10-14",
+     "updated_at": "2026-10-15T11:57:03.871-04:00",
+     "comment_url": "https://www.regulations.gov/commenton/ICEB-2025-0034-0030",
+     "allow_late_comments": false,
+     "id": "ICEB-2025-0034-0030",
+     "comment_end_date": null,
+     "regulations_dot_gov_open_for_comment": false
+    }
+   ],
+   "supporting_documents_count": 0,
+   "id": "ICEB-2025-0034",
+   "title": "Imposition and Collection of Civil Penalties for Certain Immigration-Related Violations"
+  }
+ ],
+ "document_number": "2026-21024",
+ "effective_on": "2026-10-14",
+ "end_page": 65432,
+ "executive_order_notes": null,
+ "executive_order_number": null,
+ "full_text_xml_url": "https://www.federalregister.gov/documents/full_text/xml/2026/10/14/2026-21024.xml",
+ "html_url": "https://www.federalregister.gov/documents/2026/10/14/2026-21024/imposition-and-collection-of-civil-penalties-for-certain-immigration-related-violations",
+ "json_url": "https://www.federalregister.gov/api/v1/documents/2026-21024?publication_date=2026-10-14",
+ "mods_url": "https://www.govinfo.gov/metadata/granule/FR-2026-10-14/2026-21024/mods.xml",
+ "not_received_for_publication": null,
+ "page_length": 43,
+ "pdf_url": "https://www.govinfo.gov/content/pkg/FR-2026-10-14/pdf/2026-21024.pdf",
+ "presidential_document_number": null,
+ "proclamation_number": null,
+ "public_inspection_pdf_url": "https://public-inspection.federalregister.gov/2026-21024.pdf?1791576911",
+ "publication_date": "2026-10-14",
+ "raw_text_url": "https://www.federalregister.gov/documents/full_text/text/2026/10/14/2026-21024.txt",
+ "regulation_id_numbers": [
+  "1125-AB36",
+  "1653-AA96"
+ ],
+ "regulations_dot_gov_info": {
+  "supporting_documents": [],
+  "regulatory_plan": {
+   "html_url": "https://www.federalregister.gov/regulations/1653-AA96/imposition-and-collection-of-civil-penalties-for-certain-immigration-related-violations",
+   "title": "Imposition and Collection of Civil Penalties for Certain Immigration-Related Violations"
+  },
+  "comments_count": 0,
+  "agency_id": "ICEB",
+  "comments_url": "https://www.regulations.gov/docketBrowser?rpp=50&so=DESC&sb=postedDate&po=0&dct=PS&D=ICEB-2025-0034",
+  "supporting_documents_count": 0,
+  "docket_id": "ICEB-2025-0034",
+  "document_id": "ICEB-2025-0034-0030",
+  "regulation_id_number": "1653-AA96",
+  "title": "Imposition and Collection of Civil Penalties for Certain Immigration-Related Violations",
+  "checked_regulationsdotgov_at": "2026-10-16T18:55:04Z"
+ },
+ "regulations_dot_gov_url": null,
+ "significant": true,
+ "signing_date": null,
+ "start_page": 65390,
+ "subtype": null,
+ "title": "Imposition and Collection of Civil Penalties for Certain Immigration-Related Violations",
+ "toc_doc": "Imposition and Collection of Civil Penalties for Certain Immigration-Related Violations",
+ "toc_subject": null,
+ "topics": [
+  "Administrative practice and procedure",
+  "Immigration",
+  "Penalties"
+ ],
+ "type": "Rule",
+ "volume": 91
+}

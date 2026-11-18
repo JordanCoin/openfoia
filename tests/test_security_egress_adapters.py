@@ -28,6 +28,7 @@ from openfoia.net import DEFAULT_USER_AGENT, EgressMode, EgressPolicy, egress_cl
 from openfoia.records.cia import CIAReadingRoomAdapter
 from openfoia.records.documentcloud import DocumentCloudAdapter
 from openfoia.records.fec import FECAdapter
+from openfoia.records.federal_register import FederalRegisterAdapter
 from openfoia.records.govinfo import GovInfoAdapter
 from openfoia.records.muckrock import MuckRockAdapter
 from openfoia.records.nara import NARAAdapter
@@ -126,6 +127,7 @@ def test_no_bare_httpx_asyncclient_in_records_adapters():
         DocumentCloudAdapter,
         CIAReadingRoomAdapter,
         NARAAdapter,
+        FederalRegisterAdapter,
     ],
 )
 def test_adapter_accepts_egress_policy_kwarg(adapter_cls):
@@ -148,6 +150,7 @@ def test_adapter_accepts_egress_policy_kwarg(adapter_cls):
         DocumentCloudAdapter,
         CIAReadingRoomAdapter,
         NARAAdapter,
+        FederalRegisterAdapter,
     ],
 )
 def test_adapter_defaults_to_direct_policy_when_unspecified(adapter_cls):
