@@ -52,14 +52,81 @@ Do not download files you do not trust.
 """
 
 
+def _bracket(host: str) -> str:
+    return f"[{host}]" if ":" in host and not host.startswith("[") else host
+
+
 def _tor_proxy_server(tor_host: str, tor_port: int) -> str:
     """Build the Playwright proxy server string for *tor_host*:*tor_port*.
 
-    Scheme is socks5h to make remote-DNS intent explicit for anyone reading
-    this — Chromium already resolves hostnames through the SOCKS proxy
-    either way, so this is not a fix for a DNS leak, just a clearer intent.
+    socks5://, not socks5h://: Chromium does not know the socks5h scheme and
+    fails every request with ERR_NO_SUPPORTED_PROXIES. Through a socks5://
+    proxy Chromium already sends the hostname to the proxy (a domain-name
+    CONNECT, ATYP 0x03) instead of resolving it locally, so Tor does the DNS.
     """
-    return f"socks5h://{tor_host}:{tor_port}"
+    return f"socks5://{_bracket(tor_host)}:{tor_port}"
+
+
+def _no_local_dns_arg(tor_host: str) -> str:
+    """Chromium switch that makes every local DNS lookup fail.
+
+    Defence in depth behind the socks5:// proxy: if any code path in the
+    browser tried to resolve a name itself, it gets NOTFOUND rather than
+    asking the local resolver (which would tell the network what is being
+    visited). The proxy host is excluded so a name like "localhost" works.
+    Syntax per Chromium's SOCKS proxy documentation; no shell quoting, as
+    Playwright passes it as a single argv entry.
+    """
+    return f"--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE {tor_host}"
+
+
+def _browser_env(home: Path) -> dict[str, str]:
+    """Environment for the browser process with its home inside *home*.
+
+    Chromium writes crash-report databases and caches under $HOME
+    (~/.config/<product>/Crash Reports, ~/.cache, ~/.pki) even with a
+    throwaway profile. Pointing HOME and the XDG dirs at a scratch dir inside
+    the data dir keeps that off the host in portable mode, and in the data
+    dir (which purge covers) otherwise.
+    """
+    import os
+
+    env = dict(os.environ)
+    env.update(
+        HOME=str(home),
+        XDG_CONFIG_HOME=str(home / ".config"),
+        XDG_CACHE_HOME=str(home / ".cache"),
+        XDG_DATA_HOME=str(home / ".local" / "share"),
+    )
+    return env
+
+
+def _launch_options(
+    *,
+    use_tor: bool,
+    headless: bool,
+    tor_host: str = "127.0.0.1",
+    tor_port: int = 9050,
+    home: Path | None = None,
+) -> dict[str, Any]:
+    """Keyword arguments for Playwright's ``chromium.launch()``."""
+    # Note: "--disable-webrtc" is not a real Chromium switch; the WebRTC
+    # mitigation that actually takes effect is the RTCPeerConnection removal
+    # in the init script below. Keep the flags that do exist.
+    options: dict[str, Any] = {
+        "headless": headless,
+        "args": [
+            "--disable-webgl",
+            "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+            "--disable-features=WebRtcHideLocalIpsWithMdns",
+        ],
+    }
+    if use_tor:
+        options["proxy"] = {"server": _tor_proxy_server(tor_host, tor_port)}
+        options["args"].append(_no_local_dns_arg(tor_host))
+    if home is not None:
+        options["env"] = _browser_env(home)
+    return options
 
 
 # ---------------------------------------------------------------------------
@@ -97,24 +164,43 @@ async def browse(
     if use_tor:
         rprint(_TOR_WARNING)
 
-    # Note: "--disable-webrtc" is not a real Chromium switch; the WebRTC
-    # mitigation that actually takes effect is the RTCPeerConnection removal
-    # in the init script below. Keep the flags that do exist.
-    launch_args: dict[str, Any] = {
-        "headless": headless,
-        "args": [
-            "--disable-webgl",
-            "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
-            "--disable-features=WebRtcHideLocalIpsWithMdns",
-        ],
-    }
+    import tempfile
 
-    if use_tor:
-        from .config import load_config
+    from .config import load_config
+    from .db import _ensure_private_dir, get_data_dir
 
-        net_cfg = load_config().network
-        launch_args["proxy"] = {"server": _tor_proxy_server(net_cfg.tor_host, net_cfg.tor_port)}
+    net_cfg = load_config().network
 
+    # The browser's own $HOME: a scratch dir in the data dir, removed on exit.
+    browser_home = tempfile.TemporaryDirectory(
+        dir=_ensure_private_dir(get_data_dir() / "browser_tmp"),
+        prefix="home-",
+        ignore_cleanup_errors=True,
+    )
+    launch_args = _launch_options(
+        use_tor=use_tor,
+        headless=headless,
+        tor_host=net_cfg.tor_host,
+        tor_port=net_cfg.tor_port,
+        home=Path(browser_home.name),
+    )
+    try:
+        return await _run_session(
+            async_playwright, launch_args, url, use_tor, headless, save, save_dir
+        )
+    finally:
+        browser_home.cleanup()
+
+
+async def _run_session(
+    async_playwright: Any,
+    launch_args: dict[str, Any],
+    url: str,
+    use_tor: bool,
+    headless: bool,
+    save: bool,
+    save_dir: Path | None,
+) -> dict[str, Any]:
     result: dict[str, Any] = {}
 
     async with async_playwright() as pw:

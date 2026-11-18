@@ -32,7 +32,18 @@ investigations.
   full-disk encryption or an encrypted USB for those.
 - **Secure delete (best-effort).** `openfoia purge --secure` overwrites files
   3x with random data before deletion. On HDDs this is effective. On SSDs it is
-  unreliable due to wear-leveling (see Known Limitations).
+  unreliable due to wear-leveling (see Known Limitations). It covers the whole
+  data directory, including `exports/`, where graphs, FollowTheMoney exports,
+  entity CSVs and `records download` files go by default, and any file you
+  wrote elsewhere with `--output`/`--csv` (those paths are recorded in
+  `exports_manifest.json` in the data directory, and the purge prompt lists
+  them). A file it cannot overwrite does not stop the purge: it is deleted
+  without overwriting if possible, and purge ends by listing every file that
+  was not overwritten or could not be removed, and exits with status 1. It
+  does not remove the original files you ingested, copies you made or moved
+  yourself, or exports that earlier versions wrote to the current
+  directory (`graph.json`, `entities.ftm.json`, `./downloads/`). Fast purge
+  (`--yes` without `--secure`) only unlinks.
 - **Duress / decoy database.** A secondary database can be presented under
   coercion.
 
@@ -64,8 +75,15 @@ investigations.
   and potentially in saved form data.
 - **Shell history.** Commands you type (including `openfoia request new ...`)
   are recorded in `~/.bash_history`, `~/.zsh_history`, etc.
-  `openfoia purge --secure` attempts to scrub these, but other shells or
-  session managers may retain copies.
+  `openfoia purge --secure` removes every line that mentions `openfoia` or runs
+  `run.sh` (the docs/USB.md wrapper) from the bash, zsh, sh/ksh and fish
+  history files and from `$HISTFILE`, overwriting the old bytes. It cannot
+  reach the shell you run it from: that shell keeps the session's commands in
+  memory and writes them back when it exits (purge tells you how to stop
+  that). Other shells, terminal scrollback, `tmux`/`screen` logs and session
+  managers may retain copies. A passphrase typed as an argument
+  (`--password VALUE`) is in history until it is removed; use the prompting
+  forms (`--encrypt`, `--duress`, `db encrypt`).
 - **Network-level surveillance.** Without Tor, your ISP (and every network hop
   in between) sees which FOIA portals, records APIs, and websites you visit,
   from your real IP. **With Tor, the destination endpoint still receives the
@@ -91,7 +109,7 @@ OpenFOIA is local-first, but certain features make network requests:
 | `openfoia search`, `openfoia records search` | The public-records sources searched (DocumentCloud, MuckRock, SEC EDGAR, OpenCorporates, USAspending, NARA and the others in the records registry) | Your search query, from your real IP unless Tor is used (`--egress tor` or `network.tor`). `openfoia search` lists the sources and asks first; with Tor it fails closed and does not send personal API keys |
 | `openfoia crossref` | MuckRock, OpenCorporates, SEC EDGAR, DocumentCloud, OpenSanctions, USASpending, and other configured record sources | **The names of the people and organizations you are investigating** (the subject names extracted from your documents), from your real IP unless `--tor` is used. CLI warns and asks you to confirm before this happens; `--sources icij` stays fully offline |
 | `openfoia docs embed-model` (semantic search, opt-in, once) | huggingface.co and the storage host it redirects to | Your IP address (the Tor exit node's with `--tor`) and which model files you download. Nothing from your documents or searches. Embedding and `docs grep --semantic` then run offline |
-| Cloud AI summarization (opt-in) | Configured LLM API (OpenAI, etc.) | Document text sent to the API endpoint |
+| AI entity extraction with a provider not on this machine (opt-in) | The configured LLM API (Anthropic, OpenAI, an OpenAI-compatible server, or Ollama on another host) | Document text, from your real IP. Only `localhost` and loopback addresses count as this machine. OpenFOIA warns, then asks; without a yes (or `ai.allow_remote: true`) it uses the local tiers. Never used in Tor mode, because these requests cannot be routed through Tor |
 | `openfoia serve` | `localhost` only | Nothing leaves the machine, but browser records local activity |
 | `install.sh` | GitHub API, GitHub releases | Your IP address; what binary you download |
 
@@ -108,9 +126,12 @@ arrive at the destination either way.
 1. **SSD secure delete is theater.** On solid-state drives, overwriting a file
    does not guarantee the old data is erased. Use full-disk encryption (LUKS,
    FileVault, BitLocker) instead.
-2. **SQLite WAL files.** SQLite's write-ahead log (`data.db-wal`) may contain
-   recent writes even if the main database is encrypted. `purge --secure`
-   handles these, but a crash before purge could leave WAL remnants.
+2. **SQLite WAL and journal files.** SQLite's write-ahead log
+   (`data.db-wal`) and rollback journal may contain recent writes; on a
+   plaintext database they are plaintext. `purge --secure`, `db encrypt` and
+   `init --force` overwrite them, but SQLite itself deletes them with an
+   ordinary unlink during normal use, so earlier versions of them may be
+   recoverable from free space.
 3. **Python process memory.** Sensitive data (passwords, document text) exists
    in Python process memory while OpenFOIA is running. A memory dump or core
    dump could expose it.
@@ -128,6 +149,30 @@ arrive at the destination either way.
    database the leftovers are encrypted too; without encryption they can be
    carved from the file. `openfoia docs embed --drop` zeroes the space it frees;
    other deletes do not. `purge --secure` shreds the whole file.
+7. **Other accounts on the same machine and the web UI.** `openfoia serve`
+   opens the browser at a login link (`/login?nonce=...`). Any local account
+   can read a browser's command line, so the link is single-use and expires
+   after 60 seconds; the browser swaps it for an HttpOnly, SameSite=Strict
+   session cookie, and the session token itself never appears in a URL or on
+   a command line. This narrows the window, it does not close it: a program
+   already watching the process list can race the browser to the link. If
+   that happens the browser shows "Login link already used" and the terminal
+   prints a warning: stop the server and start it again. An account that can
+   read your memory or attach a debugger to your processes is out of scope.
+8. **What portable mode keeps off the host.** With a `.openfoia-portable`
+   marker, the database, config, documents, and the caches of optional model
+   libraries (Hugging Face, torch, matplotlib, and anything that honours
+   `XDG_CACHE_HOME`) live in `openfoia-data/` on the stick, and the browser
+   started by `openfoia browse` gets a throwaway home directory there too.
+   OpenFOIA is built not to create files in the host's home directory (the
+   test suite checks `init`, `docs ingest`, `analyze graph` and `purge`). It
+   cannot control the operating system: swap, temp files under `/tmp` or `TMPDIR`
+   (Playwright puts its browser profile there), the browser history of
+   `openfoia serve`, shell history, and OS indexing (Spotlight, recent-files
+   lists) can still record activity on the host. On macOS and Windows, a
+   library that ignores `XDG_CACHE_HOME` (pip, for one, uses
+   `~/Library/Caches` or `%LOCALAPPDATA%`) may still write there during
+   `openfoia install-extras`.
 
 ## Semantic search embeddings
 
@@ -203,7 +248,14 @@ What the decoy profile provides:
 - No password hash stored anywhere — SQLCipher verifies the password directly
 - Both profiles encrypted (no plaintext decoy). If SQLCipher is unavailable,
   `openfoia init --duress-password` now fails rather than writing a plaintext
-  decoy that would offer no protection at all.
+  decoy that would offer no protection at all. It also refuses when the real
+  database is not encrypted (earlier versions reported success and left the real
+  investigation as a readable SQLite file next to an encrypted decoy), and it
+  only reports success after checking both files on disk.
+- The decoy is built the way `openfoia init` builds a real database: the same
+  migrations, full-text index and agency list, owner-only (0600) like the real
+  file. Its requests, documents and entities are drawn at random from bland
+  topics and spread over the past months, so two decoys differ.
 - Opaque filenames (`profile_0.db`, `profile_1.db`). Enabling duress mode
   migrates the real database into slot 0, so neither filename reveals which
   profile is real. Before duress mode is configured the database is the
@@ -211,6 +263,14 @@ What the decoy profile provides:
 
 What it does NOT provide:
 - Protection against forensic analysis (two encrypted files are visible)
+- A decoy that survives someone who has read the source. The generator
+  (`seed_decoy_db` in `openfoia/security.py`) is public, with its topic and
+  place lists. An examiner who has the duress passphrase can compare the decoy
+  with that code; a small database of exactly those topics says "decoy". The
+  decoy's documents are stored under `docs/` as ordinary unencrypted files,
+  like real ingested documents, so their text is readable without any
+  passphrase. Adding your own innocuous activity under the duress passphrase
+  makes it less obvious, not undetectable.
 - Protection if the real password is found in RAM, swap, or shell history
 - Believable cover under sustained interrogation
 
@@ -227,7 +287,7 @@ What it does NOT provide:
    ```
    cd /Volumes/ENCRYPTED_USB
    openfoia portable
-   openfoia init --password <real-secret>
+   openfoia init --encrypt
    ```
 
 3. **Tails OS** (maximum): Boot from Tails USB, which is amnesic — forgets

@@ -279,7 +279,9 @@ class CIAReadingRoomAdapter(RecordAdapter):
         await _throttle()
         try:
             async with self._client(timeout=60) as client:
-                await download_to_file(client, url, dest, max_bytes=MAX_DOWNLOAD_BYTES)
+                await download_to_file(
+                    client, url, dest, max_bytes=MAX_DOWNLOAD_BYTES, egress=self._egress
+                )
         except httpx.HTTPStatusError as e:
             reason = blocked_reason(e.response, url)
             raise AdapterRequestError(

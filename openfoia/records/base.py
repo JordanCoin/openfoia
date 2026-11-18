@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import posixpath
 import re
@@ -13,6 +14,70 @@ from urllib.parse import unquote, urlparse
 
 from ..net import EgressPolicy, egress_client
 
+#: Names that only ever mean this machine or the local network.
+_LOCAL_NAMES = frozenset({"localhost", "localhost.localdomain", "ip6-localhost", "ip6-loopback"})
+_LOCAL_SUFFIXES = (".localhost", ".local", ".internal", ".home.arpa", ".localdomain")
+_NUMERIC_LABEL = re.compile(r"^(?:0x[0-9a-f]*|[0-9]+)$")
+#: NAT64 (RFC 6052): 64:ff9b::a.b.c.d reaches the embedded IPv4 address.
+_NAT64 = ipaddress.ip_network("64:ff9b::/96")
+
+
+def _inet_aton(host: str) -> ipaddress.IPv4Address | None:
+    """Parse *host* the way inet_aton (and so glibc's getaddrinfo) does, or None.
+
+    Accepts 1-4 dot-separated parts, each decimal, 0x-hex or 0-prefixed octal:
+    ``2130706433``, ``127.1``, ``0x7f000001`` and ``0177.0.0.1`` are all
+    127.0.0.1. The last part fills the remaining bytes.
+    """
+    parts = host.split(".")
+    if not 1 <= len(parts) <= 4:
+        return None
+    values = []
+    for part in parts:
+        if not part:
+            return None
+        try:
+            if part[:2] == "0x":
+                value = int(part[2:] or "0", 16)
+            elif len(part) > 1 and part[0] == "0":
+                value = int(part[1:], 8)
+            else:
+                value = int(part, 10)
+        except ValueError:
+            return None
+        values.append(value)
+    *head, last = values
+    if any(v > 0xFF for v in head) or last >= 1 << (8 * (4 - len(head))):
+        return None
+    number = 0
+    for v in head:
+        number = number << 8 | v
+    number = number << (8 * (4 - len(head))) | last
+    return ipaddress.IPv4Address(number)
+
+
+def _is_public_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Globally routable unicast, looking through IPv4-mapped and NAT64 addresses."""
+    if isinstance(ip, ipaddress.IPv6Address):
+        if ip.ipv4_mapped is not None:
+            ip = ip.ipv4_mapped
+        elif ip in _NAT64:
+            ip = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
+    return ip.is_global and not ip.is_multicast
+
+
+def normalize_host(host: str) -> str:
+    """Lowercase, no trailing dot, IDNA (ASCII) form; ValueError if it has none."""
+    host = host.strip().rstrip(".").lower()
+    if not host:
+        raise ValueError("empty host")
+    if ":" in host:  # an IPv6 literal (urlparse already removed the brackets)
+        return host
+    try:
+        return host.encode("idna").decode("ascii").lower()
+    except UnicodeError as exc:
+        raise ValueError(f"host {host!r} is not a valid domain name") from exc
+
 
 def validate_download_url(url: str) -> str:
     """Return *url* if it is safe to fetch, else raise ValueError.
@@ -21,64 +86,129 @@ def validate_download_url(url: str) -> str:
     DocumentCloud ``asset_url``) are attacker-influenced: a compromised or
     MITM'd upstream can point them at ``file:///etc/passwd`` or cloud
     metadata endpoints, and the body is written straight to disk.
+
+    This is a check of the string only, with no DNS lookup. The host is
+    normalised first (case, trailing dot, IDNA), numeric hosts are read the
+    way inet_aton reads them (``https://2130706433/`` and ``https://127.1/``
+    are 127.0.0.1), and an IP literal must be globally routable. A hostname
+    that resolves to an internal address is caught at download time instead:
+    see :func:`check_download_target`.
     """
     parsed = urlparse(url)
 
     if parsed.scheme != "https":
         raise ValueError(f"Refusing to download over {parsed.scheme or 'missing'} scheme: {url!r}")
 
-    host = parsed.hostname
-    if not host:
+    try:
+        raw_host = parsed.hostname
+    except ValueError:
+        raw_host = None
+    if not raw_host:
         raise ValueError(f"Refusing to download from a URL with no host: {url!r}")
+    try:
+        host = normalize_host(raw_host)
+    except ValueError as exc:
+        raise ValueError(f"Refusing to download from {url!r}: {exc}") from None
 
-    # Block obvious internal targets without doing a network lookup.
-    if host in ("localhost", "localhost.localdomain") or host.endswith(".localhost"):
-        raise ValueError(f"Refusing to download from a loopback host: {url!r}")
+    if host in _LOCAL_NAMES or host.endswith(_LOCAL_SUFFIXES):
+        raise ValueError(f"Refusing to download from a local-network host: {url!r}")
 
     try:
-        ip = ipaddress.ip_address(host)
+        ip: ipaddress.IPv4Address | ipaddress.IPv6Address | None = ipaddress.ip_address(host)
     except ValueError:
-        ip = None
-    if ip is not None and (
-        ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast
-    ):
+        ip = _inet_aton(host)
+        if ip is None and _NUMERIC_LABEL.match(host.rsplit(".", 1)[-1]):
+            # A numeric last label that is not a valid address: resolvers
+            # disagree on what it means, so do not guess.
+            raise ValueError(
+                f"Refusing to download from an ambiguous numeric host: {url!r}"
+            ) from None
+    if ip is not None and not _is_public_ip(ip):
         raise ValueError(f"Refusing to download from a non-public address: {url!r}")
 
     return url
 
 
-def resolves_to_public_address(host: str) -> bool:
-    """Best-effort DNS check that *host* is not an internal address.
+#: getaddrinfo, behind a name so tests can fake DNS without touching the network.
+_getaddrinfo = socket.getaddrinfo
 
-    Separate from :func:`validate_download_url` so callers can opt in; DNS
-    resolution is itself a network call.
+
+def resolves_to_public_address(host: str) -> bool:
+    """DNS check that every address *host* resolves to is globally routable.
+
+    False when the lookup fails or any address is internal (loopback, private,
+    link-local, carrier-grade NAT, reserved, multicast). This is a network
+    call (to the system resolver), so it is made at download time, never
+    when only checking a URL string, and never in Tor mode.
     """
     try:
-        infos = socket.getaddrinfo(host, None)
-    except OSError:
+        infos = _getaddrinfo(normalize_host(host), None)
+    except (OSError, ValueError, UnicodeError):
         return False
-
+    if not infos:
+        return False
     for info in infos:
-        addr = info[4][0]
         try:
-            ip = ipaddress.ip_address(addr)
+            ip = ipaddress.ip_address(str(info[4][0]).split("%", 1)[0])
         except ValueError:
             return False
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+        if not _is_public_ip(ip):
             return False
     return True
 
 
-async def download_to_file(client: Any, url: str, dest: Any, max_bytes: int) -> int:
+async def check_download_target(url: str, egress: EgressPolicy | None) -> None:
+    """Raise ValueError unless *url* may be downloaded on *egress*.
+
+    Always runs :func:`validate_download_url`. In DIRECT mode it also
+    resolves the hostname and requires every address to be public, which
+    stops a public-looking name that points at 127.0.0.1 or the LAN.
+
+    In Tor mode nothing is resolved here: a local lookup would itself leak the
+    hostname outside Tor, and the name is resolved at the exit relay, whose
+    exit policy refuses private and local addresses. Protection against a
+    hostname that resolves to an internal address therefore relies on the Tor
+    exit policy in that mode. In either mode this is a check before the
+    request, not a pin: a resolver that answers differently a second later
+    (DNS rebinding) is not stopped by it.
+    """
+    validate_download_url(url)
+    if egress is None or egress.is_tor:
+        return
+    host = urlparse(url).hostname or ""
+    try:
+        ipaddress.ip_address(host)
+        return  # an IP literal, already checked above
+    except ValueError:
+        pass
+    if not await asyncio.to_thread(resolves_to_public_address, host):
+        raise ValueError(
+            f"Refusing to download {url!r}: {host} does not resolve, or resolves to a "
+            "non-public address."
+        )
+
+
+async def download_to_file(
+    client: Any, url: str, dest: Any, max_bytes: int, *, egress: EgressPolicy | None = None
+) -> int:
     """Stream *url* into *dest*, aborting as soon as *max_bytes* is exceeded.
 
     Buffering via ``response.content`` first would let a compromised or
     MITM'd upstream force a huge allocation before any size check ran. This
     enforces the cap incrementally and removes the partial file on abort.
 
+    *url* is checked with :func:`check_download_target` first: pass the
+    request's *egress* policy so that in DIRECT mode the hostname must
+    resolve to public addresses (None checks the URL string only). Redirects
+    are refused: each one would be a second, unchecked URL.
+
     Returns the number of bytes written.
     """
     from pathlib import Path
+
+    await check_download_target(url, egress)
+    if getattr(client, "follow_redirects", False):
+        raise ValueError("Refusing to download with a client that follows redirects")
 
     dest = Path(dest)
     # Stream into a sibling .part file and rename when complete, so *dest* only

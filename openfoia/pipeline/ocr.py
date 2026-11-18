@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import sys
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar
@@ -26,6 +25,24 @@ def get_ocr_temp_dir() -> Path:
     from ..db import _ensure_private_dir, get_data_dir
 
     return _ensure_private_dir(get_data_dir() / "ocr_tmp")
+
+
+def shredding_tempdir(parent: Path):
+    """Scratch dir whose page images are overwritten, not just unlinked, on exit."""
+    from ..security import shredding_tempdir as _shredding_tempdir
+
+    return _shredding_tempdir(parent)
+
+
+def _loaded(images: list) -> list:
+    """Read every page image into memory before its scratch file is shredded.
+
+    pdf2image opens images from an output_folder lazily; shredding the file
+    first would leave the image reading random bytes.
+    """
+    for image in images:
+        image.load()
+    return images
 
 
 @dataclass
@@ -167,7 +184,7 @@ class OCREngine:
         for n in page_numbers[:MAX_OCR_PAGES]:
 
             def _one(n=n):
-                with tempfile.TemporaryDirectory(dir=get_ocr_temp_dir()) as scratch:
+                with shredding_tempdir(get_ocr_temp_dir()) as scratch:
                     images = convert_from_path(
                         str(pdf_path), dpi=300, output_folder=scratch, first_page=n, last_page=n
                     )
@@ -198,12 +215,14 @@ class OCREngine:
         # data dir (so purge covers the plaintext page images) and cap the page
         # count so a crafted PDF cannot exhaust memory or disk.
         def _convert():
-            with tempfile.TemporaryDirectory(dir=get_ocr_temp_dir()) as scratch:
-                return convert_from_path(
-                    str(pdf_path),
-                    dpi=300,
-                    output_folder=scratch,
-                    last_page=MAX_OCR_PAGES,
+            with shredding_tempdir(get_ocr_temp_dir()) as scratch:
+                return _loaded(
+                    convert_from_path(
+                        str(pdf_path),
+                        dpi=300,
+                        output_folder=scratch,
+                        last_page=MAX_OCR_PAGES,
+                    )
                 )
 
         images = await asyncio.to_thread(_convert)
@@ -429,12 +448,14 @@ class RedactionDetector:
         from pdf2image import convert_from_path
 
         def _analyze():
-            with tempfile.TemporaryDirectory(dir=get_ocr_temp_dir()) as scratch:
-                images = convert_from_path(
-                    str(pdf_path),
-                    dpi=150,
-                    output_folder=scratch,
-                    last_page=MAX_OCR_PAGES,
+            with shredding_tempdir(get_ocr_temp_dir()) as scratch:
+                images = _loaded(
+                    convert_from_path(
+                        str(pdf_path),
+                        dpi=150,
+                        output_folder=scratch,
+                        last_page=MAX_OCR_PAGES,
+                    )
                 )
             total_redactions = 0
 

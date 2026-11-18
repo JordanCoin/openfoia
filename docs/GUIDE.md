@@ -31,7 +31,7 @@ openfoia portable     # creates a marker file
 openfoia init         # database created ON the USB
 ```
 
-From that point, everything stays on the USB. Unplug it and there's no trace on the host.
+From that point OpenFOIA keeps its data, config and library caches on the USB and creates nothing in the host's home directory. The operating system can still keep traces (swap, temp files, browser and shell history); see [USB.md](USB.md#security-considerations).
 
 ---
 
@@ -476,22 +476,43 @@ If you have ollama running, the CSV import is smart — it'll figure out messy c
 ### Encrypt your database
 
 ```bash
-openfoia init --password <your-secret>
+openfoia init --encrypt
 # or encrypt an existing database:
-openfoia db encrypt --password <your-secret>
+openfoia db encrypt
 ```
 
-Requires SQLCipher: `pip install openfoia[encryption]`
+Both prompt for the passphrase. Requires SQLCipher: `pip install openfoia[encryption]`
+
+Later commands read the passphrase from `OPENFOIA_DB_PASSWORD`. Set it
+with `read` so it is typed without echo and never appears on a command line:
+
+```bash
+read -rs OPENFOIA_DB_PASSWORD && export OPENFOIA_DB_PASSWORD   # bash, zsh
+read -s -x OPENFOIA_DB_PASSWORD                                # fish
+```
+
+The variable lasts until the terminal closes and is readable by programs
+running as your user.
+
+Never type a passphrase as a command-line argument (`--password VALUE`,
+`OPENFOIA_DB_PASSWORD=VALUE openfoia ...`): it is saved in your shell history
+and is visible in the process list while the command runs. If you already
+did, delete those lines from `~/.bash_history` / `~/.zsh_history` (fish:
+`history delete --contains openfoia`), and treat that passphrase as exposed.
+`openfoia purge --secure` also removes lines that mention `openfoia` or
+`run.sh`, but only when you purge.
 
 ### Duress mode
 
 If you're forced to unlock your device, a second password opens a decoy database with harmless-looking data:
 
 ```bash
-openfoia init --password real-secret --duress-password fake-secret
+openfoia init --encrypt --duress   # prompts for both passphrases
 ```
 
-The real password opens your investigation. The duress password opens weather data and meeting minutes.
+The real database must be encrypted; `init` refuses to put a decoy next to a
+plaintext one (for an existing database: `openfoia db encrypt`, then
+`openfoia init --duress`). The real password opens your investigation. The duress password opens weather data and meeting minutes.
 
 ### Destroy everything
 
@@ -517,6 +538,12 @@ openfoia browse https://example.gov/records --tor --save
 ```
 
 Requires Tor service running locally and `pip install openfoia[browser]`.
+
+With `--tor`, Chromium sends hostnames to Tor's SOCKS proxy (Tor does the DNS
+lookup), and the browser's own DNS resolver is switched off for the session,
+so a name that somehow bypassed the proxy fails instead of being looked up on
+your network. The browser gets a throwaway home directory inside the data
+directory, removed when it exits.
 
 ---
 
@@ -578,7 +605,7 @@ openfoia entities test -t "text"      # Test patterns
 openfoia entities list                # Show configured types
 
 # Safety
-openfoia db encrypt --password X      # Encrypt database
+openfoia db encrypt                   # Encrypt database (prompts)
 openfoia purge --secure --yes         # Destroy all data
 openfoia browse <url> --tor           # Anonymous browsing
 ```

@@ -7,10 +7,14 @@ https://efts.sec.gov/LATEST/search-index?q=<query>
 from __future__ import annotations
 
 import asyncio
+import os
 import re
+import sys
 from datetime import date
 from typing import Any
 
+from ..net import DEFAULT_USER_AGENT as NET_DEFAULT_USER_AGENT
+from ..net import EgressPolicy
 from .base import AdapterRequestError, RecordAdapter, RecordEntity, SearchResult
 
 EFTS_BASE = "https://efts.sec.gov/LATEST/search-index"
@@ -24,17 +28,46 @@ SEC_SUBMISSIONS_BASE = "https://data.sec.gov/submissions"
 #: the burst that gets an IP blocked. 0.15s keeps a shard walk under ~7 req/s.
 SEC_REQUEST_DELAY = 0.15
 
-#: SEC requires a descriptive User-Agent. Keep it generic and overridable —
-#: announcing "OpenFOIA" tells a government endpoint that the requester is
-#: using an adversarial-journalism tool.
-DEFAULT_USER_AGENT = "Research Client/1.0 (contact: research@example.org)"
+#: Set this to declare yourself to SEC (e.g. "Jane Doe jane@example.org").
+SEC_USER_AGENT_ENV = "OPENFOIA_SEC_USER_AGENT"
+
+#: Kept for callers that imported it: SEC requests now send net's common
+#: browser User-Agent unless the user declares their own (direct mode only).
+DEFAULT_USER_AGENT = NET_DEFAULT_USER_AGENT
+
+_UA_NOTICE = (
+    "Note: SEC's fair-access policy asks automated clients to send a User-Agent "
+    "naming who they are, with a contact email. OpenFOIA sends a common browser "
+    "User-Agent instead, so SEC sees neither your name nor a string unique to this "
+    "tool; SEC may throttle or block requests it treats as undeclared. To declare "
+    f'yourself, set {SEC_USER_AGENT_ENV}="Your Name you@example.org": SEC then '
+    "sees that on every request, which identifies you. It is never sent over Tor."
+)
+_ua_notice_shown = False
 
 
-def _edgar_headers() -> dict[str, str]:
-    """Headers for EDGAR requests, honouring OPENFOIA_SEC_USER_AGENT."""
-    import os
+def _edgar_headers(egress: EgressPolicy | None = None) -> dict[str, str]:
+    """The User-Agent for EDGAR requests.
 
-    return {"User-Agent": os.environ.get("OPENFOIA_SEC_USER_AGENT", DEFAULT_USER_AGENT)}
+    The old fixed string ("Research Client/1.0 (contact: research@example.org)")
+    existed nowhere but this repository, so it marked every SEC request, over
+    Tor or not, as OpenFOIA's. Now:
+
+    - Tor: always the policy's common browser UA, even if the user set their
+      own; a declared name and email would undo what Tor hides.
+    - Direct: OPENFOIA_SEC_USER_AGENT if set (SEC's policy asks for one),
+      else the common browser UA, with a one-time notice saying so.
+    """
+    global _ua_notice_shown
+
+    policy = egress or EgressPolicy()
+    declared = os.environ.get(SEC_USER_AGENT_ENV, "").strip()
+    if policy.is_tor or not declared:
+        if not policy.is_tor and not _ua_notice_shown:
+            _ua_notice_shown = True
+            print(_UA_NOTICE, file=sys.stderr)
+        return {"User-Agent": policy.user_agent}
+    return {"User-Agent": declared}
 
 
 class SECEdgarAdapter(RecordAdapter):
@@ -55,7 +88,7 @@ class SECEdgarAdapter(RecordAdapter):
         ticker = ticker.strip().upper()
         if not re.fullmatch(r"[A-Z][A-Z0-9.-]{0,9}", ticker):
             raise ValueError("ticker must be 1-10 letters, digits, periods, or hyphens")
-        data = await self._request(SEC_TICKERS_URL, headers=_edgar_headers())
+        data = await self._request(SEC_TICKERS_URL, headers=_edgar_headers(self._egress))
         if not isinstance(data, dict):
             raise AdapterRequestError("SEC ticker response was not a JSON object")
         rows = data.values()
@@ -201,7 +234,7 @@ class SECEdgarAdapter(RecordAdapter):
             else:
                 cik, company_name = await self.resolve_ticker(company)
             root_url = f"{SEC_SUBMISSIONS_BASE}/CIK{cik}.json"
-            root = await self._request(root_url, headers=_edgar_headers())
+            root = await self._request(root_url, headers=_edgar_headers(self._egress))
             if not isinstance(root, dict):
                 raise AdapterRequestError("SEC submissions response was not a JSON object")
             submissions = root.get("filings")
@@ -233,7 +266,7 @@ class SECEdgarAdapter(RecordAdapter):
                     continue
                 await asyncio.sleep(SEC_REQUEST_DELAY)
                 archived = await self._request(
-                    f"{SEC_SUBMISSIONS_BASE}/{name}", headers=_edgar_headers()
+                    f"{SEC_SUBMISSIONS_BASE}/{name}", headers=_edgar_headers(self._egress)
                 )
                 if not isinstance(archived, dict):
                     raise AdapterRequestError(f"SEC archive {name} was not a JSON object")
@@ -286,7 +319,9 @@ class SECEdgarAdapter(RecordAdapter):
         params["size"] = per_page
 
         try:
-            data = await self._request(EFTS_BASE, params=params, headers=_edgar_headers())
+            data = await self._request(
+                EFTS_BASE, params=params, headers=_edgar_headers(self._egress)
+            )
         except AdapterRequestError as exc:
             return self._failed(query, str(exc), page=page, per_page=per_page)
 
@@ -327,7 +362,9 @@ class SECEdgarAdapter(RecordAdapter):
         params = {"q": f'"{identifier}"', "size": 1}
 
         try:
-            data = await self._request(EFTS_BASE, params=params, headers=_edgar_headers())
+            data = await self._request(
+                EFTS_BASE, params=params, headers=_edgar_headers(self._egress)
+            )
         except AdapterRequestError:
             return None
 

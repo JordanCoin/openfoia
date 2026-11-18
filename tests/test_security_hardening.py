@@ -117,7 +117,8 @@ def test_upload_rejects_oversized_file(tmp_path):
     oversized = b"A" * (server_mod.MAX_UPLOAD_BYTES + 1024)
     resp = client.post(
         "/api/documents/upload",
-        params={"token": "t", "request_id": "req-1"},
+        params={"request_id": "req-1"},
+        headers={"Authorization": "Bearer t"},
         files={"file": ("big.pdf", io.BytesIO(oversized), "application/pdf")},
     )
 
@@ -144,7 +145,8 @@ def test_oversized_upload_leaves_no_partial_file(tmp_path):
     oversized = b"A" * (server_mod.MAX_UPLOAD_BYTES + 1024)
     client.post(
         "/api/documents/upload",
-        params={"token": "t", "request_id": "req-1"},
+        params={"request_id": "req-1"},
+        headers={"Authorization": "Bearer t"},
         files={"file": ("big.pdf", io.BytesIO(oversized), "application/pdf")},
     )
 

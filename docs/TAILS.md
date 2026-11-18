@@ -69,17 +69,41 @@ For encrypted-at-rest storage (recommended even on Tails):
 
 ```bash
 pip install 'openfoia[encryption]'
-openfoia init --password YOUR_SECRET
+openfoia init --encrypt          # prompts for the passphrase
 ```
+
+Later commands read the passphrase from `OPENFOIA_DB_PASSWORD`. Set it
+with `read` so it is typed without echo and never appears on a command line:
+
+```bash
+read -rs OPENFOIA_DB_PASSWORD && export OPENFOIA_DB_PASSWORD   # bash, zsh
+read -s -x OPENFOIA_DB_PASSWORD                                # fish
+```
+
+The variable lasts until the terminal closes and is readable by programs
+running as your user.
+
+Never type a passphrase as a command-line argument (`--password VALUE`,
+`OPENFOIA_DB_PASSWORD=VALUE openfoia ...`): it is saved in your shell history
+and is visible in the process list while the command runs. If you already
+did, delete those lines from `~/.bash_history` / `~/.zsh_history` (fish:
+`history delete --contains openfoia`), and treat that passphrase as exposed.
+`openfoia purge --secure` also removes lines that mention `openfoia` or
+`run.sh`, but only when you purge.
 
 ### 5. (Optional) Set Up Duress Mode
 
 ```bash
-openfoia init --password YOUR_SECRET --duress-password INNOCENT_PASSWORD
+openfoia init --encrypt --duress   # prompts for the real and the duress passphrase
 ```
 
-If compelled to open OpenFOIA, use the duress password. It will show a
-decoy database with bland, non-sensitive FOIA requests.
+Duress mode requires the real database to be encrypted; `init` refuses to set
+up a decoy next to a plaintext database. To add a decoy to an existing
+database, run `openfoia db encrypt` first, then `openfoia init --duress`.
+
+If compelled to open OpenFOIA, use the duress passphrase. It will show a
+decoy database with bland, non-sensitive FOIA requests. It is a decoy, not
+deniability: see `docs/THREAT_MODEL.md`.
 
 ## Using OpenFOIA on Tails
 

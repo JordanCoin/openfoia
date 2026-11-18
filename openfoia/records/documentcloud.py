@@ -23,7 +23,13 @@ from typing import Any
 import httpx
 
 from ..net import EgressPolicy, egress_client
-from .base import RecordAdapter, RecordEntity, SearchResult, validate_download_url
+from .base import (
+    RecordAdapter,
+    RecordEntity,
+    SearchResult,
+    check_download_target,
+    validate_download_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -309,10 +315,16 @@ class DocumentCloudAdapter(RecordAdapter):
                 doc_id = doc.get("id", identifier)
                 if text_url:
                     txt_url = f"{text_url}documents/{doc_id}/{slug}.txt"
+                    # asset_url comes from the API response, so it is
+                    # attacker-influenced if the upstream is compromised. The
+                    # page texts below share its host, so one check covers both.
                     try:
-                        # asset_url comes from the API response, so it is
-                        # attacker-influenced if the upstream is compromised.
-                        validate_download_url(txt_url)
+                        await check_download_target(txt_url, self._egress)
+                    except ValueError as e:
+                        logger.warning("Not fetching DocumentCloud text: %s", e)
+                        text_url = None
+                if text_url:
+                    try:
                         txt_resp = await client.get(txt_url, timeout=15)
                         if txt_resp.status_code == 200:
                             full_text = txt_resp.text

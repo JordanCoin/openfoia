@@ -390,7 +390,7 @@ def test_objects_skip_present_file_and_ingest_the_rest(monkeypatch):
 
     downloaded: list = []
 
-    async def fake_download(client, url, dest, max_bytes):
+    async def fake_download(client, url, dest, max_bytes, **kw):
         downloaded.append(url)
         dest.write_bytes(b"%PDF")
         return 4

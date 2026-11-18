@@ -9,6 +9,10 @@ on:
   # nothing had actually executed.
   pull_request:
 
+# Nothing here needs to write to the repository.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -17,10 +21,12 @@ jobs:
         python-version: ["3.11", "3.12", "3.13"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -53,10 +59,12 @@ jobs:
         python-version: ["3.11", "3.12"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -91,10 +99,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
 
@@ -114,8 +124,22 @@ jobs:
         run: |
           test -x "$OPENFOIA_TEST_CHROMIUM" || { echo "::error::No Chrome at $OPENFOIA_TEST_CHROMIUM"; exit 1; }
           "$OPENFOIA_TEST_CHROMIUM" --version
+          set -o pipefail  # a failing pytest must not hide behind tee
           python -m pytest tests/test_graph_rendered.py -v -rs | tee rendered.log
           if grep -q "SKIPPED" rendered.log; then
             echo "::error::Rendered graph tests skipped; they must run in this job."
+            exit 1
+          fi
+
+      # `browse --tor` against a fake SOCKS5 proxy, with the same real Chrome:
+      # the page must load and the CONNECT must carry the hostname.
+      - name: Tor browse reaches a SOCKS5 proxy
+        env:
+          OPENFOIA_TEST_CHROMIUM: /usr/bin/google-chrome
+        run: |
+          set -o pipefail  # a failing pytest must not hide behind tee
+          python -m pytest tests/test_security_webui_config.py -v -rs -k "tor_browse_sends_hostnames" | tee socks.log
+          if grep -q "SKIPPED" socks.log; then
+            echo "::error::The SOCKS5 browse test skipped; it must run in this job."
             exit 1
           fi

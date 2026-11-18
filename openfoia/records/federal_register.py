@@ -424,7 +424,9 @@ class FederalRegisterAdapter(RecordAdapter):
         for attempt in range(1, PDF_ATTEMPTS + 1):
             try:
                 async with egress_client(self._egress, timeout=120) as client:
-                    await download_to_file(client, url, dest, max_bytes=MAX_PDF_BYTES)
+                    await download_to_file(
+                        client, url, dest, max_bytes=MAX_PDF_BYTES, egress=self._egress
+                    )
                 break
             except httpx.HTTPStatusError as exc:
                 status = exc.response.status_code
