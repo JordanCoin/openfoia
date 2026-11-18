@@ -71,6 +71,45 @@ def test_records_search_csv_to_stdout_is_only_csv(monkeypatch):
     ]
 
 
+def _one_shot_adapter(monkeypatch, source, entities):
+    class Adapter:
+        async def search(self, query, **kwargs):
+            return SearchResult(
+                source=source, query=query, total_results=len(entities), entities=entities
+            )
+
+    monkeypatch.setattr("openfoia.records.get_adapter", lambda source, **_: Adapter())
+
+
+def test_records_search_csv_no_results_overwrites_stale_file(monkeypatch, tmp_path):
+    _one_shot_adapter(monkeypatch, "sec", [])
+    out = tmp_path / "r.csv"
+    out.write_text("stale,rows\n")
+
+    result = CliRunner().invoke(app, ["records", "search", "x", "-s", "sec", "--csv", str(out)])
+
+    assert result.exit_code == 0, result.output
+    assert out.read_text().splitlines() == ["Company,Filing,Date,CIK,URL"]
+    # The empty-SEC notice and the table footer must not both print the count.
+    assert result.output.count("Showing 0 of") == 1
+
+
+def test_records_search_csv_keeps_full_usaspending_description(monkeypatch):
+    desc = "Long award description " * 10
+    entity = RecordEntity(
+        entity_type="ORGANIZATION",
+        name="Acme",
+        source="usaspending",
+        extra_data={"description": desc},
+    )
+    _one_shot_adapter(monkeypatch, "usaspending", [entity])
+
+    result = CliRunner().invoke(app, ["records", "search", "x", "-s", "usaspending", "--csv", "-"])
+
+    assert result.exit_code == 0, result.output
+    assert list(csv.reader(result.stdout.splitlines()))[1][-1] == desc
+
+
 def test_records_search_raw_is_parseable_json_without_terminal_output(monkeypatch):
     """Raw mode must be pipe-safe even when upstream data has control characters."""
 

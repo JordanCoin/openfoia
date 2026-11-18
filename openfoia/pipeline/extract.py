@@ -198,6 +198,21 @@ _ORG_SUFFIXES = {
 
 _NER_TYPES = {EntityType.PERSON, EntityType.ORGANIZATION, EntityType.LOCATION}
 
+_MAX_MENTION_LEN = 80
+# A period after 2+ lowercase letters ends a sentence unless the word is an abbreviation
+_SENTENCE_PERIOD = re.compile(r"[a-z]{2}\.$")
+_ABBREVIATIONS = _ORG_SUFFIXES | {
+    "mr", "mrs", "ms", "dr", "rev", "jr", "sr", "st", "hon", "prof", "gen", "sgt", "lt", "col",
+    "capt", "dept", "div", "assn", "bros", "intl", "natl", "govt", "ave", "blvd", "no", "vs",
+}  # fmt: skip
+
+# Function words inside names, ignored when judging prose vs. name
+_CONNECTORS = frozenset(
+    {"and", "of", "the", "de", "du", "da", "del", "la", "le", "van", "von", "y", "for"}
+)
+# One plausible name token in any script: "U.S.", "AT&T", "O'Brien", "Smith-Jones", "Müller"
+_NAME_TOKEN = re.compile(r"^[^\W_]+(?:[.&'\u2019\-][^\W_]+)*\.?['\u2019]?$")
+
 
 def _surface_clean(text: str) -> str:
     """Normalize whitespace and strip trailing punctuation."""
@@ -234,8 +249,33 @@ def _mention_score(m: Mention) -> float:
         return 0.0
 
     # NER types with ≤2 letters (not an acronym)
-    if m.entity_type in _NER_TYPES and len(re.sub(r"[^A-Za-z]", "", s)) <= 2:
+    if m.entity_type in _NER_TYPES and (len(s) < 3 or len(re.sub(r"[^A-Za-z]", "", s)) <= 2):
         return 0.0
+
+    # Names are short; anything this long is a sentence or a run-on line
+    if len(s) > _MAX_MENTION_LEN:
+        return 0.0
+
+    words = s.split()
+    sentence_ends = [
+        i
+        for i, w in enumerate(words)
+        if _SENTENCE_PERIOD.search(w) and w.rstrip(".").lower() not in _ABBREVIATIONS
+    ]
+    if len(sentence_ends) > 1 or (sentence_ends == [len(words) - 1] and len(words) >= 6):
+        return 0.0
+    # Six or more words that are mostly lowercase is prose, not a name, even
+    # when the only period sits on an abbreviation ("... by Acme Inc.").
+    if m.entity_type in _NER_TYPES and len(words) >= 6:
+        content = [w for w in words if w.lower() not in _CONNECTORS and w != "&"]
+        if content and sum(w[:1].islower() for w in content) * 2 > len(content):
+            return 0.0
+
+    garbled = 0
+    if m.entity_type in _NER_TYPES:
+        garbled = sum(1 for w in words if w != "&" and not _NAME_TOKEN.match(w.strip(',;:()"')))
+        if garbled >= 2:
+            return 0.0
 
     # Calibrate backend scores
     if m.backend_name == "spacy":
@@ -260,8 +300,20 @@ def _mention_score(m: Mention) -> float:
     if m.entity_type in _NER_TYPES and not re.search(r"[A-Z]", s):
         base -= 0.35
     # Single short word (non-acronym)
-    if m.entity_type in _NER_TYPES and len(s.split()) == 1 and len(s) <= 3:
+    if m.entity_type in _NER_TYPES and len(words) == 1 and len(s) <= 3:
         base -= 0.45
+    if garbled:
+        base -= 0.30
+    if (
+        m.entity_type in _NER_TYPES
+        and sum(1 for c in s if not c.isalnum() and not c.isspace()) / len(s) > 0.25
+    ):
+        base -= 0.50
+    if (
+        m.entity_type == EntityType.PERSON
+        and sum(w.rstrip(".").lower() not in _ABBREVIATIONS for w in words) > 5
+    ):
+        base -= 0.40
 
     return max(0.0, min(0.99, base))
 
@@ -761,17 +813,49 @@ def _find_entity_match(text: str, entities: list[ExtractedEntity]) -> ExtractedE
 # ---------------------------------------------------------------------------
 
 
+# "8b", "1.5b", "270m"; the lookbehind skips MoE tags like "8x7b"
+_PARAM_COUNT = re.compile(r"(?<![\dx.])(\d+(?:\.\d+)?)([bm])\b", re.IGNORECASE)
+_KNOWN_SMALL_MODELS = ("tinyllama", "smollm", "phi3", "phi4-mini", "llama3.2")
+# qwen3:8b runs away on the full prompt (truncated JSON even with think off and 8000 tokens).
+# Matched anywhere in the name so "hf.co/unsloth/Qwen3-8B-GGUF" counts too.
+_COMPACT_FAMILIES = ("qwen3",)
+_COMPACT_TYPES = ("PERSON", "ORGANIZATION", "LOCATION", "DATE", "MONEY")
+
+
+def _is_compact_model(model: str | None, setting: str | bool = "auto") -> bool:
+    """Whether to use the compact prompt. setting is ai.compact_prompt: auto, true or false.
+
+    auto: models under 8B parameters and the qwen3 family; unknown sizes get the full prompt.
+    """
+    choice = str(setting).lower()
+    if choice in ("true", "false"):
+        return choice == "true"
+    name = (model or "").lower()
+    if any(f in name for f in _COMPACT_FAMILIES):
+        return True
+    m = _PARAM_COUNT.search(name)
+    if m:
+        return m.group(2) == "m" or float(m.group(1)) < 8
+    return any(tag in name for tag in _KNOWN_SMALL_MODELS)
+
+
+def _strip_think(text: str) -> str:
+    """Drop <think>...</think> blocks that reasoning models emit before their JSON."""
+    return re.sub(r"<think>[\s\S]*?</think>", "", text).strip()
+
+
 def _build_extraction_prompt(
     text: str,
     context: str | None,
     page_number: int | None,
     entity_config: EntityConfig,
+    compact: bool = False,
 ) -> str:
     """Build the structured prompt for LLM entity extraction.
 
-    Uses a compact prompt for smaller models (≤8B) and a detailed prompt
-    for larger models. Smaller models choke on long instructions with
-    many entity types and relationship definitions.
+    compact=True (models of 8B or fewer, see _is_compact_model) asks for the
+    core entity types only, with no relationship section, because small
+    models lose the JSON format under long instructions.
     """
 
     type_descriptions = {
@@ -786,8 +870,12 @@ def _build_extraction_prompt(
         "ADDRESS": "Street addresses, mailing addresses",
     }
 
+    builtin = entity_config.builtin_types
+    if compact:
+        builtin = [t for t in builtin if t in _COMPACT_TYPES]
+
     type_lines = []
-    for t in entity_config.builtin_types:
+    for t in builtin:
         desc = type_descriptions.get(t, t)
         type_lines.append(f"- {t}: {desc}")
 
@@ -801,6 +889,18 @@ def _build_extraction_prompt(
     suffix = ""
     if entity_config.extraction_prompt_suffix:
         suffix = f"\n\nADDITIONAL INSTRUCTIONS:\n{entity_config.extraction_prompt_suffix}"
+
+    if compact:
+        return f"""Extract EVERY named entity from this FOIA document. Be thorough.
+
+TEXT:
+{text}
+
+Types:
+{types_block}
+
+Return ONLY JSON:
+{{"entities": [{{"raw_text": "...", "normalized": "...", "type": "PERSON", "confidence": 0.9, "context": "..."}}]}}{suffix}"""
 
     return f"""Analyze this document and extract ALL entities and relationships.
 This is a government/legal document obtained through FOIA. Be thorough.
@@ -868,7 +968,7 @@ def _call_ollama(
     )
     with urllib.request.urlopen(req, timeout=300) as resp:
         body = json.loads(resp.read())
-    return body.get("response", "")
+    return _strip_think(body.get("response", ""))
 
 
 def _call_anthropic(
@@ -902,7 +1002,7 @@ def _call_openai(
         max_tokens=max_tokens,
         response_format={"type": "json_object"},
     )
-    return response.choices[0].message.content or ""
+    return _strip_think(response.choices[0].message.content or "")
 
 
 def _llm_available(provider: str, api_key: str | None, base_url: str | None) -> bool:
@@ -977,6 +1077,7 @@ class EntityExtractor:
         self.base_url = base_url or cfg.ai.base_url
         self.temperature = cfg.ai.extraction_temperature
         self.max_tokens = cfg.ai.extraction_max_tokens
+        self.compact_prompt = cfg.ai.compact_prompt
         self.entity_config = cfg.entities
         self._backend: str | None = None  # resolved lazily
 
@@ -1291,7 +1392,13 @@ Return JSON: {{"keep": [{{"raw_text": "...", "confidence": 0.95, "corrected": ".
     def _extract_chunk_llm(
         self, text: str, context: str | None, page_number: int | None
     ) -> dict[str, Any]:
-        prompt = _build_extraction_prompt(text, context, page_number, self.entity_config)
+        prompt = _build_extraction_prompt(
+            text,
+            context,
+            page_number,
+            self.entity_config,
+            compact=_is_compact_model(self.model, self.compact_prompt),
+        )
 
         if self.provider == "ollama":
             content = _call_ollama(

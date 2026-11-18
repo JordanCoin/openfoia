@@ -34,21 +34,19 @@ def get_adapter(
     the policy built from config.network or a configured Tor is bypassed.
 
     *api_data_gov_key* (config ``records.api_data_gov_key``) goes to the
-    api.data.gov sources; None leaves them on DEMO_KEY. Over Tor the literal
-    DEMO_KEY is always used: a personal key identifies the user regardless of
-    route, and None would let GovInfo fall back to its env key.
+    api.data.gov sources; None leaves them on DEMO_KEY. Over Tor the adapter
+    withholds any personal key and uses DEMO_KEY (RecordAdapter._personal_credential).
 
     Raises KeyError if the source is not registered.
     """
-    from .base import DEMO_KEY, DataGovAdapter
+    from .base import DataGovAdapter
 
     if name not in _REGISTRY:
         available = ", ".join(sorted(_REGISTRY.keys()))
         raise KeyError(f"Unknown records source '{name}'. Available: {available}")
     cls = _REGISTRY[name]
     if issubclass(cls, DataGovAdapter):
-        key = DEMO_KEY if egress is not None and egress.is_tor else api_data_gov_key
-        return cls(api_key=key, egress=egress)
+        return cls(api_key=api_data_gov_key, egress=egress)
     return cls(egress=egress)
 
 

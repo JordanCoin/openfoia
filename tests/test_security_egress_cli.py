@@ -575,6 +575,23 @@ def test_all_sources_sends_cia_over_tor(monkeypatch, tor_records):
     assert cia and all(p.mode is EgressMode.TOR for p in cia)
 
 
+@pytest.mark.parametrize("cmd", ["search", "fetch"])
+def test_nara_over_tor_exits_without_sending_key(monkeypatch, tor_records, cmd):
+    _tor_reachable(monkeypatch, True)
+    r = runner.invoke(app, ["records", cmd, "7283224", "-s", "nara"])
+    assert r.exit_code == 1
+    assert tor_records.requests == []
+    assert "via Tor, real IP hidden, credentials withheld" in r.output
+    assert "would identify you" in " ".join(r.output.split())
+
+
+def test_all_sources_over_tor_skips_nara_and_says_credentials_withheld(monkeypatch, tor_records):
+    _tor_reachable(monkeypatch, True)
+    r = runner.invoke(app, ["records", "search", "acme", "--all-sources"])
+    assert "credentials withheld" in r.output
+    assert "skipped (personal key not sent over Tor)" in r.output
+
+
 def test_get_adapter_uses_demo_key_over_tor_even_with_env_key(monkeypatch):
     from openfoia.net import EgressMode, EgressPolicy
     from openfoia.records import get_adapter
@@ -585,3 +602,49 @@ def test_get_adapter_uses_demo_key_over_tor_even_with_env_key(monkeypatch):
     assert get_adapter("fec", egress=tor, api_data_gov_key="personal")._api_key == "DEMO_KEY"
     direct = EgressPolicy()
     assert get_adapter("fec", egress=direct, api_data_gov_key="personal")._api_key == "personal"
+
+
+# ---------------------------------------------------------------------------
+# `openfoia browse` honors network.tor (#132)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fake_browser(monkeypatch):
+    calls = []
+
+    async def _browse(url, *, use_tor, headless, save):
+        calls.append(use_tor)
+        return {"title": "t", "url": url}
+
+    monkeypatch.setattr("openfoia.tor_browse.browse", _browse)
+    return calls
+
+
+@pytest.mark.parametrize(
+    ("configured", "flags", "want_tor"),
+    [("1", [], True), ("0", [], False), ("1", ["--no-tor"], False), ("0", ["--tor"], True)],
+)
+def test_browse_route_follows_config_with_flag_override(
+    monkeypatch, fake_browser, configured, flags, want_tor
+):
+    monkeypatch.setenv("OPENFOIA_TOR", configured)
+    _tor_reachable(monkeypatch, True)
+
+    result = runner.invoke(app, ["browse", "https://example.test", *flags])
+
+    assert result.exit_code == 0, result.output
+    assert fake_browser == [want_tor]
+    assert ("via Tor, real IP hidden" if want_tor else "direct, real IP") in result.stderr
+
+
+def test_browse_fails_closed_when_configured_tor_is_down(monkeypatch, fake_browser):
+    monkeypatch.setenv("OPENFOIA_TOR", "1")
+    _tor_reachable(monkeypatch, False)
+
+    result = runner.invoke(app, ["browse", "https://example.test"])
+
+    assert result.exit_code != 0
+    assert fake_browser == []
+    assert "not reachable" in result.stderr
+    assert "not reachable" not in result.stdout

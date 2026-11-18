@@ -63,7 +63,10 @@ class GovInfoAdapter(DataGovAdapter):
     source_name = "govinfo"
 
     def __init__(self, api_key: str | None = None, *, egress: EgressPolicy | None = None):
-        """Initialize. Without *api_key*, OPENFOIA_GOVINFO_API_KEY is used, else DEMO_KEY."""
+        """Initialize. Without *api_key*, OPENFOIA_GOVINFO_API_KEY is used, else DEMO_KEY.
+
+        Over Tor any personal key is withheld and DEMO_KEY is used (see DataGovAdapter).
+        """
         import os
 
         super().__init__(api_key or os.environ.get("OPENFOIA_GOVINFO_API_KEY"), egress=egress)

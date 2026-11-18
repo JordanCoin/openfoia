@@ -889,14 +889,16 @@ async def _check_opensanctions(
     """Search OpenSanctions for sanctions/PEP matches.
 
     Sends ``OPENFOIA_OPENSANCTIONS_API_KEY`` (environment only) in the
-    documented ``Authorization: ApiKey`` header when it is set.
+    documented ``Authorization: ApiKey`` header when it is set, except over
+    Tor: the key is tied to an account and would identify the user.
     """
     import os
 
     hits = []
     headers = {"Accept": "application/json"}
     api_key = os.environ.get(OPENSANCTIONS_KEY_ENV)
-    if api_key:
+    over_tor = egress is not None and egress.is_tor
+    if api_key and not over_tor:
         headers["Authorization"] = f"ApiKey {api_key}"
 
     try:
@@ -911,9 +913,15 @@ async def _check_opensanctions(
             if resp.status_code in (401, 403):
                 # Without a key every request fails the same way; stop sending
                 # names for the rest of the run.
+                # Over Tor a personal key is withheld: it names the account.
+                error_type = (
+                    f"API key withheld over Tor ({OPENSANCTIONS_KEY_ENV} identifies you)"
+                    if api_key and over_tor
+                    else f"API key required: set {OPENSANCTIONS_KEY_ENV}"
+                )
                 raise _SourceCheckError(
                     PermissionError(f"HTTP {resp.status_code}"),
-                    error_type=f"API key required: set {OPENSANCTIONS_KEY_ENV}",
+                    error_type=error_type,
                     stop_source="skipped(api-key-required)",
                 )
             if resp.status_code != 200:

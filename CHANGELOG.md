@@ -30,6 +30,28 @@ exhaustive lists.
 
 ### Fixed
 
+- With `network.tor: true`, personal credentials still went out with records
+  requests and told the server who was asking, even though the real IP was
+  hidden: `OPENFOIA_MUCKROCK_TOKEN`, `OPENFOIA_NARA_API_KEY` /
+  `CATALOG_API_KEY`, `OPENFOIA_GOVINFO_API_KEY`, and the crossref
+  `OPENFOIA_OPENSANCTIONS_API_KEY`. Over Tor, MuckRock and OpenSanctions now
+  send no key, GovInfo (and fec, regulations) use the shared `DEMO_KEY`,
+  and NARA, which needs a personal key, is skipped: `records search -s nara`
+  and `records fetch -s nara` exit with an explanation, and `--all-sources`
+  lists it as skipped. The route line reads "via Tor, real IP hidden,
+  credentials withheld" when a credential was held back. Tor still does not
+  hide what you search for (#131).
+- A DocumentCloud `auth_token` passed to the adapter is withheld over Tor
+  too. Nothing passes one today; this closes the gap before something does.
+- Local models under 8B and the qwen3 family now get a short extraction
+  prompt (core entity types, no relationships; override with
+  `ai.compact_prompt: true|false` or `OPENFOIA_AI_COMPACT_PROMPT`), and
+  `<think>` blocks from reasoning models like qwen3 are stripped before JSON
+  parsing; qwen3:8b went from unparseable output to 13 of 14 entities on the
+  test letter (#59).
+- Entity extraction drops full sentences, run-on lines over 80 characters,
+  and OCR garbage like `EC .Orchestrating a or g-?te' 22`, and down-weights
+  punctuation-heavy text and PERSON hits over 5 words (#57).
 - `network.tor: true` was ignored by `records search -s <source>` (every source
   except cia), `records search --all-sources` (all sources, cia included),
   `records fetch -s documentcloud`, `records fetch -s nara` without
@@ -37,6 +59,19 @@ exhaustive lists.
   your query or identifiers from your real IP with no Tor check. They now route
   through Tor, refuse to run when Tor is configured but unreachable, and print
   the route ("via Tor, real IP hidden" or "direct, real IP") before sending.
+- `openfoia browse` ignored `network.tor: true` and loaded pages from your real
+  IP unless you passed `--tor`. It now follows the config (`--tor` / `--no-tor`
+  override it), refuses to open the page when Tor is configured but
+  unreachable, and prints the route before loading (#132).
+- The "Tor is not reachable" error now goes to stderr, so it no longer lands
+  in `--json` or `--csv -` output, and tells you to start Tor or set
+  `network.tor` to false instead of suggesting a `--tor` flag most commands
+  do not have.
+- `--csv PATH` on `records search`, `request list`, `analyze extract` and
+  `deadlines list` now writes a header-only file when there are no results,
+  instead of leaving a stale file from an earlier run in place.
+- `records search --csv` keeps full USAspending descriptions and ranked-search
+  snippets; only the on-screen table shortens them.
 - The entity graph now cools and settles instead of jittering forever: forces
   decay over ~300 frames, the animation loop stops once settled, overlapping
   nodes are pushed apart, and dragging a node reheats the layout (#58).

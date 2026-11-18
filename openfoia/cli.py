@@ -925,7 +925,8 @@ def request_list(
 
         if not requests:
             rprint("[yellow]No requests found.[/yellow]")
-            return
+            if not csv_path:
+                return
 
         table = Table(title=f"FOIA Requests ({len(requests)} results)")
         table.add_column("Request #", style="cyan")
@@ -3425,6 +3426,8 @@ def analyze_extract(
 
         if not result.entities:
             rprint("[yellow]No entities found in document.[/yellow]")
+            if csv_path:
+                _emit_table(Table("Type", "Entity", "Confidence"), csv_path)
             return
 
         # Save entities to database
@@ -4528,7 +4531,8 @@ def deadline_list(
         rows, no_clock, unsent = _collect_clocks(session, show_all)
         if not rows and not no_clock and not unsent:
             rprint("[dim]No active requests with deadlines.[/dim]")
-            return
+            if not csv_path:
+                return
         from .clocks import is_overdue
 
         def clock_table(group) -> Table:
@@ -4694,12 +4698,12 @@ def _check_tor_or_exit(policy: EgressPolicy) -> None:
         return
 
     if not asyncio.run(check_tor(policy)):
-        rprint(
-            f"[red]Tor egress requested but the SOCKS proxy at "
-            f"{policy.tor_host}:{policy.tor_port} is not reachable.[/red]"
-        )
-        rprint(
-            "[yellow]Start Tor (e.g. `tor` / `sudo systemctl start tor`) or drop --tor.[/yellow]"
+        typer.echo(
+            f"Tor egress requested but the SOCKS proxy at "
+            f"{policy.tor_host}:{policy.tor_port} is not reachable.\n"
+            "Start Tor (e.g. `tor` / `sudo systemctl start tor`), or set "
+            '"network": {"tor": false} in config.json to go direct.',
+            err=True,
         )
         raise typer.Exit(1)
 
@@ -4752,8 +4756,8 @@ def egress_status(
 @app.command()
 def browse(
     url: str = typer.Argument(..., help="URL to navigate to"),
-    tor: bool = typer.Option(
-        False, "--tor", help="Route traffic through Tor (SOCKS5 localhost:9050)"
+    tor: bool | None = typer.Option(
+        None, "--tor/--no-tor", help="Route through Tor; default is network.tor in config"
     ),
     headless: bool = typer.Option(False, "--headless", help="Run browser without visible window"),
     save: bool = typer.Option(
@@ -4762,9 +4766,9 @@ def browse(
 ):
     """Browse a URL with optional Tor routing and fingerprint hardening.
 
-    Uses Playwright to launch a hardened Chromium instance. When --tor is
-    specified, traffic is routed through the Tor SOCKS5 proxy at localhost:9050
-    (the Tor daemon must be running).
+    Uses Playwright to launch a hardened Chromium instance. Traffic goes
+    through the Tor SOCKS5 proxy when network.tor is set in config or --tor
+    is passed (the Tor daemon must be running); --no-tor goes direct.
 
     Fingerprint hardening is always applied: WebGL disabled, WebRTC disabled,
     timezone set to UTC, and a common user-agent is used.
@@ -4778,13 +4782,18 @@ def browse(
     """
     import asyncio
 
+    from .config import load_config
     from .tor_browse import browse as _browse
+
+    policy = _egress_policy_from(load_config(), tor=tor)
+    _check_tor_or_exit(policy)
+    typer.echo(f"Opening {url} ({_route_note(policy)}).", err=True)
 
     try:
         result = asyncio.run(
             _browse(
                 url,
-                use_tor=tor,
+                use_tor=policy.is_tor,
                 headless=headless,
                 save=save,
             )
@@ -5108,16 +5117,18 @@ def _records_search_all(
     sources = list_sources()
     policy = _records_policy_or_exit()
     data_gov_key = load_config().records.api_data_gov_key
+    adapters = {s: get_adapter(s, egress=policy, api_data_gov_key=data_gov_key) for s in sources}
 
     def say(msg: str) -> None:
         # Status goes to stderr in --json mode so stdout stays pure JSON lines.
         typer.echo(msg, err=json_lines)
 
     say(
-        f"Sending '{query}' to {len(sources)} services ({_route_note(policy)}): "
+        f"Sending '{query}' to {len(sources)} services "
+        f"({_route_note(policy, *adapters.values())}): "
         f"{', '.join(sources)}"
     )
-    if "nara" in sources and getattr(get_adapter("nara", egress=policy), "has_key", False):
+    if "nara" in sources and getattr(adapters["nara"], "has_key", False):
         from .records.nara import ATTRIBUTION
 
         say(
@@ -5130,8 +5141,10 @@ def _records_search_all(
             if kwargs.get(key) and source != owner:
                 return source, None, f"skipped ({key} filter not supported)"
         try:
-            adapter = get_adapter(source, egress=policy, api_data_gov_key=data_gov_key)
+            adapter = adapters[source]
             if source == "nara" and not adapter.has_key:
+                if getattr(adapter, "credentials_withheld", False):
+                    return source, None, "skipped (personal key not sent over Tor)"
                 return source, None, "skipped (no OPENFOIA_NARA_API_KEY)"
             result = await _search_one(adapter, source, query, limit, kwargs)
         except Exception as e:
@@ -5303,7 +5316,7 @@ def records_search(
     quiet = raw or json_lines
 
     if source != "cia":
-        typer.echo(f"Sending {query!r} to {source} ({_route_note(policy)}).", err=True)
+        typer.echo(f"Sending {query!r} to {source} ({_route_note(policy, adapter)}).", err=True)
     if source == "cia":
         notice = f"WARNING: This will send the query {query!r} to cia.gov ({_route_note(policy)})."
         if quiet:
@@ -5311,11 +5324,9 @@ def records_search(
         else:
             rprint(f"\n[yellow]{notice}[/yellow]")
     elif source == "nara":
-        from .records.nara import ATTRIBUTION, NO_KEY_MESSAGE
+        from .records.nara import ATTRIBUTION
 
-        if not adapter.has_key:
-            rprint(f"[red]{NO_KEY_MESSAGE}[/red]")
-            raise typer.Exit(1)
+        _nara_key_or_exit(adapter)
         typer.echo(
             f"Note: sending {query or '*'!r} to catalog.archives.gov with your API key "
             f"(counted against the 10,000/month quota). {ATTRIBUTION}",
@@ -5399,7 +5410,8 @@ def _print_search_result(
             rprint(
                 f"[yellow]{source} returned {result.total_results} total results for '{query}'.[/yellow]"
             )
-            rprint(f"[dim]Showing 0 of {result.total_results} results.[/dim]")
+            if not csv_path:  # with --csv the shared footer below prints it
+                rprint(f"[dim]Showing 0 of {result.total_results} results.[/dim]")
             if filing_type:
                 rprint(f"[dim]Applied SEC filing type filter: {filing_type}[/dim]")
             rprint(
@@ -5408,10 +5420,11 @@ def _print_search_result(
             )
         else:
             rprint(f"[yellow]No results found for '{query}' on {source}.[/yellow]")
-        return
-
-    rprint(f"\n[bold]{source}[/bold]: {result.total_results} total results for '{query}'")
-    rprint("=" * 60)
+        if not csv_path:
+            return
+    else:
+        rprint(f"\n[bold]{source}[/bold]: {result.total_results} total results for '{query}'")
+        rprint("=" * 60)
 
     entities = result.entities[:limit]
 
@@ -5420,10 +5433,10 @@ def _print_search_result(
         table.add_column("Score", width=5, justify="right")
         table.add_column("ID", style="dim", width=10, no_wrap=True, overflow="crop")
         table.add_column("Title", style="cyan", ratio=2)
-        table.add_column("Snippet", ratio=3, style="yellow")
+        table.add_column("Snippet", ratio=3, style="yellow", no_wrap=True, overflow="ellipsis")
         for e in entities:
             c = _compact_result(e)
-            table.add_row(str(c["score"]), c["id"] or "-", e.name, c["snippet"][:120])
+            table.add_row(str(c["score"]), c["id"] or "-", e.name, c["snippet"])
         _emit_table(table, csv_path)
         rprint(f"\n[dim]Showing {len(entities)} of {result.total_results} results.[/dim]")
         return
@@ -5482,7 +5495,7 @@ def _print_search_result(
         table.add_column("Amount", width=12, justify="right", style="green")
         table.add_column("Agency", ratio=2)
         table.add_column("Type", width=10)
-        table.add_column("Description", ratio=3)
+        table.add_column("Description", ratio=3, no_wrap=True, overflow="ellipsis")
 
         for e in entities:
             table.add_row(
@@ -5490,7 +5503,7 @@ def _print_search_result(
                 e.extra_data.get("amount_formatted", "-"),
                 e.extra_data.get("awarding_agency", "-") or "-",
                 e.extra_data.get("award_type", "-") or "-",
-                (e.extra_data.get("description") or "-")[:80],
+                e.extra_data.get("description") or "-",
             )
         _emit_table(table, csv_path)
         rprint("\n[dim]View on USAspending.gov: click award URLs in the table[/dim]")
@@ -5820,14 +5833,12 @@ def records_fetch(
     from .records import get_adapter
 
     policy = _records_policy_or_exit()
-    typer.echo(f"Fetching from {source} ({_route_note(policy)}).", err=True)
     adapter = get_adapter(source, egress=policy)
+    typer.echo(f"Fetching from {source} ({_route_note(policy, adapter)}).", err=True)
     if source == "nara":
-        from .records.nara import ATTRIBUTION, NO_KEY_MESSAGE
+        from .records.nara import ATTRIBUTION
 
-        if not adapter.has_key:
-            rprint(f"[red]{NO_KEY_MESSAGE}[/red]")
-            raise typer.Exit(1)
+        _nara_key_or_exit(adapter)
         typer.echo(
             "Note: fetching from catalog.archives.gov with your API key (one query per id, "
             f"counted against the 10,000/month quota). {ATTRIBUTION}",
@@ -5998,6 +6009,14 @@ def _ingest_nara_objects(entity, naid: str, results) -> int:
     return done
 
 
+def _nara_key_or_exit(adapter) -> None:
+    from .records.nara import NO_KEY_MESSAGE, TOR_KEY_MESSAGE
+
+    if not adapter.has_key:
+        rprint(f"[red]{TOR_KEY_MESSAGE if adapter.credentials_withheld else NO_KEY_MESSAGE}[/red]")
+        raise typer.Exit(1)
+
+
 def _records_policy_or_exit() -> EgressPolicy:
     """Egress policy from config.network.tor, fail-closed when Tor is configured but down."""
     from .config import load_config
@@ -6007,8 +6026,11 @@ def _records_policy_or_exit() -> EgressPolicy:
     return policy
 
 
-def _route_note(policy: EgressPolicy) -> str:
-    return "via Tor, real IP hidden" if policy.is_tor else "direct, real IP"
+def _route_note(policy: EgressPolicy, *adapters: Any) -> str:
+    note = "via Tor, real IP hidden" if policy.is_tor else "direct, real IP"
+    if any(getattr(a, "credentials_withheld", False) for a in adapters):
+        note += ", credentials withheld"
+    return note
 
 
 def _records_fetch_cia(identifier: str) -> None:
@@ -6099,8 +6121,8 @@ def records_download(
     from .records.muckrock import MuckRockAdapter
 
     policy = _records_policy_or_exit()
-    rprint(f"[dim]Contacting MuckRock ({_route_note(policy)}).[/dim]")
     adapter = MuckRockAdapter(egress=policy)
+    rprint(f"[dim]Contacting MuckRock ({_route_note(policy, adapter)}).[/dim]")
 
     # First fetch to show what we're downloading
     with Progress(

@@ -73,7 +73,7 @@ class MuckRockAdapter(RecordAdapter):
     def __init__(self, api_key: str | None = None, *, egress: EgressPolicy | None = None):
         """Initialize. Without *api_key*, OPENFOIA_MUCKROCK_TOKEN is used if set."""
         super().__init__(egress=egress)
-        api_key = api_key or os.environ.get("OPENFOIA_MUCKROCK_TOKEN")
+        api_key = self._personal_credential(api_key or os.environ.get("OPENFOIA_MUCKROCK_TOKEN"))
         self.api_key = api_key
         self._headers: dict[str, str] = {"content-type": "application/json"}
         if api_key:

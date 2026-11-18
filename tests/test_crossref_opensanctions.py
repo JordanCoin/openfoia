@@ -245,3 +245,20 @@ def test_keyless_401_stops_sending_names_for_the_rest_of_the_run(monkeypatch):
         "opensanctions": f"API key required: set {OPENSANCTIONS_KEY_ENV}"
     }
     assert report.results[1].source_statuses["opensanctions"] == "skipped(api-key-required)"
+
+
+def test_api_key_is_withheld_over_tor(monkeypatch):
+    from openfoia.net import EgressMode, EgressPolicy
+
+    monkeypatch.setenv(OPENSANCTIONS_KEY_ENV, FAKE_KEY)
+    tor = EgressPolicy(mode=EgressMode.TOR)
+
+    seen = _patch_client(monkeypatch, _Resp(200, {"results": []}))
+    asyncio.run(_check_opensanctions("Ana Fixture", EntityType.PERSON, tor))
+    assert "Authorization" not in seen[-1]
+
+    _patch_client(monkeypatch, _Resp(401))
+    with pytest.raises(crossref_mod._SourceCheckError) as exc:
+        asyncio.run(_check_opensanctions("Ana Fixture", EntityType.PERSON, tor))
+    assert "withheld over Tor" in exc.value.error_type
+    assert FAKE_KEY not in str(exc.value)
