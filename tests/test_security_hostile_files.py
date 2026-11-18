@@ -1051,3 +1051,124 @@ def test_zip_that_is_not_a_word_document_is_a_failure(tmp_path):
 
     assert result["status"] == "failed"
     assert result["error"] == "could not open the file as a DOCX"
+
+
+# ---------------------------------------------------------------------------
+# DOCX zip bombs: refused from the central directory, before decompression
+# ---------------------------------------------------------------------------
+
+
+def _docx_with_big_media(path: Path, size: int) -> Path:
+    """A .docx whose document relationships reference a large, highly
+    compressible image part (zeros): the part is read by anything that loads
+    the package, not only by code that walks every member."""
+    import zipfile
+
+    from docx import Document
+
+    Document().save(str(path))
+    members = _docx_members(path)
+    _add_part(members, "word/media/image1.png", b"", rel_type="image")
+    ct = members["[Content_Types].xml"].decode()
+    members["[Content_Types].xml"] = ct.replace(
+        "<Default ", '<Default Extension="png" ContentType="image/png"/><Default ', 1
+    ).encode()
+    del members["word/media/image1.png"]
+    _write_docx(path, members)
+    with zipfile.ZipFile(path, "a", zipfile.ZIP_DEFLATED) as z:
+        info = zipfile.ZipInfo("word/media/image1.png")
+        info.compress_type = zipfile.ZIP_DEFLATED
+        with z.open(info, "w", force_zip64=True) as f:
+            f.write(_PNG_SIG)
+            chunk = b"\0" * 2**20
+            for _ in range(size // 2**20):
+                f.write(chunk)
+    return path
+
+
+_PNG_SIG = b"\x89PNG\r\n\x1a\n"
+
+
+def _no_member_reads(monkeypatch):
+    import zipfile
+
+    def refuse(self, *args, **kwargs):
+        raise AssertionError("a member was decompressed")
+
+    monkeypatch.setattr(zipfile.ZipFile, "open", refuse)
+
+
+def test_docx_with_a_referenced_zip_bomb_part_is_refused_before_reading(tmp_path, monkeypatch):
+    from openfoia.pipeline.metadata import describe, strip_metadata
+
+    path = _docx_with_big_media(tmp_path / "bomb.docx", 64 * 2**20)  # 64 MiB of zeros
+    assert path.stat().st_size < 2**20
+    before = path.read_bytes()
+    _no_member_reads(monkeypatch)
+
+    result = strip_metadata(path)
+
+    assert result["status"] == "failed"
+    assert result["error"] == (
+        "too large to clean safely: archive member expands too much (zip bomb)"
+    )
+    assert describe(result)[0] is False
+    assert path.read_bytes() == before
+    assert list(tmp_path.iterdir()) == [path]
+
+
+@pytest.mark.parametrize(
+    ("limit", "value", "error"),
+    [
+        ("MAX_ZIP_MEMBER_BYTES", 1000, "archive member expands to 0 MiB"),
+        ("MAX_ZIP_TOTAL_BYTES", 10_000, "archive expands to 0 MiB"),
+        ("MAX_ZIP_MEMBERS", 3, "archive has too many members"),
+    ],
+)
+def test_docx_over_a_directory_limit_is_refused(tmp_path, monkeypatch, limit, value, error):
+    from openfoia.pipeline import metadata
+
+    path = _hostile_docx(tmp_path / "big.docx")
+    monkeypatch.setattr(metadata, limit, value)
+    _no_member_reads(monkeypatch)
+
+    result = metadata.strip_metadata(path)
+
+    assert result["status"] == "failed"
+    assert result["error"].startswith(f"too large to clean safely: {error}")
+
+
+def test_docx_with_two_members_of_the_same_name_is_refused(tmp_path):
+    import warnings
+    import zipfile
+
+    from openfoia.pipeline.metadata import strip_metadata
+
+    path = _hostile_docx(tmp_path / "dup.docx")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with zipfile.ZipFile(path, "a") as z:
+            z.writestr("Word/Document.xml", b"<w:document/>")
+
+    result = strip_metadata(path)
+
+    assert result["status"] == "failed"
+    assert "same name" in result["error"]
+
+
+def test_large_ordinary_docx_part_is_still_cleaned(tmp_path):
+    """The ratio check only applies past 1 MiB; ordinary XML is well under it."""
+    from openfoia.pipeline.metadata import strip_metadata
+
+    path = _hostile_docx(tmp_path / "long.docx")
+    members = _docx_members(path)
+    paragraphs = "".join(
+        f"<w:p><w:r><w:t>Paragraph {i} of the long annex, item {i * 7919 % 10007}.</w:t></w:r></w:p>"
+        for i in range(40_000)
+    )
+    doc = members["word/document.xml"].decode()
+    members["word/document.xml"] = doc.replace("<w:sectPr", paragraphs + "<w:sectPr", 1).encode()
+    assert len(members["word/document.xml"]) > 2 * 2**20
+    _write_docx(path, members)
+
+    assert strip_metadata(path)["status"] == "stripped"

@@ -389,6 +389,14 @@ exhaustive lists.
   check it with a second tool (for example `exiftool` or `mat2 --show`, and
   open it to look at comments and tracked changes), or ingest the original
   again and use the new stored copy.
+- A small DOCX could use gigabytes of memory while its metadata was stripped:
+  a 1 MB file declaring a 1 GiB image part peaked at 3.1 GiB and was then
+  reported clean. The zip directory is now checked before anything is
+  decompressed (at most 128 MiB per part, 1 GiB in total, 10,000 parts, and no
+  part over 1 MiB that expands more than 200 times), and members are cleaned
+  one at a time. A file over a limit is stored as received and reported as
+  "metadata NOT stripped: too large to clean safely". Text extraction of such
+  a file is not limited yet.
 
 ## [4.7.0] - 2026-10-23
 

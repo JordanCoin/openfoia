@@ -553,6 +553,18 @@ def _scrub_pdf_dict(d: Any, stripped: list[str], remaining: list[str]) -> None:
 # DOCX metadata — the zip is rewritten member by member
 # ---------------------------------------------------------------------------
 
+#: Limits checked from the zip's central directory before any member is
+#: decompressed. A 1 MB .docx can declare a 1 GiB part: reading it whole drove
+#: a 3 GiB peak before these existed. Python's zipfile never returns more than
+#: a member's declared size, so the directory figures bound what is read.
+MAX_ZIP_MEMBERS = 10_000
+MAX_ZIP_MEMBER_BYTES = 128 * 2**20
+MAX_ZIP_TOTAL_BYTES = 1024 * 2**20
+#: A member larger than 1 MiB that expands more than this many times its
+#: compressed size is treated as a zip bomb. Word's own XML is 5-20x.
+MAX_ZIP_RATIO = 200
+_ZIP_RATIO_FLOOR = 2**20
+
 _W_NAMESPACES = frozenset(
     {
         "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
@@ -598,6 +610,36 @@ _PLURAL = {"initials": "initials", "date": "dates"}
 _LOCAL_PATH = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\|file:|/(?:Users|home|Volumes)/)", re.I)
 
 
+def docx_archive_problem(file_path: Path | str) -> str | None:
+    """Why this zip must not be decompressed, or None if its directory is sane.
+
+    Only the central directory is read. Exposed so anything else that opens a
+    stored .docx (text extraction) can apply the same limits.
+    """
+    import zipfile
+
+    with zipfile.ZipFile(file_path) as z:
+        infos = z.infolist()
+    if len(infos) > MAX_ZIP_MEMBERS:
+        return f"archive has too many members ({len(infos)})"
+    names = [info.filename.lower() for info in infos]
+    if len(set(names)) != len(names):
+        return "archive has two members with the same name"
+    total = 0
+    for info in infos:
+        if info.flag_bits & 0x1:
+            return "archive member is encrypted"
+        size = info.file_size
+        total += size
+        if size > MAX_ZIP_MEMBER_BYTES:
+            return f"archive member expands to {size // 2**20} MiB"
+        if size > _ZIP_RATIO_FLOOR and size > MAX_ZIP_RATIO * max(info.compress_size, 1):
+            return "archive member expands too much (zip bomb)"
+    if total > MAX_ZIP_TOTAL_BYTES:
+        return f"archive expands to {total // 2**20} MiB"
+    return None
+
+
 def _strip_docx_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
     """Clean every part of the .docx that is known to carry metadata.
 
@@ -615,6 +657,14 @@ def _strip_docx_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
     import zipfile
 
     result: dict[str, Any] = {"stripped": [], "file_type": "docx", "status": "stripped"}
+
+    try:
+        problem = docx_archive_problem(file_path)
+    except Exception as exc:
+        logger.warning("Could not open DOCX %s: %s", file_path, exc)
+        return {**result, "status": "failed", "error": "could not open the file as a DOCX"}
+    if problem:
+        return {**result, "status": "failed", "error": f"too large to clean safely: {problem}"}
 
     stripped: list[str] = []
     remaining: list[str] = []
@@ -637,7 +687,7 @@ def _strip_docx_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
                     if name.lower() in dropped or name.endswith("/"):
                         continue
                     with src.open(info) as member:
-                        data = member.read()
+                        data = member.read(MAX_ZIP_MEMBER_BYTES + 1)
                     data = _clean_docx_member(
                         name, data, dropped, stripped, remaining, original_meta
                     )
