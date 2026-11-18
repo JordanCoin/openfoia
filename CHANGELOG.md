@@ -166,6 +166,15 @@ exhaustive lists.
   cannot be followed. Pages archived before this release are still unsafe to
   open in a browser: delete them, or archive the URL again. The extracted text
   is unchanged.
+- A small image could use gigabytes of memory while its metadata was stripped
+  (a 198 KiB, 8000x8000 PNG peaked at 5.4 GiB), on `docs ingest` and on web
+  UI uploads. The image is now copied without a Python object per pixel
+  (that PNG's 7000x7000 neighbour now peaks at about 420 MiB instead of
+  4.1 GiB), and an image over 50 megapixels is refused from its header before
+  it is decoded: it is stored with its metadata and reported as "metadata NOT
+  stripped: image too large to clean safely". JPEG comments, XMP, ICC profiles
+  and PNG text chunks, which were already dropped, are now listed in what was
+  stripped.
 - The graph page's document reader no longer builds its text with `innerHTML`;
   it uses text nodes and elements only. A `source_url` that is not `http(s)` is
   no longer turned into a link. The page is written as UTF-8 on every platform.

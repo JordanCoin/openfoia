@@ -312,3 +312,154 @@ def test_csp_alone_blocks_subresources_in_chromium(chromium, tmp_path):
     reached, attempted = _open_in_browser(chromium, path)
     assert reached == []
     assert attempted and set(attempted.values()) == {"csp"}, attempted
+
+
+# ---------------------------------------------------------------------------
+# Images (A11): bounded memory, and every metadata block goes
+# ---------------------------------------------------------------------------
+
+SOURCE = "Jane Source"
+
+
+@pytest.fixture
+def pil():
+    return pytest.importorskip("PIL.Image")
+
+
+def test_huge_canvas_is_refused_before_any_pixel_is_decoded(pil, tmp_path, monkeypatch):
+    from openfoia.pipeline import metadata
+
+    path = tmp_path / "canvas.png"
+    pil.new("RGB", (300, 200), (255, 255, 255)).save(path)
+    before = path.read_bytes()
+    monkeypatch.setattr(metadata, "MAX_IMAGE_PIXELS", 300 * 200 - 1)
+
+    def no_decode(self, *a, **k):
+        raise AssertionError("decoded an image over the pixel cap")
+
+    monkeypatch.setattr(pil.Image, "load", no_decode)
+    monkeypatch.setattr(pil.Image, "copy", no_decode)
+
+    result = metadata.strip_metadata(path)
+
+    assert result["status"] == "failed"
+    assert result["error"] == (
+        "image too large to clean safely (300x200 pixels, over 0 megapixels)"
+    )
+    assert metadata.describe(result)[0] is False
+    assert path.read_bytes() == before
+    assert list(tmp_path.iterdir()) == [path]
+
+
+def test_pillow_decompression_bomb_is_a_failure(pil, tmp_path, monkeypatch):
+    from openfoia.pipeline.metadata import describe, strip_metadata
+
+    path = tmp_path / "bomb.png"
+    pil.new("L", (100, 100)).save(path)
+    monkeypatch.setattr(pil, "MAX_IMAGE_PIXELS", 1000)  # 2x this raises at open
+
+    result = strip_metadata(path)
+
+    assert result["status"] == "failed"
+    assert describe(result) == (False, "metadata NOT stripped: image too large to clean safely")
+
+
+def test_image_at_the_cap_is_still_cleaned(pil, tmp_path, monkeypatch):
+    from openfoia.pipeline import metadata
+
+    path = tmp_path / "ok.png"
+    pil.new("RGB", (300, 200)).save(path)
+    monkeypatch.setattr(metadata, "MAX_IMAGE_PIXELS", 300 * 200)
+
+    assert metadata.strip_metadata(path)["status"] == "stripped"
+
+
+def _jpeg_with_every_block(pil, path: Path) -> Path:
+    from PIL import ImageCms
+
+    exif = pil.Exif()
+    exif[0x013B] = SOURCE  # Artist
+    icc = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+    pil.radial_gradient("L").convert("RGB").save(
+        path,
+        "JPEG",
+        exif=exif.tobytes(),
+        comment=f"scanned by {SOURCE}".encode(),
+        xmp=f"<x:xmpmeta><dc:creator>{SOURCE}</dc:creator></x:xmpmeta>".encode(),
+        icc_profile=icc,
+    )
+    reopened = pil.open(path)
+    assert {"exif", "comment", "xmp", "icc_profile"} <= set(reopened.info)
+    return path
+
+
+def test_jpeg_comment_xmp_and_icc_are_removed_and_listed(pil, tmp_path):
+    from openfoia.pipeline.metadata import strip_metadata
+
+    path = _jpeg_with_every_block(pil, tmp_path / "photo.jpg")
+
+    result = strip_metadata(path)
+
+    assert result["status"] == "stripped"
+    assert {"Artist", "comment", "xmp", "icc_profile"} <= set(result["stripped"])
+    assert SOURCE.encode() not in path.read_bytes()
+    assert not {"exif", "comment", "xmp", "icc_profile"} & set(pil.open(path).info)
+
+
+def test_png_text_chunks_and_exif_are_removed(pil, tmp_path):
+    from PIL.PngImagePlugin import PngInfo
+
+    from openfoia.pipeline.metadata import strip_metadata
+
+    path = tmp_path / "shot.png"
+    text = PngInfo()
+    text.add_text("Author", SOURCE)
+    text.add_itxt("Description", f"phone of {SOURCE}")
+    exif = pil.Exif()
+    exif[0x013B] = SOURCE
+    pil.new("RGB", (40, 40)).save(path, pnginfo=text, exif=exif.tobytes())
+    assert path.read_bytes().count(SOURCE.encode()) >= 2
+
+    result = strip_metadata(path)
+
+    assert result["status"] == "stripped"
+    assert {"Author", "Description"} <= set(result["stripped"])
+    assert SOURCE.encode() not in path.read_bytes()
+
+
+def test_tiff_tags_are_not_copied_into_the_clean_file(pil, tmp_path):
+    """Pillow re-writes an opened TIFF's XMP/IPTC/Photoshop tags on save."""
+    from PIL.TiffImagePlugin import ImageFileDirectory_v2
+
+    from openfoia.pipeline.metadata import strip_metadata
+
+    path = tmp_path / "scan.tif"
+    ifd = ImageFileDirectory_v2()
+    ifd[315] = SOURCE  # Artist
+    ifd[700] = f"<dc:creator>{SOURCE}</dc:creator>".encode()  # XMP
+    pil.new("RGB", (40, 40)).save(path, tiffinfo=ifd)
+    assert SOURCE.encode() in path.read_bytes()
+
+    result = strip_metadata(path)
+
+    assert result["status"] == "stripped"
+    assert SOURCE.encode() not in path.read_bytes()
+
+
+def test_palette_image_keeps_its_colours(pil, tmp_path):
+    from openfoia.pipeline.metadata import strip_metadata
+
+    path = tmp_path / "chart.png"
+    img = pil.new("P", (4, 1))
+    img.putpalette([255, 0, 0, 0, 255, 0, 0, 0, 255, 9, 9, 9] + [0] * (256 * 3 - 12))
+    img.putdata([0, 1, 2, 3])
+    img.save(path)
+
+    assert strip_metadata(path)["status"] == "stripped"
+    clean = pil.open(path).convert("RGB")
+    assert [clean.getpixel((x, 0)) for x in range(4)] == [
+        (255, 0, 0),
+        (0, 255, 0),
+        (0, 0, 255),
+        (9, 9, 9),
+    ]

@@ -116,6 +116,33 @@ def _hash_metadata(metadata_dict: dict[str, Any]) -> str:
 # Image metadata (EXIF) — uses Pillow
 # ---------------------------------------------------------------------------
 
+#: Largest image (width x height) cleaned. Checked from the header, before any
+#: pixel is decoded: a 200 KiB PNG can declare 8000x8000 pixels, and cleaning
+#: holds the decoded image twice (Pillow keeps RGB at 4 bytes a pixel, so about
+#: 400 MB at the cap). 50 megapixels covers common phone and camera photos; the
+#: largest sensors (108 and 200 MP phone modes) are refused and reported.
+MAX_IMAGE_PIXELS = 50_000_000
+
+#: Image.info keys that describe how the pixels are encoded, not who made them.
+_IMAGE_TECHNICAL_INFO = frozenset(
+    {
+        "adobe", "adobe_transform", "aspect", "background", "chromaticity",
+        "compression", "dpi", "duration", "gamma", "interlace", "jfif",
+        "jfif_density", "jfif_unit", "jfif_version", "loop", "progression",
+        "progressive", "resolution", "srgb", "transparency",
+    }
+)  # fmt: skip
+
+
+def _too_large(width: int, height: int) -> dict[str, str]:
+    return {
+        "status": "failed",
+        "error": (
+            f"image too large to clean safely ({width}x{height} pixels, over "
+            f"{MAX_IMAGE_PIXELS // 1_000_000} megapixels)"
+        ),
+    }
+
 
 def _strip_image_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
     from PIL import Image
@@ -124,50 +151,66 @@ def _strip_image_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
 
     try:
         img = Image.open(file_path)
+    except Image.DecompressionBombError:
+        return {**result, "status": "failed", "error": "image too large to clean safely"}
     except Exception as exc:
         logger.warning("Could not open image %s: %s", file_path, exc)
         return {**result, "status": "failed", "error": "could not open the file as an image"}
 
-    # Collect original EXIF for hashing
-    exif_data = {}
-    info = img.info or {}
+    with img:
+        # Image.open reads only the header. Refuse a huge canvas before a single
+        # pixel is decoded.
+        width, height = img.size
+        if width * height > MAX_IMAGE_PIXELS:
+            return {**result, **_too_large(width, height)}
 
-    if hasattr(img, "_getexif") and img._getexif():
-        from PIL.ExifTags import TAGS
+        # Collect original EXIF for hashing
+        exif_data = {}
+        info = dict(img.info or {})
 
-        raw_exif = img._getexif()
-        for tag_id, value in raw_exif.items():
-            tag_name = TAGS.get(tag_id, str(tag_id))
-            try:
-                exif_data[tag_name] = str(value)
-            except Exception:
-                exif_data[tag_name] = repr(value)
+        if hasattr(img, "_getexif") and img._getexif():
+            from PIL.ExifTags import TAGS
 
-    if exif_data:
-        result["stripped"] = list(exif_data.keys())
+            raw_exif = img._getexif()
+            for tag_id, value in raw_exif.items():
+                tag_name = TAGS.get(tag_id, str(tag_id))
+                try:
+                    exif_data[tag_name] = str(value)
+                except Exception:
+                    exif_data[tag_name] = repr(value)
 
-    if keep_hash and exif_data:
-        result["original_metadata_hash"] = _hash_metadata(exif_data)
+        stripped = list(exif_data.keys())
+        # Everything else in info that is not about the encoding goes too: XMP,
+        # ICC profile, JPEG comment, PNG text chunks, Photoshop/IPTC blocks.
+        for key in info:
+            name = str(key)
+            if key != "exif" and name not in _IMAGE_TECHNICAL_INFO and name not in stripped:
+                stripped.append(name)
+        if "exif" in info and not exif_data:
+            stripped.append("exif")
+        result["stripped"] = stripped
 
-    # Re-save without EXIF by creating a clean copy
-    # Preserve format and mode
-    fmt = img.format or file_path.suffix.lstrip(".").upper()
-    if fmt == "JPG":
-        fmt = "JPEG"
+        if keep_hash and exif_data:
+            result["original_metadata_hash"] = _hash_metadata(exif_data)
 
-    # Image.open is lazy: a truncated or corrupt file opens fine and only fails
-    # here, when the pixels are decoded.
-    try:
-        pixels = (
-            img.get_flattened_data()  # Pillow 12+; getdata is removed in Pillow 14
-            if hasattr(img, "get_flattened_data")
-            else img.getdata()
-        )
-        clean = Image.new(img.mode, img.size)
-        clean.putdata(list(pixels))
-    except Exception as exc:
-        logger.warning("Could not decode image %s: %s", file_path, exc)
-        return {**result, "status": "failed", "error": "could not decode the image"}
+        fmt = img.format or file_path.suffix.lstrip(".").upper()
+        if fmt == "JPG":
+            fmt = "JPEG"
+
+        # Image.open is lazy: a truncated or corrupt file opens fine and only
+        # fails here, when the pixels are decoded. copy() duplicates the decoded
+        # pixels in C (no per-pixel Python objects) into a plain Image: it does
+        # not carry the TIFF tag directory, which Pillow re-writes on save for
+        # an opened TIFF (XMP, IPTC, Photoshop blocks). Its info dict, which
+        # Pillow's savers also fall back to (JPEG comment, PNG ICC profile), is
+        # emptied.
+        try:
+            img.load()
+            clean = img.copy()
+        except Exception as exc:
+            logger.warning("Could not decode image %s: %s", file_path, exc)
+            return {**result, "status": "failed", "error": "could not decode the image"}
+    clean.info = {}
 
     save_kwargs: dict[str, Any] = {}
     if fmt == "JPEG":
@@ -185,6 +228,8 @@ def _strip_image_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
         tmp.unlink(missing_ok=True)
         logger.warning("Could not save cleaned image %s: %s", file_path, exc)
         return {**result, "status": "failed", "error": "could not save the cleaned image"}
+    finally:
+        clean.close()
 
     return result
 

@@ -402,7 +402,6 @@ def test_a10_token_not_in_browser_argv(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@audit("A11 image stripping materializes every pixel as a Python tuple")
 def test_a11_image_strip_memory_is_bounded(tmp_path):
     """A 198 KiB 8000x8000 PNG (below Pillow's bomb threshold) drove a 5.4 GiB
     peak RSS in the audit. Here: Python-level allocations for a 1000x1000 RGB
