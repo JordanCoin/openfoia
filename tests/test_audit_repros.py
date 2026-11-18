@@ -2,9 +2,8 @@
 
 Each test demonstrates a place where the code breaks a promise made in
 CLAUDE.md or docs/THREAT_MODEL.md, docs/TAILS.md, docs/USB.md, docs/AIRGAP.md.
-They are marked ``xfail(strict=True)``: they fail today because the bug is
-real, and they will report XPASS (a failure under strict mode) once the bug is
-fixed, so whoever fixes it removes the marker and keeps the test.
+Every finding is fixed; these stay as regression tests, so a change that
+reopens one of them fails CI.
 
 The audit report carries the exploit scenario and a suggested fix for each id.
 """
@@ -29,10 +28,6 @@ REPO = Path(__file__).resolve().parent.parent
 runner = CliRunner()
 
 needs_sqlcipher = pytest.mark.skipif(not has_sqlcipher(), reason="no SQLCipher driver installed")
-
-
-def audit(finding_id: str):
-    return pytest.mark.xfail(strict=True, reason=f"audit: {finding_id}")
 
 
 @pytest.fixture
