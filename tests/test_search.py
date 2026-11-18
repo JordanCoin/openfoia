@@ -562,3 +562,11 @@ def test_agent_tor_unavailable_is_reported_and_nothing_sent(registry, monkeypatc
     )
     assert "not reachable" in out["error"]
     assert Fake.calls == []
+
+
+def test_clean_keeps_zero_width_joiners_but_drops_bidi_overrides():
+    """A Persian surname keeps its ZWNJ; an RTL override that reorders text does not survive."""
+    from openfoia.search import clean
+
+    assert clean("بنیامین\u200cپور") == "بنیامین\u200cپور"
+    assert clean("invoice\u202efdp.exe") == "invoicefdp.exe"

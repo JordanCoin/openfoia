@@ -37,17 +37,20 @@ REASON_MAX = 200
 OK, NO_RESULTS, ERROR, SKIPPED = "ok", "no_results", "error", "skipped"
 
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}")
+_JOINERS = "\u200c\u200d"
 
 
 def clean(value: Any) -> str:
     """One line of upstream text with control and format characters removed.
 
     Drops ESC (terminal escape injection), C1 controls, bidi overrides and
-    lone surrogates; newlines and tabs become spaces.
+    lone surrogates; newlines and tabs become spaces. The zero-width
+    non-joiner and joiner are kept: they are part of Persian, Indic and emoji
+    spelling and cannot move the cursor or reorder text.
     """
     text = "" if value is None else str(value)
     text = re.sub(r"[\r\n\t]+", " ", text)
-    return "".join(ch for ch in text if ch.isprintable())
+    return "".join(ch for ch in text if ch.isprintable() or ch in _JOINERS)
 
 
 def utc_now() -> str:
