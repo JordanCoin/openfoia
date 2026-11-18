@@ -153,6 +153,19 @@ exhaustive lists.
 - **`analyze export` wrote no relationships.** It passed each link's ends as
   database ids, but the FollowTheMoney writer joins them to entities by name, so
   every relationship was dropped and the export held only the entities.
+- Archived web pages could still make network requests when the saved file
+  was opened later, from your real IP even if the page was fetched over Tor:
+  the regex sanitizer missed `<svg/onload=…>`, `</script >`, `<meta
+  http-equiv=refresh>`, CSS `@import`, SVG `<image href>`, `<input
+  type=image>` and `<body background>`. Archived pages are now rebuilt from
+  the parsed page using a short list of text and structure tags (headings,
+  paragraphs, lists, tables, emphasis, links) with no attribute that can hold
+  a URL, script or style, and each file starts with a Content-Security-Policy
+  that blocks every load. Images, styling, forms, SVG and embedded media are
+  no longer kept; a link keeps its text and shows its old target on hover but
+  cannot be followed. Pages archived before this release are still unsafe to
+  open in a browser: delete them, or archive the URL again. The extracted text
+  is unchanged.
 - The graph page's document reader no longer builds its text with `innerHTML`;
   it uses text nodes and elements only. A `source_url` that is not `http(s)` is
   no longer turned into a link. The page is written as UTF-8 on every platform.

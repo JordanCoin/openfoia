@@ -126,7 +126,6 @@ BEACON_PAYLOADS = {
 }
 
 
-@audit("A3 _sanitize_for_archive lets remote loads and script through")
 @pytest.mark.parametrize("name", sorted(BEACON_PAYLOADS))
 def test_a3_archived_page_is_inert(name):
     """web.py promises "An archived page must be inert". Each payload below was
