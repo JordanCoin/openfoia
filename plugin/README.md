@@ -6,7 +6,7 @@ Ships a skill and four slash commands that make Claude a competent copilot for F
 
 - **Skill** — `openfoia`: teaches Claude the case loop (case → search → fetch → docs grep → cited notes → extract and graph → export → FOIA draft), the three evidence tiers, when to use which extraction tier, privacy warnings before network calls, and how to read FOIA responses critically.
 - **`/foia-install`** — install and initialize the `openfoia` CLI, with a warning before each step that touches the machine.
-- **`/foia-search <topic>`** — multi-source search across MuckRock, OpenCorporates, SEC.
+- **`/foia-search <topic>`** — multi-source search: `openfoia search` across every records source, then per-source follow-ups.
 - **`/foia-investigate <claim or topic>`** — end-to-end investigation inside one case, ending in a cited export.
 - **`/foia-graph <name or request-id>`** — build or open a saved relationship graph.
 

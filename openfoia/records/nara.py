@@ -150,6 +150,11 @@ class NARAAdapter(RecordAdapter):
     """Search and fetch descriptions (and OCR text where present) from the NARA Catalog."""
 
     source_name = "nara"
+    #: Shown by ``openfoia search`` before the query is sent.
+    search_notice = (
+        f"sends your API key; each query counts against the {MONTHLY_QUOTA:,}/month quota. "
+        f"{ATTRIBUTION}"
+    )
 
     def __init__(self, api_key: str | None = None, *, egress=None):
         super().__init__(egress=egress)
@@ -160,6 +165,13 @@ class NARAAdapter(RecordAdapter):
     @property
     def has_key(self) -> bool:
         return bool(self._api_key)
+
+    def unavailable_reason(self) -> str | None:
+        if self.has_key:
+            return None
+        if self.credentials_withheld:
+            return "personal API key not sent over Tor"
+        return f"no {KEY_ENV}"
 
     async def _get(self, params: dict[str, Any]) -> dict[str, Any]:
         if not self._api_key:

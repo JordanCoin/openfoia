@@ -12,6 +12,19 @@ exhaustive lists.
 
 ### Added
 
+- `openfoia search "<query>"`: one query to every records source (or those
+  named with `--source`), a few at a time. Each source is reported as ok, no
+  results, error with the reason, or skipped with the reason; one failing does
+  not stop the others. Every result carries `source`, `title`, `url`,
+  `snippet`, `retrieved_at` (UTC) and `egress`. It lists the sources and the
+  route and asks before sending (`--yes` skips the question). `--egress
+  tor|direct` overrides `network.tor` for one run, and Tor fails closed.
+  Sources that need a personal key, which is not sent over Tor (MuckRock,
+  NARA), are skipped. `--json` prints one JSON document on stdout with the
+  warning on stderr; `--limit` is per source; `--since YYYY-MM-DD` drops
+  older results after retrieval. The agent interface has the same search as
+  the `search_records` tool, which needs `allow_network` in the agent config
+  and a `confirmed` call after the user saw the warning (#66).
 - `openfoia analyze graph --view`: the graph page is reworked so a large case
   can be read.
   - People, organizations and places each have a colour and a shape. Amounts,

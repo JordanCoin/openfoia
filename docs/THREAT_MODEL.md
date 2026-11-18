@@ -88,6 +88,7 @@ OpenFOIA is local-first, but certain features make network requests:
 |---|---|---|
 | `openfoia request send` | Agency FOIA portal / email gateway | Your FOIA request text, your contact info |
 | `openfoia ingest` (web fetch/archive) | The URL's host | The URL you are fetching. Without `--tor`, from your real IP; the exit node also sees it when `--tor` is used |
+| `openfoia search`, `openfoia records search` | The public-records sources searched (DocumentCloud, MuckRock, SEC EDGAR, OpenCorporates, USAspending, NARA and the others in the records registry) | Your search query, from your real IP unless Tor is used (`--egress tor` or `network.tor`). `openfoia search` lists the sources and asks first; with Tor it fails closed and does not send personal API keys |
 | `openfoia crossref` | MuckRock, OpenCorporates, SEC EDGAR, DocumentCloud, OpenSanctions, USASpending, and other configured record sources | **The names of the people and organizations you are investigating** (the subject names extracted from your documents), from your real IP unless `--tor` is used. CLI warns and asks you to confirm before this happens; `--sources icij` stays fully offline |
 | Cloud AI summarization (opt-in) | Configured LLM API (OpenAI, etc.) | Document text sent to the API endpoint |
 | `openfoia serve` | `localhost` only | Nothing leaves the machine, but browser records local activity |

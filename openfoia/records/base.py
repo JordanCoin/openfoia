@@ -197,6 +197,16 @@ class RecordAdapter(ABC):
             return None
         return value
 
+    def unavailable_reason(self) -> str | None:
+        """Why search() cannot run as configured, or None when it can.
+
+        Checked before any request (by ``openfoia search``), so a source that
+        needs a key it does not have, or whose personal key was withheld over
+        Tor, is reported as skipped instead of being sent the query only to
+        refuse it. Override in adapters whose API refuses anonymous calls.
+        """
+        return None
+
     async def _request(
         self,
         url: str,

@@ -6890,6 +6890,155 @@ def case_export(
         typer.echo(text, nl=False)
 
 
+# === Unified Search Command ===
+
+
+def _search_status_line(s) -> str:
+    from .search import clean
+
+    if s.status == "ok":
+        total = f" of {s.total:,}" if s.total is not None and s.total > s.returned else ""
+        text = f"ok: {s.returned} shown{total}"
+        if s.older_than_since:
+            text += f", {s.older_than_since} older than --since dropped"
+    elif s.status == "no_results":
+        text = "no results" + (f" ({s.reason})" if s.reason else "")
+    elif s.status == "error":
+        text = f"error: {s.reason}"
+        if s.returned:
+            text += f" ({s.returned} result(s) kept from before the error)"
+    else:
+        text = f"skipped: {s.reason}"
+    if s.credentials_withheld and s.status != "skipped":
+        text += " [credentials withheld]"
+    return clean(f"  {s.source:<15} {text}")
+
+
+@app.command("search")
+def search_cmd(
+    query: str = typer.Argument(..., help="Person, company, contract or topic to search for"),
+    source: list[str] | None = typer.Option(
+        None,
+        "--source",
+        "-s",
+        help="Only this source; repeat or comma-separate (default: every registered "
+        "source, see 'openfoia records search --help')",
+    ),
+    egress: str | None = typer.Option(
+        None,
+        "--egress",
+        help="tor or direct for this run (default: config network.tor, see "
+        "'openfoia egress-status'). tor never falls back to direct.",
+    ),
+    limit: int = typer.Option(10, "--limit", "-n", min=1, help="Maximum results per source"),
+    since: str | None = typer.Option(
+        None,
+        "--since",
+        help="Drop results dated before YYYY-MM-DD. Filtered here after retrieval "
+        "(the sources get the same query); results with no date are kept.",
+    ),
+    json_out: bool = typer.Option(
+        False,
+        "--json",
+        help="Print one JSON object (per-source status and results) on stdout; "
+        "warnings and prompts go to stderr",
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the network confirmation prompt"),
+):
+    """Search every public-records source at once, with provenance on every result.
+
+    Sends the query to each registered records source (the ones 'openfoia
+    records search' knows) a few at a time, and reports each source as ok,
+    no results, error (with the reason) or skipped (with the reason). A
+    source that fails does not stop the others. Each result carries source,
+    title, url, snippet, retrieved_at (UTC) and egress (tor or direct).
+
+    Before anything is sent it lists the sources and the route and asks for
+    confirmation (--yes skips the question). Sources that need a personal key
+    you have not set, or whose key is withheld over Tor, are skipped and not
+    sent the query. When a case is active the query is logged to it.
+
+    Exit 0: every source answered or was skipped; 2: some sources errored;
+    1: no source answered.
+
+    Examples:
+        openfoia search "Acme Corp"
+        openfoia search "Acme Corp" -s sec -s opencorporates --limit 5
+        openfoia search "Acme Corp" --egress tor --json --yes > hits.json
+        openfoia search "water contamination" -s documentcloud,regulations --since 2020-01-01
+    """
+    from . import search as search_mod
+    from .config import load_config
+    from .net import TorUnavailableError
+
+    def fail(message: str) -> None:
+        typer.echo(message, err=True)
+        raise typer.Exit(1)
+
+    names = [n for raw in source or [] for n in raw.split(",") if n.strip()] or None
+    try:
+        search_mod.parse_since(since)
+        cfg = load_config()
+        policy = search_mod.egress_policy(egress.lower() if egress else None, cfg)
+        plan = search_mod.plan_search(
+            query, names, policy=policy, api_data_gov_key=cfg.records.api_data_gov_key
+        )
+    except ValueError as e:
+        fail(str(e))
+
+    # Fail closed before asking anything: no point confirming a Tor search
+    # that cannot go over Tor.
+    if plan.adapters:
+        try:
+            asyncio.run(search_mod.ensure_route(policy))
+        except TorUnavailableError as e:
+            fail(str(e))
+
+    for line in plan.warning_lines():
+        typer.secho(search_mod.clean(line), err=True, fg="yellow")
+    # A warning you cannot answer is not consent.
+    confirm = "Send this query to the sources listed above?"
+    if plan.adapters and not yes and not typer.confirm(confirm, err=True):
+        typer.echo("Aborted. Nothing left your machine.", err=True)
+        raise typer.Exit(0)
+
+    try:
+        report = asyncio.run(
+            search_mod.run_search(plan, limit=limit, since=since, allow_network=True)
+        )
+    except TorUnavailableError as e:
+        fail(str(e))
+
+    status_lines = [_search_status_line(s) for s in report.statuses]
+    if json_out:
+        for line in status_lines:
+            typer.echo(line, err=True)
+        # ensure_ascii: upstream text cannot put raw control or C1 bytes on stdout.
+        typer.echo(json.dumps(report.to_dict(), ensure_ascii=True, indent=2))
+    else:
+        typer.echo(f"Sources ({_route_note(policy, *plan.adapters.values())}):")
+        for line in status_lines:
+            typer.echo(line)
+        clean = search_mod.clean
+        for row in report.rows:
+            typer.echo("")
+            typer.echo(clean(f"{row['source']} | {(row['date'] or '-')[:10]} | {row['title']}"))
+            if row["url"]:
+                typer.echo(clean(f"  {row['url']}"))
+            details = " | ".join(x for x in (row["id"] and f"id {row['id']}", row["snippet"]) if x)
+            if details:
+                typer.echo(clean(f"  {details}"))
+        answered = sum(s.status in ("ok", "no_results") for s in report.statuses)
+        typer.echo(
+            f"\n{len(report.rows)} result(s) from {answered} source(s) that answered, "
+            f"egress {report.egress}."
+        )
+        for note in report.notes:
+            typer.echo(note, err=True)
+    if report.exit_code:
+        raise typer.Exit(report.exit_code)
+
+
 # === Cross-Reference Command ===
 
 

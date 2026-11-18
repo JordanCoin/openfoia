@@ -79,6 +79,14 @@ class MuckRockAdapter(RecordAdapter):
         if api_key:
             self._headers["Authorization"] = f"Token {api_key}"
 
+    def unavailable_reason(self) -> str | None:
+        # MuckRock answers anonymous API calls with 401 (see _raise_for_failure).
+        if self.api_key:
+            return None
+        if self.credentials_withheld:
+            return "personal API token not sent over Tor"
+        return "no OPENFOIA_MUCKROCK_TOKEN (MuckRock refuses anonymous API calls)"
+
     async def search(
         self,
         query: str,
