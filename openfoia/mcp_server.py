@@ -47,9 +47,26 @@ import logging
 import os
 import sys
 import threading
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+
+from . import __version__
+from .agent import OpenFOIAAgent, search_records
+from .doctext import backfill_single_pages, search_pages
+from .extraction_runs import current_entities
+from .models import (
+    Case,
+    Document,
+    DocumentPage,
+    Entity,
+    EntityType,
+    Request,
+    RequestStatus,
+    entity_links,
+)
+from .semantic import extra_status
 
 logger = logging.getLogger(__name__)
 
@@ -155,8 +172,6 @@ _ALL_DOCS_ARG = {
 
 def _search_schema() -> tuple[str, dict[str, Any]]:
     """The agent's search_records definition: one input shape for agent and MCP."""
-    from .agent import OpenFOIAAgent
-
     tool = next(
         t
         for t in OpenFOIAAgent(db_session=None, config={}).get_tools()
@@ -170,8 +185,6 @@ def _search_schema() -> tuple[str, dict[str, Any]]:
 def _semantic_status() -> str:
     """Whether docs grep can rank by meaning here, without importing anything heavy."""
     try:
-        from .semantic import extra_status
-
         status = extra_status()
     except Exception:
         return "semantic mode is not available"
@@ -187,8 +200,6 @@ def _semantic_status() -> str:
 
 def tool_specs(opts: ServerOptions) -> list[ToolSpec]:
     """The tools this server offers, built fresh so the source list is the live registry."""
-    from .models import EntityType, RequestStatus
-
     search_desc, search_schema = _search_schema()
     if opts.allow_network:
         network = (
@@ -478,15 +489,13 @@ def dumps(payload: dict[str, Any]) -> str:
 
 
 async def _tool_search(args: dict[str, Any], opts: ServerOptions) -> dict[str, Any]:
-    from .agent import search_records
-
     return await search_records(args, allow_network=opts.allow_network)
 
 
 @contextlib.contextmanager
 def _session():
     """A database session, or a ToolError when there is no database (never creates one)."""
-    from .db import get_db_path, get_session
+    from .db import get_db_path, get_session  # lazy: monkeypatched in tests
 
     if not get_db_path().exists():
         raise ToolError("The OpenFOIA database is not initialized. The user can run: openfoia init")
@@ -495,8 +504,7 @@ def _session():
 
 
 def _resolve_doc(session: Any, ref: str) -> Any:
-    from .cli import _like_escape
-    from .models import Document
+    from .cli import _like_escape  # lazy: circular import
 
     ref = ref.strip()
     if not ref:
@@ -515,7 +523,10 @@ def _resolve_doc(session: Any, ref: str) -> Any:
 
 def _scope_case(session: Any, case_name: str | None, all_docs: bool) -> Any:
     """The named case, else (unless all_docs) the active case, else None."""
-    from .cases import find_case, get_active_case
+    from .cases import (  # lazy: cases imports db, which probes for SQLCipher
+        find_case,
+        get_active_case,
+    )
 
     if case_name:
         case = find_case(session, case_name)
@@ -532,8 +543,7 @@ def _scope_label(case: Any) -> str:
 
 
 def _tool_docs_grep(args: dict[str, Any]) -> dict[str, Any]:
-    from .cli import _case_document_ids
-    from .doctext import search_pages
+    from .cli import _case_document_ids  # lazy: circular import
 
     query = args["query"].strip()
     if not query:
@@ -572,7 +582,7 @@ def _tool_docs_grep(args: dict[str, Any]) -> dict[str, Any]:
 
 def _semantic(session: Any, query: str, limit: int, doc_ids: list[str] | None):
     """`docs grep --semantic`: embed pages not yet indexed (offline), then rank by meaning."""
-    from .semantic import (
+    from .semantic import (  # lazy: monkeypatched in tests
         SemanticUnavailable,
         count_missing,
         embed_missing,
@@ -593,9 +603,7 @@ def _semantic(session: Any, query: str, limit: int, doc_ids: list[str] | None):
 
 
 def _tool_read_page(args: dict[str, Any]) -> dict[str, Any]:
-    from .cli import _doc_cite
-    from .doctext import backfill_single_pages
-    from .models import DocumentPage, Request
+    from .cli import _doc_cite  # lazy: circular import
 
     number = args.get("page", 1)
     with _session() as session:
@@ -626,9 +634,8 @@ def _tool_read_page(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _tool_list_cases(args: dict[str, Any]) -> dict[str, Any]:
-    from .cases import get_active_case_id
-    from .cli import _case_document_ids
-    from .models import Case
+    from .cases import get_active_case_id  # lazy: cases imports db, which probes for SQLCipher
+    from .cli import _case_document_ids  # lazy: circular import
 
     active_id = get_active_case_id()
     with _session() as session:
@@ -647,7 +654,7 @@ def _tool_list_cases(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _tool_case_summary(args: dict[str, Any]) -> dict[str, Any]:
-    from .cli import _case_summary
+    from .cli import _case_summary  # lazy: circular import
 
     with _session() as session:
         case = _scope_case(session, args.get("case"), all_docs=False)
@@ -658,8 +665,6 @@ def _tool_case_summary(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _tool_list_requests(args: dict[str, Any]) -> dict[str, Any]:
-    from .agent import OpenFOIAAgent
-
     with _session() as session:
         # The agent tool's handler: same query, same fields.
         result = asyncio.run(OpenFOIAAgent(session, {}).execute_tool("list_requests", args))
@@ -669,11 +674,7 @@ def _tool_list_requests(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _tool_entities(args: dict[str, Any]) -> dict[str, Any]:
-    from collections import Counter
-
-    from .cli import _like_escape
-    from .extraction_runs import current_entities
-    from .models import Document, Entity, EntityType, Request, entity_links
+    from .cli import _like_escape  # lazy: circular import
 
     limit = args.get("limit", 100)
     with _session() as session:
@@ -813,10 +814,10 @@ def claim_stdio(*, stray_to_stderr: bool = False) -> tuple[io.TextIOWrapper, io.
 
 def _import_sdk() -> Any:
     try:
-        import anyio
-        import mcp.types as mcp_types
-        from mcp.server.lowlevel import Server
-        from mcp.server.stdio import stdio_server
+        import anyio  # lazy: only serve() needs the SDK stack
+        import mcp.types as mcp_types  # optional: mcp
+        from mcp.server.lowlevel import Server  # optional: mcp
+        from mcp.server.stdio import stdio_server  # optional: mcp
     except ImportError:
         raise MCPUnavailable(
             f"The MCP server needs the optional extra. Run: {INSTALL_HINT}"
@@ -826,8 +827,6 @@ def _import_sdk() -> Any:
 
 def build_server(opts: ServerOptions) -> Any:
     """The SDK server object with this module's tools (mcp>=2 low-level API)."""
-    from . import __version__
-
     _anyio, types, Server, _stdio = _import_sdk()
 
     async def on_list_tools(ctx: Any, params: Any) -> Any:

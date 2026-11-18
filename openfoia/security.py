@@ -16,16 +16,44 @@ from __future__ import annotations
 import calendar
 import contextlib
 import os
+import random
 import re
 import shutil
 import stat
 import tempfile
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from datetime import timedelta
 from pathlib import Path
+from uuid import uuid4
 
 from rich import print as rprint
+from sqlalchemy.orm import sessionmaker
 
+from .clocks import request_clocks
+from .db import (
+    _DB_SIDECAR_SUFFIXES,
+    _restrict_db_permissions,
+    get_data_dir,
+    get_engine,
+    get_sqlcipher_driver,
+    has_sqlcipher,
+    init_db,
+    sqlcipher_key_pragma,
+)
+from .doctext import replace_pages
+from .models import (
+    Agency,
+    DeliveryMethod,
+    Document,
+    DocumentType,
+    Entity,
+    EntityType,
+    Request,
+    RequestStatus,
+    TimelineEvent,
+    User,
+)
 from .models import utcnow as _utcnow
 
 # ---------------------------------------------------------------------------
@@ -433,15 +461,11 @@ _PROFILE_SLOTS = ["profile_0.db", "profile_1.db"]
 
 def _has_sqlcipher() -> bool:
     """Return True if SQLCipher support is importable."""
-    from .db import has_sqlcipher
-
     return has_sqlcipher()
 
 
 def get_profile_paths() -> list[Path]:
     """Return paths for both profile slots."""
-    from .db import get_data_dir
-
     data_dir = get_data_dir()
     return [data_dir / name for name in _PROFILE_SLOTS]
 
@@ -461,8 +485,6 @@ def migrate_db_to_profile_slot() -> Path:
 
     Idempotent, and never clobbers an existing slot.
     """
-    from .db import _DB_SIDECAR_SUFFIXES, get_data_dir
-
     data_dir = get_data_dir()
     legacy = data_dir / "data.db"
     real = real_profile_path()
@@ -518,8 +540,6 @@ def is_encrypted_db(path: Path | str) -> bool:
 
 def _current_real_db() -> Path | None:
     """The real database as it is on disk now: slot 0, else the legacy data.db."""
-    from .db import get_data_dir
-
     for candidate in (real_profile_path(), get_data_dir() / "data.db"):
         if candidate.is_file():
             return candidate
@@ -527,8 +547,6 @@ def _current_real_db() -> Path | None:
 
 
 def _shred_db_files(db_path: Path) -> None:
-    from .db import _DB_SIDECAR_SUFFIXES
-
     for suffix in ("", *_DB_SIDECAR_SUFFIXES):
         secure_delete_file(Path(str(db_path) + suffix))
 
@@ -549,8 +567,6 @@ def setup_duress_mode(duress_password: str) -> Path:
     both that duress mode is configured and which file is the decoy — the
     opposite of the "opaque filenames" the design promises.
     """
-    from .db import _restrict_db_permissions, get_data_dir
-
     if not _has_sqlcipher():
         # A plaintext decoy contradicts the guarantee. Fail closed.
         raise RuntimeError(
@@ -613,7 +629,7 @@ def resolve_db_with_password(password: str | None = None) -> tuple[Path, bool]:
     This is the single entry point that all commands should use.
     SQLCipher itself acts as the password verifier — no hash stored.
     """
-    from .db import get_db_path
+    from .db import get_db_path  # lazy: monkeypatched in tests
 
     if not password:
         return get_db_path(), False
@@ -638,8 +654,6 @@ def _can_open_db(db_path: Path, password: str) -> bool:
     # Encryption support missing entirely is a configuration error, not a
     # wrong password. Swallowing it would make the duress password silently
     # never match, so the decoy would never open under coercion.
-    from .db import get_sqlcipher_driver, sqlcipher_key_pragma
-
     sqlcipher = get_sqlcipher_driver()
 
     try:
@@ -668,8 +682,6 @@ def is_duress_password(password: str) -> bool:
 
 def get_decoy_db_path() -> Path:
     """Return the path to the decoy profile (slot 1)."""
-    from .db import get_data_dir
-
     return get_data_dir() / _PROFILE_SLOTS[1]
 
 
@@ -801,33 +813,11 @@ def seed_decoy_db(db_path: Path, password: str | None = None) -> None:
 
     *password* is required: a plaintext decoy offers no protection.
     """
-    import random
-    from datetime import timedelta
-    from uuid import uuid4
-
-    from sqlalchemy.orm import sessionmaker
-
-    from .db import _restrict_db_permissions, get_engine, init_db
-    from .doctext import replace_pages
-    from .models import (
-        Agency,
-        DeliveryMethod,
-        Document,
-        DocumentType,
-        Entity,
-        EntityType,
-        Request,
-        RequestStatus,
-        TimelineEvent,
-        User,
-    )
-    from .pipeline.ingest import private_dest_dir
+    from .pipeline.ingest import private_dest_dir  # lazy: pulls in the pipeline package
 
     if not password:
         raise ValueError("The decoy profile must be encrypted: pass the duress password.")
     try:
-        from .db import get_sqlcipher_driver
-
         get_sqlcipher_driver()
     except RuntimeError as exc:
         # Fail closed. Falling back to plain SQLite here would write an
@@ -924,8 +914,6 @@ def seed_decoy_db(db_path: Path, password: str | None = None) -> None:
                     )
                 )
             try:
-                from .clocks import request_clocks
-
                 req.due_date = request_clocks(req).response_due
             except Exception:  # a missing clock is not a decoy failure
                 req.due_date = None

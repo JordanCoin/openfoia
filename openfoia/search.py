@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from typing import Any
 
+from . import net
 from .net import EgressPolicy, TorUnavailableError
 from .termsafe import safe_text
 
@@ -209,8 +210,8 @@ class SearchReport:
 
 def egress_policy(egress: str | None = None, config: Any = None) -> EgressPolicy:
     """The configured egress policy (config.network), or *egress* ('tor'/'direct') for this run."""
-    from .cli import _egress_policy_from
-    from .config import load_config
+    from .cli import _egress_policy_from  # lazy: circular import
+    from .config import load_config  # lazy: monkeypatched in tests
 
     if egress not in (None, "tor", "direct"):
         raise ValueError(f"egress must be 'tor' or 'direct', got {egress!r}")
@@ -232,7 +233,7 @@ def plan_search(
     required key missing, or a personal key withheld over Tor) is skipped
     with that reason rather than sent the query.
     """
-    from .records import get_adapter, list_sources
+    from .records import get_adapter, list_sources  # lazy: monkeypatched in tests
 
     query = (query or "").strip()
     if not query:
@@ -272,7 +273,6 @@ async def ensure_route(policy: EgressPolicy) -> None:
     """
     if not policy.is_tor:
         return
-    from . import net
 
     client = net.egress_client(policy)  # TorUnavailableError without socksio
     await client.aclose()
@@ -285,7 +285,7 @@ async def ensure_route(policy: EgressPolicy) -> None:
 
 
 def _row(entity: Any, source: str, egress: str, retrieved_at: str) -> dict[str, Any]:
-    from .cli import _compact_result
+    from .cli import _compact_result  # lazy: circular import
 
     c = _compact_result(entity)
     return {
@@ -317,7 +317,7 @@ async def run_search(
     plan is Tor and Tor is not usable. One source failing never stops the
     others; each gets its own status.
     """
-    from .cli import _search_one
+    from .cli import _search_one  # lazy: circular import
 
     since_date = parse_since(since)
     if limit < 1:
@@ -397,7 +397,7 @@ async def run_search(
 
 def _log(report: SearchReport) -> None:
     """Record the query against the active case, as `records search` does."""
-    from .cli import _log_case_queries
+    from .cli import _log_case_queries  # lazy: circular import
 
     entries = [
         (s.source, report.query, s.total if s.status in (OK, NO_RESULTS) else None)

@@ -18,19 +18,17 @@ import json
 import os
 from pathlib import Path
 
+from .db import _ensure_private_dir, get_data_dir
+
 MANIFEST_NAME = "exports_manifest.json"
 
 
 def _data_dir() -> Path:
-    from .db import get_data_dir
-
     return get_data_dir()
 
 
 def exports_dir(*parts: str) -> Path:
     """``<data dir>/exports[/parts...]``, created owner-only."""
-    from .db import _ensure_private_dir
-
     path = _ensure_private_dir(_data_dir() / "exports")
     for part in parts:
         path = _ensure_private_dir(path / part)

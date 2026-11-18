@@ -18,7 +18,19 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from .models import EntityType
+from .extraction_runs import current_entities
+from .models import (
+    Agency,
+    DeliveryMethod,
+    Document,
+    DocumentType,
+    Entity,
+    EntityType,
+    Request,
+    RequestStatus,
+    User,
+    entity_links,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -192,9 +204,7 @@ def import_ftm_to_db(
     Returns:
         (entities_imported, relationships_imported)
     """
-    from .db import get_db_path, get_session, init_db
-    from .extraction_runs import current_entities
-    from .models import Entity
+    from .db import get_db_path, get_session, init_db  # lazy: monkeypatched in tests
 
     db_path = get_db_path()
     if not db_path.exists():
@@ -257,8 +267,6 @@ def import_ftm_to_db(
             entities_added += 1
 
         # Import relationships as entity_links
-        from .models import entity_links
-
         for rel_data in parsed_relationships:
             source_id = ftm_to_local.get(rel_data["source_ref"])
             target_id = ftm_to_local.get(rel_data["target_ref"])
@@ -294,8 +302,6 @@ def _get_or_create_import_doc(session: Any, tag: str | None = None) -> str:
 
     if _IMPORT_DOC_ID:
         return _IMPORT_DOC_ID
-
-    from .models import Agency, DeliveryMethod, Document, DocumentType, Request, RequestStatus, User
 
     # Need a request to hang the document on
     user = session.query(User).first()

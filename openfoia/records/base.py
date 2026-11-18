@@ -9,6 +9,7 @@ import re
 import socket
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
@@ -204,8 +205,6 @@ async def download_to_file(
 
     Returns the number of bytes written.
     """
-    from pathlib import Path
-
     await check_download_target(url, egress)
     if getattr(client, "follow_redirects", False):
         raise ValueError("Refusing to download with a client that follows redirects")

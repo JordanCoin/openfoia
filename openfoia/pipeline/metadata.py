@@ -26,9 +26,13 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+import posixpath
 import re
 import shutil
 import subprocess
+import tempfile
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -146,7 +150,7 @@ def _too_large(width: int, height: int) -> dict[str, str]:
 
 
 def _strip_image_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
-    from PIL import Image
+    from PIL import Image  # optional: ocr
 
     result: dict[str, Any] = {"stripped": [], "file_type": "image", "status": "stripped"}
 
@@ -170,7 +174,7 @@ def _strip_image_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
         info = dict(img.info or {})
 
         if hasattr(img, "_getexif") and img._getexif():
-            from PIL.ExifTags import TAGS
+            from PIL.ExifTags import TAGS  # optional: ocr
 
             raw_exif = img._getexif()
             for tag_id, value in raw_exif.items():
@@ -385,7 +389,7 @@ def _strip_pdf_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
     this cannot clean (attached files, JPEG 2000 images) makes the result
     "partial" and is named in ``remaining``.
     """
-    from pypdf import PdfReader, PdfWriter
+    from pypdf import PdfReader, PdfWriter  # lazy: heavy (pulls in Pillow)
 
     result: dict[str, Any] = {"stripped": [], "file_type": "pdf", "status": "stripped"}
 
@@ -452,7 +456,11 @@ def _note(names: list[str], name: str) -> None:
 
 def _scrub_pdf_objects(writer: Any, stripped: list[str], remaining: list[str]) -> None:
     """Remove metadata from every object the writer is about to write."""
-    from pypdf.generic import ArrayObject, DictionaryObject, IndirectObject
+    from pypdf.generic import (  # lazy: heavy (pulls in Pillow)
+        ArrayObject,
+        DictionaryObject,
+        IndirectObject,
+    )
 
     def visit(obj: Any) -> None:
         if isinstance(obj, IndirectObject):
@@ -479,7 +487,11 @@ def _drop_unreachable_pdf_objects(writer: Any) -> None:
     pypdf writes all objects it holds, referenced or not, so a removed XMP
     packet or /PieceInfo dictionary would otherwise still be in the file.
     """
-    from pypdf.generic import ArrayObject, DictionaryObject, IndirectObject
+    from pypdf.generic import (  # lazy: heavy (pulls in Pillow)
+        ArrayObject,
+        DictionaryObject,
+        IndirectObject,
+    )
 
     reachable: set[int] = set()
     stack: list[Any] = [writer._root_object.indirect_reference]
@@ -501,7 +513,7 @@ def _drop_unreachable_pdf_objects(writer: Any) -> None:
 
 
 def _scrub_pdf_dict(d: Any, stripped: list[str], remaining: list[str]) -> None:
-    from pypdf.generic import ArrayObject, NameObject, StreamObject
+    from pypdf.generic import ArrayObject, NameObject, StreamObject  # lazy: heavy (pulls in Pillow)
 
     for key, label in _PDF_DROP_KEYS.items():
         if key in d:
@@ -616,8 +628,6 @@ def docx_archive_problem(file_path: Path | str) -> str | None:
     Only the central directory is read. Exposed so anything else that opens a
     stored .docx (text extraction) can apply the same limits.
     """
-    import zipfile
-
     with zipfile.ZipFile(file_path) as z:
         infos = z.infolist()
     if len(infos) > MAX_ZIP_MEMBERS:
@@ -652,10 +662,6 @@ def _strip_docx_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
     Every other member is written back unchanged, with zip timestamps and
     extra fields reset.
     """
-    import os
-    import tempfile
-    import zipfile
-
     result: dict[str, Any] = {"stripped": [], "file_type": "docx", "status": "stripped"}
 
     try:
@@ -794,7 +800,7 @@ def _clean_docx_image(
 
 
 def _clean_docx_xml(name: str, data: bytes, remaining: list[str], clean: Any) -> bytes:
-    from lxml import etree
+    from lxml import etree  # lazy: heavy (lxml)
 
     parser = etree.XMLParser(
         resolve_entities=False, no_network=True, load_dtd=False, huge_tree=False
@@ -844,8 +850,6 @@ def _strip_docx_extended_props(
 
 
 def _clean_rels(root: Any, rels_name: str, dropped: set[str], stripped: list[str]) -> None:
-    import posixpath
-
     # word/_rels/document.xml.rels describes word/document.xml: targets are
     # relative to word/.
     base = posixpath.dirname(posixpath.dirname(rels_name))

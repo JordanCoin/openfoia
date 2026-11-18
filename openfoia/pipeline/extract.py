@@ -11,6 +11,7 @@ The first available backend is used. All backends produce the same output format
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import json
 import logging
@@ -18,12 +19,17 @@ import os
 import re
 import sys
 import unicodedata
+import urllib.request
+import uuid
+from collections import Counter
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 from typing import Any
 from urllib.parse import urlparse
 
 from ..config import EntityConfig, OpenFOIAConfig, load_config
 from ..models import ConfidenceLevel, EntityType
+from ..termsafe import safe_text
 
 logger = logging.getLogger(__name__)
 
@@ -277,8 +283,6 @@ def _punctuation_ratio(s: str) -> float:
 
 def _surface_clean(text: str) -> str:
     """Normalize whitespace and strip trailing punctuation."""
-    import unicodedata
-
     t = unicodedata.normalize("NFKC", text or "").replace("\u00a0", " ")
     return re.sub(r"\s+", " ", t).strip(" \t\r\n,;:")
 
@@ -527,8 +531,8 @@ def _get_gliner():
     """
     global _GLINER_MODEL
     if _GLINER_MODEL is None:
-        from gliner import GLiNER
-        from huggingface_hub import constants as hf_constants
+        from gliner import GLiNER  # optional: ner
+        from huggingface_hub import constants as hf_constants  # optional: ner
 
         model_id = GLINER_MODEL_ID
         # ponytail: gliner ignores local_files_only for its tokenizer backbone,
@@ -645,7 +649,7 @@ def _get_spacy():
     """Lazily load spaCy with the best available English model."""
     global _SPACY_NLP
     if _SPACY_NLP is None:
-        import spacy
+        import spacy  # optional: ner-spacy
 
         # Try models from best to smallest
         for model_name in ["en_core_web_trf", "en_core_web_lg", "en_core_web_md", "en_core_web_sm"]:
@@ -674,7 +678,7 @@ def spacy_model_name() -> str | None:
 def _spacy_available() -> bool:
     """Check if spaCy is installed with an English model."""
     try:
-        import spacy
+        import spacy  # optional: ner-spacy
 
         for model_name in ["en_core_web_trf", "en_core_web_lg", "en_core_web_md", "en_core_web_sm"]:
             try:
@@ -1019,8 +1023,6 @@ Return ONLY valid JSON:
 def _call_ollama(
     prompt: str, model: str, base_url: str | None, temperature: float, max_tokens: int
 ) -> str:
-    import urllib.request
-
     url = (base_url or "http://localhost:11434").rstrip("/")
     payload = json.dumps(
         {
@@ -1045,7 +1047,7 @@ def _call_ollama(
 def _call_anthropic(
     prompt: str, model: str, api_key: str, temperature: float, max_tokens: int
 ) -> str:
-    import anthropic
+    import anthropic  # optional: cloud-ai
 
     client = anthropic.Anthropic(api_key=api_key)
     response = client.messages.create(
@@ -1060,7 +1062,7 @@ def _call_anthropic(
 def _call_openai(
     prompt: str, model: str, api_key: str, base_url: str | None, temperature: float, max_tokens: int
 ) -> str:
-    import openai
+    import openai  # optional: cloud-ai
 
     kwargs: dict[str, Any] = {"api_key": api_key}
     if base_url:
@@ -1077,8 +1079,6 @@ def _call_openai(
 
 
 def _llm_available(provider: str, api_key: str | None, base_url: str | None) -> bool:
-    import urllib.request
-
     if not provider or provider == "none":
         return False
 
@@ -1344,8 +1344,6 @@ class EntityExtractor:
         Default: regex + best NER. --ensemble: all NER backends.
         LLM always runs as step 3 validator if available (not as extractor).
         """
-        import asyncio
-
         tier = self.tier
         if tier == "gliner" and not _gliner_available():
             raise BackendUnavailableError("GLiNER is not installed: openfoia install-extras ner")
@@ -1434,8 +1432,6 @@ class EntityExtractor:
         self, entities: list[ExtractedEntity], source_text: str
     ) -> list[ExtractedEntity]:
         """LLM reviews the merged entity list. Fast because input is ~2K, not 78K."""
-        import asyncio
-
         # Build compact entity list for LLM
         entity_lines = []
         for e in entities:
@@ -1457,8 +1453,6 @@ class EntityExtractor:
                     _call_ollama, prompt, self.model, self.base_url, 0.1, 4000
                 )
         except Exception as exc:
-            from ..termsafe import safe_text
-
             # The error can quote the remote server's response.
             print(
                 safe_text(f"LLM validation skipped: {type(exc).__name__}: {exc}"),
@@ -1470,20 +1464,14 @@ class EntityExtractor:
         try:
             json_match = re.search(r"\{[\s\S]*\}", raw)
             if not json_match:
-                import sys
-
                 print(
                     f"LLM validation: no JSON found in response ({len(raw)} chars)", file=sys.stderr
                 )
                 return entities
             data = json.loads(json_match.group())
         except (json.JSONDecodeError, AttributeError) as exc:
-            import sys
-
             print(f"LLM validation: JSON parse failed: {exc}", file=sys.stderr)
             return entities
-
-        import sys
 
         keep_count = len(data.get("keep", []))
         remove_count = len(data.get("remove", []))
@@ -1531,8 +1519,6 @@ class EntityExtractor:
         context: str | None,
         page_numbers: list[int] | None,
     ) -> ExtractionResult:
-        import asyncio
-
         chunks = self._chunk_text(text, max_chars=8000)
         all_entities: list[ExtractedEntity] = []
         all_relationships: list[dict[str, Any]] = []
@@ -2155,8 +2141,6 @@ class EntityExtractor:
         2. Exact grouping: same type + normalized text
         3. Fuzzy merge: substring match, OCR fold, token overlap
         """
-        from difflib import SequenceMatcher
-
         # --- Phase 1: Score and filter junk ---
         scored: list[Mention] = []
         for m in mentions:
@@ -2288,8 +2272,6 @@ class EntityExtractor:
         entities: list[ExtractedEntity] = []
         for cluster in clusters:
             # Most frequent raw_text
-            from collections import Counter
-
             raw_counts = Counter(m.raw_text for m in cluster.mentions)
             best_raw = raw_counts.most_common(1)[0][0] if raw_counts else cluster.canonical_text
 
@@ -2428,8 +2410,6 @@ class EntityLinker:
             ):
                 canonical["aliases"].add(entity.raw_text)
                 return can_id
-
-        import uuid
 
         can_id = str(uuid.uuid4())
         self.canonical_entities[can_id] = {

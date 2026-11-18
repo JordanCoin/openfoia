@@ -10,11 +10,13 @@ import importlib
 import os
 import shutil
 import stat
+import sys
 import tempfile
 from collections.abc import Generator
 from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
@@ -80,7 +82,7 @@ def get_db_password() -> str | None:
         return pw
 
     # Check config file
-    from .config import load_config
+    from .config import load_config  # lazy: monkeypatched in tests
 
     cfg = load_config()
     return cfg.encryption.password
@@ -99,7 +101,7 @@ def secure_delete_plaintext_db(db_path: Path) -> None:
     touching them, leaving the whole pre-encryption database recoverable by
     file carving. Best-effort on SSDs — see docs/THREAT_MODEL.md.
     """
-    from .security import secure_delete
+    from .security import secure_delete  # lazy: monkeypatched in tests
 
     db_path = Path(db_path)
     for candidate in (db_path, *(Path(str(db_path) + s) for s in _DB_SIDECAR_SUFFIXES)):
@@ -195,14 +197,14 @@ def get_db_path(password: str | None = None) -> Path:
         password = get_db_password()
 
     if password:
-        from .security import get_decoy_db_path, is_duress_password
+        from .security import get_decoy_db_path, is_duress_password  # lazy: circular import
 
         if is_duress_password(password):
             return get_decoy_db_path()
 
     # Once duress mode is configured the real database lives in an opaque
     # profile slot; before that it is the legacy data.db.
-    from .security import real_profile_path
+    from .security import real_profile_path  # lazy: circular import
 
     real_slot = real_profile_path()
     if real_slot.exists():
@@ -285,7 +287,7 @@ def get_session(password: str | None = None) -> Generator[Session, None, None]:
 
 
 def _alembic_config():
-    from alembic.config import Config
+    from alembic.config import Config  # lazy: heavy; only migrations need it
 
     cfg = Config()
     cfg.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
@@ -310,10 +312,8 @@ def _upgrade_schema_once(password: str | None) -> None:
     if not db_path.exists():
         return
 
-    import sys
-
-    from alembic.runtime.migration import MigrationContext
-    from alembic.script import ScriptDirectory
+    from alembic.runtime.migration import MigrationContext  # lazy: heavy; only migrations need it
+    from alembic.script import ScriptDirectory  # lazy: heavy; only migrations need it
 
     script = ScriptDirectory.from_config(_alembic_config())
     engine = get_engine(db_path=db_path, password=password)
@@ -341,7 +341,7 @@ def run_migrations(password: str | None = None, db_path: Path | None = None) -> 
     *db_path* targets a specific file (the decoy profile is built this way, so
     its schema is exactly what a real ``init`` produces).
     """
-    from alembic import command
+    from alembic import command  # lazy: heavy; only migrations need it
 
     if db_path is None:
         db_path = get_db_path(password=password)
@@ -410,8 +410,6 @@ def _restrict_db_permissions(db_path: Path) -> None:
 
 def _readonly_uri(path: Path | str) -> str:
     """A ``file:`` URI that opens *path* read-only (URI-special characters escaped)."""
-    from urllib.parse import quote
-
     return "file:" + quote(str(Path(path).resolve())) + "?mode=ro"
 
 

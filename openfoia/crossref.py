@@ -13,16 +13,28 @@ $999/year for.
 
 from __future__ import annotations
 
+import asyncio
+import csv
 import logging
+import os
 import random
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote_plus
 
 from .matching import dedup_key
 from .models import EntityType
 from .net import EgressPolicy, egress_client
+from .records.base import DEMO_KEY
+from .records.documentcloud import DocumentCloudAdapter
+from .records.fec import FECAdapter
+from .records.govinfo import GovInfoAdapter
+from .records.opencorporates import OpenCorporatesAdapter
+from .records.propublica_nonprofit import ProPublicaNonprofitAdapter
+from .records.regulations import RegulationsGovAdapter
+from .records.usaspending import USASpendingAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -203,8 +215,6 @@ async def crossref_entities(
     Raises:
         PermissionError: if remote sources are requested without opting in.
     """
-    import asyncio
-
     available_sources = _get_available_sources(
         icij_data_dir, egress, opensanctions_data_dir, api_data_gov_key
     )
@@ -348,8 +358,6 @@ def _get_available_sources(
     # Pass the literal DEMO_KEY, not None, so no adapter-level env fallback
     # (GovInfo's OPENFOIA_GOVINFO_API_KEY) can re-inject a personal key.
     if egress is not None and egress.is_tor:
-        from .records.base import DEMO_KEY
-
         if api_data_gov_key:
             logger.info("Tor mode: not sending the personal api.data.gov key; using DEMO_KEY")
         api_data_gov_key = DEMO_KEY
@@ -364,11 +372,8 @@ def _get_available_sources(
     sources["sec"] = lambda name, etype: _check_sec(name, etype, egress)
 
     # ICIJ Offshore Leaks — available if CSVs downloaded locally
-    if icij_data_dir:
-        from pathlib import Path
-
-        if Path(icij_data_dir).exists():
-            sources["icij"] = lambda name, etype: _check_icij(name, etype, icij_data_dir)
+    if icij_data_dir and Path(icij_data_dir).exists():
+        sources["icij"] = lambda name, etype: _check_icij(name, etype, icij_data_dir)
 
     # DocumentCloud — always available (public API, no key)
     sources["documentcloud"] = lambda name, etype: _check_documentcloud(name, etype, egress)
@@ -394,13 +399,10 @@ def _get_available_sources(
     sources["opensanctions"] = lambda name, etype: _check_opensanctions(name, etype, egress)
 
     # OpenSanctions bulk data — available if targets.simple.csv downloaded locally
-    if opensanctions_data_dir:
-        from pathlib import Path
-
-        if Path(opensanctions_data_dir).exists():
-            sources["opensanctions-local"] = lambda name, etype: _check_opensanctions_local(
-                name, etype, opensanctions_data_dir
-            )
+    if opensanctions_data_dir and Path(opensanctions_data_dir).exists():
+        sources["opensanctions-local"] = lambda name, etype: _check_opensanctions_local(
+            name, etype, opensanctions_data_dir
+        )
 
     return sources
 
@@ -414,7 +416,7 @@ async def _check_muckrock(
     name: str, entity_type: EntityType, egress: EgressPolicy | None = None
 ) -> list[CrossRefHit]:
     """Search MuckRock for FOIA requests mentioning this entity."""
-    from .records.muckrock import MuckRockAdapter
+    from .records.muckrock import MuckRockAdapter  # lazy: monkeypatched in tests
 
     adapter = MuckRockAdapter(egress=egress)
     try:
@@ -465,8 +467,6 @@ async def _check_opencorporates(
     if entity_type == EntityType.PERSON:
         return []  # OpenCorporates is for companies
 
-    from .records.opencorporates import OpenCorporatesAdapter
-
     adapter = OpenCorporatesAdapter(egress=egress)
     try:
         result = await adapter.search(name, page_size=5)
@@ -512,7 +512,7 @@ async def _check_sec(
     if entity_type == EntityType.PERSON:
         return []  # SEC is mostly company filings
 
-    from .records.sec_edgar import SECEdgarAdapter
+    from .records.sec_edgar import SECEdgarAdapter  # lazy: monkeypatched in tests
 
     adapter = SECEdgarAdapter(egress=egress)
     try:
@@ -553,9 +553,6 @@ async def _check_icij(name: str, entity_type: EntityType, data_dir: str) -> list
     Download from: https://offshoreleaks.icij.org/pages/database
     Extract to a directory and pass as icij_data_dir.
     """
-    import csv
-    from pathlib import Path
-
     hits = []
     data_path = Path(data_dir)
     name_lower = name.lower()
@@ -623,8 +620,6 @@ async def _check_fec(
     api_key: str | None = None,
 ) -> list[CrossRefHit]:
     """Search FEC for campaign finance contributions involving this entity."""
-    from .records.fec import FECAdapter
-
     adapter = FECAdapter(api_key, egress=egress)
     try:
         result = await adapter.search(name, page_size=5)
@@ -663,8 +658,6 @@ async def _check_regulations(
     api_key: str | None = None,
 ) -> list[CrossRefHit]:
     """Search Regulations.gov for federal rulemaking mentioning this entity."""
-    from .records.regulations import RegulationsGovAdapter
-
     adapter = RegulationsGovAdapter(api_key, egress=egress)
     try:
         result = await adapter.search(name, page_size=5)
@@ -705,8 +698,6 @@ async def _check_govinfo(
     api_key: str | None = None,
 ) -> list[CrossRefHit]:
     """Search GovInfo for court opinions, congressional reports, and federal rules."""
-    from .records.govinfo import GovInfoAdapter
-
     adapter = GovInfoAdapter(api_key, egress=egress)
     try:
         result = await adapter.search(name, page_size=5)
@@ -748,8 +739,6 @@ async def _check_nonprofits(
     """Search ProPublica for nonprofit organizations matching this entity."""
     if entity_type == EntityType.PERSON:
         return []
-
-    from .records.propublica_nonprofit import ProPublicaNonprofitAdapter
 
     adapter = ProPublicaNonprofitAdapter(egress=egress)
     try:
@@ -795,8 +784,6 @@ async def _check_usaspending(
     if entity_type == EntityType.PERSON:
         return []  # USAspending tracks organizations, not individuals
 
-    from .records.usaspending import USASpendingAdapter
-
     adapter = USASpendingAdapter(egress=egress)
     try:
         result = await adapter.search(name, page_size=5)
@@ -840,8 +827,6 @@ async def _check_documentcloud(
     name: str, entity_type: EntityType, egress: EgressPolicy | None = None
 ) -> list[CrossRefHit]:
     """Search DocumentCloud's 10M+ public document archive."""
-    from .records.documentcloud import DocumentCloudAdapter
-
     adapter = DocumentCloudAdapter(egress=egress)
     try:
         result = await adapter.search(name, page_size=5)
@@ -892,8 +877,6 @@ async def _check_opensanctions(
     documented ``Authorization: ApiKey`` header when it is set, except over
     Tor: the key is tied to an account and would identify the user.
     """
-    import os
-
     hits = []
     headers = {"Accept": "application/json"}
     api_key = os.environ.get(OPENSANCTIONS_KEY_ENV)
@@ -1010,9 +993,6 @@ async def _check_opensanctions_local(
     Download from https://www.opensanctions.org/datasets/default/ (CC BY-NC 4.0).
     The file is streamed row by row; nothing leaves the machine.
     """
-    import csv
-    from pathlib import Path
-
     csv_path = Path(data_dir) / OPENSANCTIONS_FILE
     if not csv_path.is_file():
         # Same reasoning as NoICIJData: "checked, no hits" would claim a

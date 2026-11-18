@@ -6,14 +6,21 @@ import asyncio
 import hashlib
 import logging
 import mimetypes
+import os
 import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from ..db import _ensure_private_dir
+from ..doctext import join_pages
 from ..models import DocumentType
 from ..models import utcnow as _utcnow
+from .metadata import docx_archive_problem
+from .metadata import strip_metadata as _strip_metadata
+from .ocr import OCREngine
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +51,6 @@ _ocr_hint_shown = False
 
 def private_dest_dir(storage_path: Path, doc_id: str) -> Path:
     """The owner-only (0700) directory a stored copy of *doc_id* goes in."""
-    from ..db import _ensure_private_dir
-
     _ensure_private_dir(storage_path)
     _ensure_private_dir(storage_path / doc_id[:2])
     return _ensure_private_dir(storage_path / doc_id[:2] / doc_id[2:4])
@@ -57,8 +62,6 @@ def _make_private(path: Path) -> None:
     ``shutil.copy2`` used to carry a read-only original's 0444 over, and a
     read-only stored copy is one that ``purge --secure`` could not overwrite.
     """
-    import os
-
     if os.name != "nt":
         os.chmod(path, 0o600)
 
@@ -118,8 +121,6 @@ class DocumentIngester:
         # Strip metadata from the stored copy
         stripped_info: dict[str, Any] = {}
         if strip_metadata:
-            from .metadata import strip_metadata as _strip_metadata
-
             stripped_info = await asyncio.to_thread(_strip_metadata, dest_path)
 
         # Get page count for PDFs
@@ -338,11 +339,13 @@ class DocumentIngester:
         to OCR; gated text is kept when OCR is unavailable or finds nothing.
         """
         global _ocr_hint_shown
-        import sys
 
-        from ..config import load_config
-        from ..doctext import join_pages
-        from .pdf_extract import NEEDS_OCR, PDFExtractTimeout, extract_text
+        from ..config import load_config  # lazy: monkeypatched in tests
+        from .pdf_extract import (  # lazy: monkeypatched in tests
+            NEEDS_OCR,
+            PDFExtractTimeout,
+            extract_text,
+        )
 
         pdf_config = load_config().pdf_extract
         try:
@@ -363,8 +366,6 @@ class DocumentIngester:
             if need:
                 await self._ocr_pages_into(pdf_path, need, pages, verdicts)
             return join_pages(pages), pages, verdicts
-
-        from .ocr import OCREngine
 
         try:
             ocr_result = await OCREngine().process_pdf(pdf_path, force_ocr=True)
@@ -390,9 +391,6 @@ class DocumentIngester:
     ) -> None:
         """OCR the listed pages in place; leave them untouched if tesseract is missing."""
         global _ocr_hint_shown
-        import sys
-
-        from .ocr import OCREngine
 
         try:
             texts = await OCREngine().ocr_pages(pdf_path, need)
@@ -410,8 +408,6 @@ class DocumentIngester:
 
     def _extract_text_docx(self, docx_path: Path) -> str | None:
         """Extract text from DOCX including tables."""
-        from .metadata import docx_archive_problem
-
         # python-docx decompresses every part it loads: check the zip directory
         # first, as metadata stripping does, so a zip bomb is refused unread.
         try:
@@ -422,7 +418,7 @@ class DocumentIngester:
             logger.warning("Not extracting text from %s: %s", docx_path.name, problem)
             return None
         try:
-            from docx import Document as DocxDocument
+            from docx import Document as DocxDocument  # lazy: heavy (lxml)
 
             doc = DocxDocument(str(docx_path))
             parts = []
@@ -447,8 +443,8 @@ class DocumentIngester:
     async def _extract_text_image(self, image_path: Path) -> str | None:
         """Extract text from image via OCR (tesseract)."""
         try:
-            import pytesseract
-            from PIL import Image
+            import pytesseract  # optional: ocr
+            from PIL import Image  # optional: ocr
 
             def _ocr():
                 img = Image.open(image_path)
@@ -462,7 +458,7 @@ class DocumentIngester:
     def _extract_text_msg(self, msg_path: Path) -> str | None:
         """Extract text from Outlook MSG files (email headers + body + attachment names)."""
         try:
-            import extract_msg
+            import extract_msg  # optional: email-files
 
             msg = extract_msg.Message(str(msg_path))
             parts = []
@@ -501,7 +497,7 @@ class DocumentIngester:
         """Get the number of pages in a PDF."""
 
         def _count():
-            from pypdf import PdfReader
+            from pypdf import PdfReader  # lazy: heavy (pulls in Pillow)
 
             reader = PdfReader(str(pdf_path))
             return len(reader.pages)

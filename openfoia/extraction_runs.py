@@ -51,7 +51,7 @@ def describe_extraction(extractor: Any, metadata: dict[str, Any], ensemble: bool
     *metadata* is ``ExtractionResult.metadata``: it lists the backends that
     actually ran, which can differ from the one requested.
     """
-    from .pipeline import extract as ex
+    from .pipeline import extract as ex  # lazy: pulls in the pipeline package
 
     backends = [b for b in metadata.get("backends", []) if b != "llm-validator"]
     llm = bool(metadata.get("llm_validated"))

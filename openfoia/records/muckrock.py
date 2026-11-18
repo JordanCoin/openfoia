@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from typing import Any, ClassVar
 
 import httpx
@@ -388,8 +389,6 @@ class MuckRockAdapter(RecordAdapter):
 
         Returns list of downloaded file paths.
         """
-        from pathlib import Path
-
         entity = await self.fetch(identifier)
         if not entity:
             return []

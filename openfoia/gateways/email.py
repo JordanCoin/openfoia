@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import smtplib
 import ssl
 from email.mime.application import MIMEApplication
@@ -153,8 +155,6 @@ class EmailGateway(DeliveryGateway):
             await asyncio.to_thread(_send)
 
             # Generate a reference ID (email doesn't have built-in tracking)
-            import hashlib
-
             ref_id = hashlib.sha256(
                 f"{payload.recipient_address}:{payload.subject}:{_utcnow().isoformat()}".encode()
             ).hexdigest()[:16]
@@ -182,10 +182,8 @@ class EmailGateway(DeliveryGateway):
     async def _send_sendgrid(self, payload: DeliveryPayload) -> DeliveryResult:
         """Send via SendGrid API."""
         try:
-            import base64
-
-            from sendgrid import SendGridAPIClient
-            from sendgrid.helpers.mail import (
+            from sendgrid import SendGridAPIClient  # optional: sendgrid (no extra)
+            from sendgrid.helpers.mail import (  # optional: sendgrid (no extra)
                 Attachment,
                 Disposition,
                 FileContent,

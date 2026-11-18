@@ -14,11 +14,15 @@ Tor daemon must be running locally on port 9050 when --tor is used.
 from __future__ import annotations
 
 import contextlib
+import os
+import re
+import tempfile
 from pathlib import Path
 from typing import Any
 
 from rich import print as rprint
 
+from .db import _ensure_private_dir, get_data_dir
 from .models import utcnow as _utcnow
 
 # ---------------------------------------------------------------------------
@@ -89,8 +93,6 @@ def _browser_env(home: Path) -> dict[str, str]:
     the data dir keeps that off the host in portable mode, and in the data
     dir (which purge covers) otherwise.
     """
-    import os
-
     env = dict(os.environ)
     env.update(
         HOME=str(home),
@@ -152,7 +154,7 @@ async def browse(
         saved_to: file path (if *save* is True)
     """
     try:
-        from playwright.async_api import async_playwright
+        from playwright.async_api import async_playwright  # optional: browser
     except ImportError:
         rprint(
             "[red]Browser automation not installed.[/red]\n"
@@ -164,10 +166,7 @@ async def browse(
     if use_tor:
         rprint(_TOR_WARNING)
 
-    import tempfile
-
-    from .config import load_config
-    from .db import _ensure_private_dir, get_data_dir
+    from .config import load_config  # lazy: monkeypatched in tests
 
     net_cfg = load_config().network
 
@@ -273,15 +272,11 @@ async def _run_session(
 
             # Save to file
             if save_dir is None:
-                from .db import get_data_dir
-
                 save_dir = get_data_dir() / "browse"
 
             save_dir.mkdir(parents=True, exist_ok=True)
 
             # Sanitize filename from URL
-            import re
-
             safe_name = re.sub(r"[^\w\-.]", "_", url.split("//", 1)[-1][:60])
             timestamp = _utcnow().strftime("%Y%m%d_%H%M%S")
             filename = f"{timestamp}_{safe_name}.txt"

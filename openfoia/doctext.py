@@ -8,10 +8,13 @@ from __future__ import annotations
 import re
 from dataclasses import asdict, dataclass
 
+from sqlalchemy import func
 from sqlalchemy import text as sql
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
+
+from .models import Document, DocumentPage, Request
 
 FTS_TABLE = "document_pages_fts"
 
@@ -56,8 +59,6 @@ def replace_pages(
     *verdicts* (same length as pages) is the per-page extraction verdict:
     text_layer, garbled, image_only, or ocr:<original> once a page was OCR'd.
     """
-    from .models import DocumentPage
-
     verdicts = verdicts or [None] * len(pages)
     session.query(DocumentPage).filter(DocumentPage.document_id == document_id).delete()
     session.add_all(
@@ -153,10 +154,6 @@ def _passages(text: str, spans: list[tuple[int, int]], context: int):
 
 def _doc_info(session: Session, ids: set[str]) -> dict[str, tuple[str, int | None, int]]:
     """id -> (title, source page_count, stored page count)."""
-    from sqlalchemy import func
-
-    from .models import Document, DocumentPage, Request
-
     stored = (
         session.query(func.count(DocumentPage.id))
         .filter(DocumentPage.document_id == Document.id)
