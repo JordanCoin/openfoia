@@ -78,7 +78,7 @@ class OCREngine:
         pdf_path = Path(pdf_path)
 
         # Try direct text extraction (not OCR — reads PDF structures directly)
-        from ..config import load_config
+        from ..config import load_config  # lazy: monkeypatched in tests
         from .pdf_extract import PDFExtractTimeout, extract_text  # lazy: monkeypatched in tests
 
         extract_result = None
@@ -423,7 +423,7 @@ class RedactionDetector:
 
         Uses image analysis to detect large black rectangular regions.
         """
-        import numpy as np  # optional: semantic
+        import numpy as np  # optional: numpy (not in the ocr extra)
         from pdf2image import convert_from_path  # optional: ocr
 
         def _analyze():

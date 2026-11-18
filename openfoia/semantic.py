@@ -52,7 +52,6 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from sqlalchemy import text as sql
 
-from .db import _ensure_private_dir, get_data_dir
 from .doctext import _doc_info, backfill_single_pages
 from .models import DocumentPage
 
@@ -200,6 +199,8 @@ _MARKER = "openfoia-model.json"
 
 def models_dir() -> Path:
     """Where models live. Not created here: only a download creates it."""
+    from .db import get_data_dir  # lazy: db import probes for SQLCipher
+
     return get_data_dir() / "models"
 
 
@@ -278,6 +279,7 @@ async def _download(
     progress: Callable[[str, int, int], None] | None,
     transport: Any = None,
 ) -> Path:
+    from .db import _ensure_private_dir  # lazy: db import probes for SQLCipher
     from .net import egress_client  # lazy: monkeypatched in tests
 
     _ensure_private_dir(models_dir())

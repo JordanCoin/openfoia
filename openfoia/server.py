@@ -22,7 +22,6 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from .db import _ensure_private_dir, get_data_dir
 from .extraction_runs import current_entities, current_entity_clause
 from .models import (
     Agency,
@@ -58,6 +57,8 @@ class CreateRequestBody(BaseModel):
 
 def _default_data_dir() -> Path:
     """Resolve the data dir the same way the rest of the toolkit does."""
+    from .db import get_data_dir  # lazy: db import probes for SQLCipher
+
     return get_data_dir()
 
 
@@ -74,6 +75,7 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
 
     # Store token and data directory in app state
     app.state.auth_token = token
+    from .db import _ensure_private_dir  # lazy: db import probes for SQLCipher
 
     app.state.data_dir = _ensure_private_dir(Path(data_dir) if data_dir else _default_data_dir())
 
@@ -452,7 +454,7 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
         metadata_clean, metadata_note = describe(stripped_info)
 
         # Extract text from the uploaded file
-        from .pipeline.ingest import DocumentIngester
+        from .pipeline.ingest import DocumentIngester  # lazy: pulls in the pipeline package
 
         ingester = DocumentIngester(storage_path=docs_dir)
         extracted_text = None

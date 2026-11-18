@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Any
 
 from .clocks import request_clocks
-from .db import get_data_dir
 from .extraction_runs import current_entities
 from .models import (
     Agency,
@@ -594,6 +593,8 @@ Please contact me if you have questions about this request.
         instruct it to ingest ~/.ssh/id_rsa or the config file into the
         database, where it becomes visible in reports and exports.
         """
+        from .db import get_data_dir  # lazy: db import probes for SQLCipher
+
         doc_path = params.get("document_path", "")
 
         try:

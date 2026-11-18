@@ -7661,7 +7661,7 @@ def crossref(
             raise typer.Exit(1)
 
         # Convert to extraction format for crossref engine
-        from .pipeline.extract import ExtractedEntity
+        from .pipeline.extract import ExtractedEntity  # lazy: startup time
 
         entities = []
         for e in db_entities:
