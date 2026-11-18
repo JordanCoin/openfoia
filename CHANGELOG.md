@@ -367,6 +367,28 @@ exhaustive lists.
   stripped: image too large to clean safely". JPEG comments, XMP, ICC profiles
   and PNG text chunks, which were already dropped, are now listed in what was
   stripped.
+- Cleaned PDF and DOCX files could be reported clean while they still named
+  people. PDFs kept any document-information key outside a fixed list (for
+  example `/Company`), the author and dates of comments and highlights, XMP
+  attached to images and pages, and EXIF/GPS inside embedded JPEG photos; a
+  PDF whose latest revision had no listed key was not rewritten at all, so
+  earlier revisions stayed in the file. DOCX files kept tracked-change and
+  comment authors, initials and dates, the reviewer list with account ids
+  (`people.xml`), revision-session ids, SharePoint data (`customXml`), the
+  attached-template path (often `C:\Users\<name>\...`), document variables,
+  the first-page thumbnail, the source paths of inserted pictures, EXIF/GPS in
+  embedded photos and zip timestamps. All of these are now removed. A PDF is
+  rebuilt from its pages with no document information at all (bookmarks,
+  attachments listed in the catalog and document JavaScript are not kept). What
+  the file can still carry and OpenFOIA cannot clean (attached files, JPEG 2000
+  images, EMF/WMF/GIF/TIFF images and embedded objects in a DOCX) is now
+  reported as "metadata only partly stripped; still present: ..." instead of
+  clean. Comment text and tracked insertions and deletions are content and are
+  kept: accept or reject changes and delete comments before publishing. If you
+  published or shared a PDF or DOCX that OpenFOIA had reported as stripped,
+  check it with a second tool (for example `exiftool` or `mat2 --show`, and
+  open it to look at comments and tracked changes), or ingest the original
+  again and use the new stored copy.
 
 ## [4.7.0] - 2026-10-23
 

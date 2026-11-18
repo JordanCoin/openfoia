@@ -150,7 +150,6 @@ def _verdict(path: Path):
     return describe(strip_metadata(path))
 
 
-@audit("A4 PDF custom /Info keys survive and the copy is reported clean")
 def test_a4_pdf_custom_info_keys_are_not_reported_clean(tmp_path):
     from pypdf import PdfReader, PdfWriter
 
@@ -166,7 +165,6 @@ def test_a4_pdf_custom_info_keys_are_not_reported_clean(tmp_path):
     assert not (clean and "/Company" in remaining), remaining
 
 
-@audit("A4 PDF annotation author (/T) survives and the copy is reported clean")
 def test_a4_pdf_annotation_author_is_not_reported_clean(tmp_path):
     from pypdf import PdfWriter
     from pypdf.generic import (
@@ -197,7 +195,6 @@ def test_a4_pdf_annotation_author_is_not_reported_clean(tmp_path):
     assert not (clean and b"Jane Source" in p.read_bytes())
 
 
-@audit("A4 DOCX tracked-change author survives and the copy is reported clean")
 def test_a4_docx_tracked_change_author_is_not_reported_clean(tmp_path):
     from docx import Document
 

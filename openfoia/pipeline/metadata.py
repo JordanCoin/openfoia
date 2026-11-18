@@ -26,6 +26,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -235,255 +236,626 @@ def _strip_image_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Embedded JPEG and PNG data (inside PDFs and DOCX files) — byte level
+# ---------------------------------------------------------------------------
+
+#: JPEG APPn segments kept, by marker and signature: the JFIF header and the
+#: Adobe colour-transform flag, which decoders need. Every other APPn segment
+#: (EXIF and GPS, XMP, ICC profile, IPTC/Photoshop, maker data) and every
+#: comment is dropped.
+_JPEG_KEEP_APP = {0xE0: b"JFIF\x00", 0xEE: b"Adobe"}
+
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+#: PNG chunks kept: pixels, palette, transparency, colour and animation
+#: control. Text (tEXt, zTXt, iTXt), eXIf, tIME, ICC profiles and private
+#: chunks are dropped.
+_PNG_KEEP = frozenset(
+    {
+        b"IHDR", b"PLTE", b"IDAT", b"IEND", b"tRNS", b"gAMA", b"cHRM", b"sRGB",
+        b"sBIT", b"bKGD", b"hIST", b"pHYs", b"acTL", b"fcTL", b"fdAT", b"cICP",
+    }
+)  # fmt: skip
+
+
+def _strip_jpeg_bytes(data: bytes) -> tuple[bytes, list[str]] | None:
+    """(JPEG without metadata segments, names of what was dropped), or None.
+
+    Works on the marker segments without decoding or re-encoding the image.
+    Anything after the end-of-image marker (phone maker trailers, appended
+    previews or videos) is dropped too. None when the data is not a JPEG this
+    can walk to its end; the caller must then report it as not checked.
+    """
+    n = len(data)
+    if data[:2] != b"\xff\xd8":
+        return None
+    out = bytearray(b"\xff\xd8")
+    removed: list[str] = []
+    i = 2
+    while True:
+        if i >= n or data[i] != 0xFF:
+            return None
+        while i < n and data[i] == 0xFF:  # fill bytes
+            i += 1
+        if i >= n:
+            return None
+        marker = data[i]
+        i += 1
+        if marker == 0xD9:  # end of image
+            out += b"\xff\xd9"
+            if data[i:].strip(b"\x00\r\n \t"):
+                removed.append("data after the end of the image")
+            return bytes(out), removed
+        if 0xD0 <= marker <= 0xD7 or marker == 0x01:  # no length field
+            out += bytes((0xFF, marker))
+            continue
+        if i + 2 > n:
+            return None
+        length = int.from_bytes(data[i : i + 2], "big")
+        if length < 2 or i + length > n:
+            return None
+        segment = data[i + 2 : i + length]
+        if 0xE0 <= marker <= 0xEF:
+            signature = _JPEG_KEEP_APP.get(marker)
+            keep = signature is not None and segment.startswith(signature)
+            if not keep:
+                removed.append(f"APP{marker - 0xE0}")
+        elif marker == 0xFE:
+            keep = False
+            removed.append("comment")
+        else:
+            keep = True
+        if keep:
+            out += bytes((0xFF, marker)) + data[i : i + length]
+        i += length
+        if marker == 0xDA:  # start of scan: entropy-coded data up to the next marker
+            j = i
+            while True:
+                j = data.find(b"\xff", j)
+                if j < 0 or j + 1 >= n:
+                    return None
+                following = data[j + 1]
+                if following == 0x00 or 0xD0 <= following <= 0xD7:
+                    j += 2  # stuffed byte or restart marker: still scan data
+                elif following == 0xFF:
+                    j += 1  # fill byte before a marker
+                else:
+                    break
+            out += data[i:j]
+            i = j
+
+
+def _strip_png_bytes(data: bytes) -> tuple[bytes, list[str]] | None:
+    """(PNG without metadata chunks, names of what was dropped), or None."""
+    n = len(data)
+    if not data.startswith(_PNG_SIGNATURE):
+        return None
+    out = bytearray(_PNG_SIGNATURE)
+    removed: list[str] = []
+    i = len(_PNG_SIGNATURE)
+    while i + 12 <= n:
+        length = int.from_bytes(data[i : i + 4], "big")
+        kind = data[i + 4 : i + 8]
+        end = i + 12 + length
+        if end > n:
+            return None
+        if kind in _PNG_KEEP:
+            out += data[i:end]
+        else:
+            removed.append(kind.decode("latin-1"))
+        i = end
+        if kind == b"IEND":
+            if data[i:]:
+                removed.append("data after the end of the image")
+            return bytes(out), removed
+    return None
+
+
+# ---------------------------------------------------------------------------
 # PDF metadata — uses pypdf
 # ---------------------------------------------------------------------------
 
-_PDF_SENSITIVE_KEYS = {
-    "/Author",
-    "/Creator",
-    "/Producer",
-    "/CreationDate",
-    "/ModDate",
-    "/Title",
-    "/Subject",
-    "/Keywords",
+#: Keys removed wherever they appear in the rewritten file, with the name
+#: reported for them. /Metadata is an XMP packet (document, page, image, font
+#: or form level); /PieceInfo is private application data with its own dates;
+#: /Thumb is a stored page thumbnail that can show an earlier version.
+_PDF_DROP_KEYS = {
+    "/Metadata": "XMP",
+    "/PieceInfo": "application private data (/PieceInfo)",
+    "/LastModified": "modification date (/LastModified)",
+    "/Thumb": "page thumbnail",
 }
+
+#: Annotation subtypes that carry a whole file or media clip, which is not
+#: cleaned here.
+_PDF_EMBEDDING_ANNOTS = frozenset(
+    {"/FileAttachment", "/Sound", "/Movie", "/RichMedia", "/3D", "/Screen"}
+)
 
 
 def _strip_pdf_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
+    """Rewrite the PDF from its pages with no document information at all.
+
+    The whole /Info dictionary goes (custom keys included), as do XMP packets
+    at every level, annotation authors and dates, application private data,
+    page thumbnails and EXIF/XMP inside embedded JPEG images. The document
+    catalog is not copied, so outlines, document JavaScript, form definitions
+    and attachments listed there are dropped; earlier revisions kept by
+    incremental saves are not written. What the format can still carry and
+    this cannot clean (attached files, JPEG 2000 images) makes the result
+    "partial" and is named in ``remaining``.
+    """
     from pypdf import PdfReader, PdfWriter
 
     result: dict[str, Any] = {"stripped": [], "file_type": "pdf", "status": "stripped"}
 
     try:
         reader = PdfReader(str(file_path))
+        if reader.is_encrypted and not reader.decrypt(""):
+            return {**result, "status": "failed", "error": "the PDF is password protected"}
+        len(reader.pages)
     except Exception as exc:
         logger.warning("Could not open PDF %s: %s", file_path, exc)
         return {**result, "status": "failed", "error": "could not open the file as a PDF"}
 
-    # Collect original metadata
     original_meta: dict[str, str] = {}
-    if reader.metadata:
-        for key in reader.metadata:
+    try:
+        info = reader.metadata or {}
+        for key in info:
             try:
-                original_meta[key] = str(reader.metadata[key])
+                original_meta[str(key)] = str(info[key])
             except Exception:
-                original_meta[key] = ""
+                original_meta[str(key)] = ""
+    except Exception:  # a malformed /Info is dropped all the same
+        original_meta["/Info"] = "unreadable"
 
-    stripped_keys = [k for k in original_meta if k in _PDF_SENSITIVE_KEYS]
-    # The XMP packet duplicates author, tool and timestamps (sometimes GPS), and
-    # some producers write it with no /Info entries at all.
-    if _pdf_has_xmp(reader):
-        stripped_keys.append("XMP")
-    result["stripped"] = stripped_keys
+    stripped: list[str] = list(original_meta)
+    remaining: list[str] = []
+    # The catalog is not copied; say what of it carried metadata or files.
+    try:
+        catalog = reader.trailer["/Root"]
+        if "/Metadata" in catalog:
+            stripped.append("XMP")
+        names = catalog.get("/Names")
+        if names is not None and "/EmbeddedFiles" in names.get_object():
+            stripped.append("document-level attached files")
+    except Exception:
+        pass
 
+    tmp = file_path.with_name(file_path.name + ".clean")
+    try:
+        writer = PdfWriter()
+        writer.append_pages_from_reader(reader)
+        writer.metadata = None  # no /Info at all, not even pypdf's /Producer
+        _scrub_pdf_objects(writer, stripped, remaining)
+        with open(tmp, "wb") as f:
+            writer.write(f)
+        tmp.replace(file_path)
+    except Exception as exc:
+        tmp.unlink(missing_ok=True)
+        logger.warning("Could not rewrite PDF %s: %s", file_path, exc)
+        return {**result, "status": "failed", "error": "could not rewrite the PDF"}
+
+    result["stripped"] = stripped
     if keep_hash and original_meta:
         result["original_metadata_hash"] = _hash_metadata(original_meta)
-
-    if not stripped_keys:
-        return result
-
-    # Rewrite PDF without sensitive metadata
-    writer = PdfWriter()
-    writer.append_pages_from_reader(reader)
-
-    # Copy metadata, omitting sensitive fields
-    if reader.metadata:
-        kept = {}
-        for key, value in original_meta.items():
-            if key not in _PDF_SENSITIVE_KEYS:
-                kept[key] = value
-        if kept:
-            writer.add_metadata(kept)
-
-    # Drop the XMP packet. Modern PDFs carry an /Metadata stream that
-    # duplicates Author/Creator/timestamps (and sometimes GPS); clearing only
-    # the /Info dictionary left all of it readable in the shipped file.
-    _remove_xmp_metadata(writer)
-
-    with open(file_path, "wb") as f:
-        writer.write(f)
-
+    if remaining:
+        result["status"] = "partial"
+        result["remaining"] = remaining
     return result
 
 
-def _pdf_has_xmp(reader: Any) -> bool:
-    """Whether the document catalog or any page carries an XMP /Metadata stream."""
-    try:
-        if "/Metadata" in reader.trailer["/Root"]:
-            return True
-        return any("/Metadata" in page for page in reader.pages)
-    except Exception:  # pragma: no cover - a malformed catalog is treated as "has XMP"
-        return True
+def _note(names: list[str], name: str) -> None:
+    if name not in names:
+        names.append(name)
 
 
-def _remove_xmp_metadata(writer: Any) -> None:
-    """Remove the document-level XMP metadata stream from a PdfWriter."""
-    from pypdf.generic import NameObject
+def _scrub_pdf_objects(writer: Any, stripped: list[str], remaining: list[str]) -> None:
+    """Remove metadata from every object the writer is about to write."""
+    from pypdf.generic import ArrayObject, DictionaryObject, IndirectObject
 
-    try:
-        root = writer._root_object
-        if NameObject("/Metadata") in root:
-            del root[NameObject("/Metadata")]
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.debug("Could not remove XMP metadata: %s", exc)
+    def visit(obj: Any) -> None:
+        if isinstance(obj, IndirectObject):
+            return  # indirect objects are visited from writer._objects
+        if isinstance(obj, ArrayObject):
+            for item in obj:
+                visit(item)
+            return
+        if not isinstance(obj, DictionaryObject):
+            return
+        _scrub_pdf_dict(obj, stripped, remaining)
+        for value in list(obj.values()):
+            visit(value)
 
-    # Page-level XMP is rare but possible.
-    try:
-        for page in writer.pages:
-            if NameObject("/Metadata") in page:
-                del page[NameObject("/Metadata")]
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.debug("Could not remove page XMP metadata: %s", exc)
+    for obj in list(writer._objects):
+        if obj is not None:
+            visit(obj)
+    _drop_unreachable_pdf_objects(writer)
+
+
+def _drop_unreachable_pdf_objects(writer: Any) -> None:
+    """Free every object no longer reachable from the catalog.
+
+    pypdf writes all objects it holds, referenced or not, so a removed XMP
+    packet or /PieceInfo dictionary would otherwise still be in the file.
+    """
+    from pypdf.generic import ArrayObject, DictionaryObject, IndirectObject
+
+    reachable: set[int] = set()
+    stack: list[Any] = [writer._root_object.indirect_reference]
+    while stack:
+        obj = stack.pop()
+        if isinstance(obj, IndirectObject):
+            if obj.pdf is not writer or obj.idnum in reachable:
+                continue
+            reachable.add(obj.idnum)
+            if 0 < obj.idnum <= len(writer._objects):
+                stack.append(writer._objects[obj.idnum - 1])
+        elif isinstance(obj, DictionaryObject):
+            stack.extend(obj.values())
+        elif isinstance(obj, ArrayObject):
+            stack.extend(obj)
+    for idnum in range(1, len(writer._objects) + 1):
+        if idnum not in reachable:
+            writer._objects[idnum - 1] = None
+
+
+def _scrub_pdf_dict(d: Any, stripped: list[str], remaining: list[str]) -> None:
+    from pypdf.generic import ArrayObject, NameObject, StreamObject
+
+    for key, label in _PDF_DROP_KEYS.items():
+        if key in d:
+            del d[NameObject(key)]
+            _note(stripped, label)
+
+    subtype = d.get("/Subtype")
+    is_annotation = d.get("/Type") == "/Annot" or (subtype is not None and "/Rect" in d)
+    if is_annotation:
+        # On a form field /T is the field's name; on every other annotation
+        # (comments, highlights, their pop-ups) it is the reviewer's name.
+        if subtype != "/Widget" and "/FT" not in d:
+            for key, label in (
+                ("/T", "annotation author (/T)"),
+                ("/CreationDate", "annotation creation date"),
+            ):
+                if key in d:
+                    del d[NameObject(key)]
+                    _note(stripped, label)
+        if "/M" in d:
+            del d[NameObject("/M")]
+            _note(stripped, "annotation modification date")
+        if subtype in _PDF_EMBEDDING_ANNOTS:
+            _note(remaining, f"{subtype[1:]} annotation (attached file or media not cleaned)")
+
+    if d.get("/Type") == "/EmbeddedFile" or "/EF" in d:
+        _note(remaining, "attached file (not cleaned)")
+
+    if subtype == "/Image" and isinstance(d, StreamObject):
+        raw_filter = d.get("/Filter")
+        if isinstance(raw_filter, ArrayObject):
+            filters = [str(f) for f in raw_filter]
+        else:
+            filters = [str(raw_filter)] if raw_filter is not None else []
+        if filters == ["/DCTDecode"]:
+            cleaned = _strip_jpeg_bytes(bytes(d._data))
+            if cleaned is None:
+                _note(remaining, "embedded JPEG image (could not be checked)")
+            elif cleaned[1]:
+                d._data = cleaned[0]
+                _note(stripped, "EXIF/XMP in embedded JPEG images")
+        elif "/JPXDecode" in filters:
+            _note(remaining, "embedded JPEG 2000 image (metadata boxes not checked)")
+        elif "/DCTDecode" in filters:
+            _note(remaining, "embedded JPEG image under a second filter (not checked)")
 
 
 # ---------------------------------------------------------------------------
-# DOCX metadata — uses python-docx
+# DOCX metadata — the zip is rewritten member by member
 # ---------------------------------------------------------------------------
 
-_DOCX_SENSITIVE_ATTRS = [
-    "author",
-    "last_modified_by",
-    "company",
-    "manager",
-    "revision",
-    "comments",
-    "created",
-    "modified",
-]
+_W_NAMESPACES = frozenset(
+    {
+        "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+        "http://purl.oclc.org/ooxml/wordprocessingml/main",
+    }
+)
+_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
+_CT_NS = "http://schemas.openxmlformats.org/package/2006/content-types"
+
+#: Parts removed whole: user-defined properties, the first-page thumbnail
+#: (which can show an earlier draft), SharePoint/data-store items, and the
+#: list of reviewers with their account ids.
+_DOCX_DROP_PREFIXES = ("customxml/",)
+_DOCX_DROP_PARTS = {
+    "docprops/custom.xml": "custom_properties",
+    "word/people.xml": "reviewer accounts (people.xml)",
+}
+
+#: docProps/core.xml element -> name reported (names kept from earlier versions).
+_DOCX_CORE_NAMES = {
+    "creator": "author",
+    "lastModifiedBy": "last_modified_by",
+    "description": "comments",
+    "lastPrinted": "last_printed",
+    "contentStatus": "content_status",
+}
+
+#: docProps/app.xml elements reported when they had a value. All are removed.
+_DOCX_APP_REPORTED = ("Company", "Manager", "Template", "HyperlinkBase", "TotalTime")
+
+#: WordprocessingML elements removed whole: revision-session ids, the path of
+#: the attached template (often C:\Users\<name>\...), document variables and
+#: document ids.
+_DOCX_DROP_ELEMENTS = {
+    "rsids": "rsid",
+    "attachedTemplate": "attached template path",
+    "docVars": "document variables",
+    "docId": "document id",
+}
+
+_PLURAL = {"initials": "initials", "date": "dates"}
+
+_LOCAL_PATH = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\|file:|/(?:Users|home|Volumes)/)", re.I)
 
 
 def _strip_docx_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
-    from docx import Document
+    """Clean every part of the .docx that is known to carry metadata.
 
-    result: dict[str, Any] = {"stripped": [], "file_type": "docx", "status": "stripped"}
-
-    try:
-        doc = Document(str(file_path))
-    except Exception as exc:
-        logger.warning("Could not open DOCX %s: %s", file_path, exc)
-        return {**result, "status": "failed", "error": "could not open the file as a DOCX"}
-
-    core = doc.core_properties
-    original_meta: dict[str, str] = {}
-
-    for attr in _DOCX_SENSITIVE_ATTRS:
-        value = getattr(core, attr, None)
-        if value is not None:
-            original_meta[attr] = str(value)
-
-    stripped_keys = [k for k, v in original_meta.items() if v and v != "None"]
-    result["stripped"] = stripped_keys
-
-    if keep_hash and original_meta:
-        result["original_metadata_hash"] = _hash_metadata(original_meta)
-
-    if not stripped_keys:
-        return result
-
-    # Clear sensitive properties
-    for attr in _DOCX_SENSITIVE_ATTRS:
-        try:
-            if attr in ("created", "modified") or attr == "revision":
-                setattr(core, attr, None)
-            else:
-                setattr(core, attr, "")
-        except Exception:
-            pass  # Some read-only props may fail
-
-    doc.save(str(file_path))
-
-    # company/manager are extended properties in docProps/app.xml, which
-    # python-docx cannot reach. Without this the module reported them as
-    # stripped while leaving them in the shipped file.
-    extended = _strip_docx_extended_props(file_path)
-    if extended is None:
-        result["status"] = "partial"
-        result["remaining"] = ["company", "manager", "custom_properties"]
-        result["error"] = "could not rewrite docProps/app.xml"
-        return result
-    for key in extended:
-        if key not in result["stripped"]:
-            result["stripped"].append(key)
-
-    return result
-
-
-#: Extended/custom properties (docProps/app.xml) that identify the author's
-#: organization. Not exposed by python-docx's core_properties.
-_DOCX_EXTENDED_TAGS = ("Company", "Manager")
-
-
-def _strip_docx_extended_props(file_path: Path) -> list[str] | None:
-    """Blank out Company/Manager in docProps/app.xml and drop custom.xml.
-
-    A .docx is a zip, so this rewrites the archive in place. Returns the list
-    of property names that were actually present and removed, or None when the
-    archive could not be read or rewritten (those properties are still there).
+    Document properties (core, extended, custom), tracked-change and comment
+    authors, initials and dates, revision-session ids, the reviewer list,
+    data-store items, the thumbnail, the attached template path, document
+    variables and ids, local file paths in picture descriptions and external
+    links, and EXIF/XMP/text chunks in JPEG and PNG images are removed. Other
+    embedded images and objects are not checked and make the result "partial".
+    Every other member is written back unchanged, with zip timestamps and
+    extra fields reset.
     """
     import os
-    import re as _re
-    import shutil
     import tempfile
     import zipfile
 
-    removed: list[str] = []
+    result: dict[str, Any] = {"stripped": [], "file_type": "docx", "status": "stripped"}
 
-    try:
-        with zipfile.ZipFile(file_path) as src:
-            names = src.namelist()
-            members = {name: src.read(name) for name in names}
-    except Exception as exc:
-        logger.warning("Could not open DOCX archive %s: %s", file_path, exc)
-        return None
+    stripped: list[str] = []
+    remaining: list[str] = []
+    original_meta: dict[str, str] = {}
 
-    app_xml = members.get("docProps/app.xml")
-    if app_xml is not None:
-        text = app_xml.decode("utf-8", "replace")
-        for tag in _DOCX_EXTENDED_TAGS:
-            pattern = _re.compile(rf"<{tag}>(.*?)</{tag}>", _re.DOTALL)
-            match = pattern.search(text)
-            if match and match.group(1).strip():
-                removed.append(tag.lower())
-            text = pattern.sub(f"<{tag}></{tag}>", text)
-        members["docProps/app.xml"] = text.encode("utf-8")
-
-    # Custom properties are arbitrary user-defined fields — drop entirely,
-    # along with the content-type override and relationship that point at it,
-    # so the resulting archive is still a valid .docx.
-    if "docProps/custom.xml" in members:
-        del members["docProps/custom.xml"]
-        removed.append("custom_properties")
-
-        ct = members.get("[Content_Types].xml")
-        if ct is not None:
-            text = ct.decode("utf-8", "replace")
-            text = _re.sub(r"<Override[^>]*custom\.xml[^>]*/>", "", text)
-            members["[Content_Types].xml"] = text.encode("utf-8")
-
-        rels = members.get("_rels/.rels")
-        if rels is not None:
-            text = rels.decode("utf-8", "replace")
-            text = _re.sub(r"<Relationship[^>]*custom\.xml[^>]*/>", "", text)
-            members["_rels/.rels"] = text.encode("utf-8")
-
-    # Securely created in the same directory as the target: mktemp() is a
-    # TOCTOU race (an attacker can win the name and plant a symlink), and this
-    # function rewrites sensitive documents.
-    fd, tmp = tempfile.mkstemp(suffix=".docx", dir=str(Path(file_path).parent))
+    fd, tmp = tempfile.mkstemp(suffix=".docx", dir=str(file_path.parent))
     os.close(fd)
     try:
-        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as dst:
-            for name, data in members.items():
-                dst.writestr(name, data)
-        shutil.move(tmp, file_path)
+        with zipfile.ZipFile(file_path) as src:
+            infos = src.infolist()
+            lower = {info.filename.lower() for info in infos}
+            if "[content_types].xml" not in lower or "word/document.xml" not in lower:
+                raise _NotDocx
+            dropped = {name for name in lower if _docx_part_dropped(name)}
+            for name in sorted(dropped):
+                _note(stripped, _docx_drop_label(name))
+            with zipfile.ZipFile(tmp, "w") as dst:
+                for info in infos:
+                    name = info.filename
+                    if name.lower() in dropped or name.endswith("/"):
+                        continue
+                    with src.open(info) as member:
+                        data = member.read()
+                    data = _clean_docx_member(
+                        name, data, dropped, stripped, remaining, original_meta
+                    )
+                    out = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+                    out.compress_type = (
+                        zipfile.ZIP_STORED
+                        if info.compress_type == zipfile.ZIP_STORED
+                        else zipfile.ZIP_DEFLATED
+                    )
+                    out.create_system = 0
+                    dst.writestr(out, data)
+        os.replace(tmp, file_path)
+    except _NotDocx:
+        Path(tmp).unlink(missing_ok=True)
+        return {**result, "status": "failed", "error": "could not open the file as a DOCX"}
     except Exception as exc:
-        logger.warning("Could not rewrite DOCX archive %s: %s", file_path, exc)
-        if Path(tmp).exists():
-            Path(tmp).unlink()
-        return None
+        Path(tmp).unlink(missing_ok=True)
+        logger.warning("Could not clean DOCX %s: %s", file_path, exc)
+        if isinstance(exc, zipfile.BadZipFile):
+            return {**result, "status": "failed", "error": "could not open the file as a DOCX"}
+        return {**result, "status": "failed", "error": "could not rewrite the DOCX"}
 
-    return removed
+    result["stripped"] = stripped
+    if keep_hash and original_meta:
+        result["original_metadata_hash"] = _hash_metadata(original_meta)
+    if remaining:
+        result["status"] = "partial"
+        result["remaining"] = remaining
+    return result
+
+
+class _NotDocx(Exception):
+    pass
+
+
+def _docx_part_dropped(name: str) -> bool:
+    return (
+        name in _DOCX_DROP_PARTS
+        or name.startswith(_DOCX_DROP_PREFIXES)
+        or name.startswith("docprops/thumbnail")
+    )
+
+
+def _docx_drop_label(name: str) -> str:
+    if name in _DOCX_DROP_PARTS:
+        return _DOCX_DROP_PARTS[name]
+    if name.startswith("docprops/thumbnail"):
+        return "thumbnail"
+    return "custom XML data (customXml)"
+
+
+def _clean_docx_member(
+    name: str,
+    data: bytes,
+    dropped: set[str],
+    stripped: list[str],
+    remaining: list[str],
+    original_meta: dict[str, str],
+) -> bytes:
+    """The cleaned bytes of one archive member (unchanged when nothing applies)."""
+    low = name.lower()
+    if low.endswith(".rels"):
+        return _clean_docx_xml(
+            name, data, remaining, lambda r: _clean_rels(r, low, dropped, stripped)
+        )
+    if low == "[content_types].xml":
+        return _clean_docx_xml(name, data, remaining, lambda r: _clean_content_types(r, dropped))
+    if low == "docprops/core.xml":
+        return _clean_docx_xml(
+            name, data, remaining, lambda r: _clean_core_props(r, stripped, original_meta)
+        )
+    if low == "docprops/app.xml":
+        return _clean_docx_xml(
+            name,
+            data,
+            remaining,
+            lambda r: _strip_docx_extended_props(r, stripped, original_meta),
+        )
+    if low.endswith(".xml"):
+        return _clean_docx_xml(name, data, remaining, lambda r: _clean_word_xml(r, stripped))
+    if low.endswith((".jpg", ".jpeg", ".jpe")):
+        return _clean_docx_image(name, data, _strip_jpeg_bytes, stripped, remaining)
+    if low.endswith(".png"):
+        return _clean_docx_image(name, data, _strip_png_bytes, stripped, remaining)
+    if low.startswith("word/fonts/") or low == "mimetype":
+        return data
+    if low.startswith("word/embeddings/"):
+        _note(remaining, f"embedded object {name} (not checked)")
+    else:
+        _note(remaining, f"{name} (not checked)")
+    return data
+
+
+def _clean_docx_image(
+    name: str, data: bytes, stripper: Any, stripped: list[str], remaining: list[str]
+) -> bytes:
+    cleaned = stripper(data)
+    if cleaned is None:
+        _note(remaining, f"{name} (could not be checked)")
+        return data
+    if cleaned[1]:
+        _note(stripped, f"image metadata in {name}")
+    return cleaned[0]
+
+
+def _clean_docx_xml(name: str, data: bytes, remaining: list[str], clean: Any) -> bytes:
+    from lxml import etree
+
+    parser = etree.XMLParser(
+        resolve_entities=False, no_network=True, load_dtd=False, huge_tree=False
+    )
+    try:
+        root = etree.fromstring(data, parser)
+    except Exception:
+        _note(remaining, f"{name} (could not be parsed)")
+        return data
+    if root is None:
+        _note(remaining, f"{name} (could not be parsed)")
+        return data
+    clean(root)
+    return etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
+
+
+def _local(tag: Any) -> str:
+    return tag.rsplit("}", 1)[-1] if isinstance(tag, str) else ""
+
+
+def _ns(tag: Any) -> str:
+    return tag[1:].split("}", 1)[0] if isinstance(tag, str) and tag.startswith("{") else ""
+
+
+def _clean_core_props(root: Any, stripped: list[str], original_meta: dict[str, str]) -> None:
+    for child in list(root):
+        local = _local(child.tag)
+        value = "".join(child.itertext()).strip()
+        if value:
+            label = _DOCX_CORE_NAMES.get(local, local)
+            original_meta[label] = value
+            _note(stripped, label)
+        root.remove(child)
+
+
+def _strip_docx_extended_props(
+    root: Any, stripped: list[str], original_meta: dict[str, str]
+) -> None:
+    """Empty docProps/app.xml: company, manager, template, editing time, and the rest."""
+    for child in list(root):
+        local = _local(child.tag)
+        value = "".join(child.itertext()).strip()
+        if value and local in _DOCX_APP_REPORTED and not (local == "TotalTime" and value == "0"):
+            original_meta[local.lower()] = value
+            _note(stripped, local.lower())
+        root.remove(child)
+
+
+def _clean_rels(root: Any, rels_name: str, dropped: set[str], stripped: list[str]) -> None:
+    import posixpath
+
+    # word/_rels/document.xml.rels describes word/document.xml: targets are
+    # relative to word/.
+    base = posixpath.dirname(posixpath.dirname(rels_name))
+    for rel in list(root):
+        if _local(rel.tag) != "Relationship":
+            continue
+        target = rel.get("Target", "")
+        kind = rel.get("Type", "")
+        if kind.endswith("/attachedTemplate"):
+            root.remove(rel)
+            _note(stripped, "attached template path")
+            continue
+        if rel.get("TargetMode") == "External":
+            if _LOCAL_PATH.match(target):
+                rel.set("Target", "")
+                _note(stripped, "local file paths in links")
+            continue
+        path = target.lstrip("/") if target.startswith("/") else posixpath.join(base, target)
+        if posixpath.normpath(path).lower() in dropped:
+            root.remove(rel)
+
+
+def _clean_content_types(root: Any, dropped: set[str]) -> None:
+    for entry in list(root):
+        part = entry.get("PartName", "").lstrip("/").lower()
+        if _local(entry.tag) == "Override" and part in dropped:
+            root.remove(entry)
+
+
+def _clean_word_xml(root: Any, stripped: list[str]) -> None:
+    """Remove authors, initials, dates and session ids from a WordprocessingML part."""
+    for el in list(root.iter()):
+        if not isinstance(el.tag, str):
+            continue  # comments, processing instructions
+        local = _local(el.tag)
+        if local in _DOCX_DROP_ELEMENTS and (_ns(el.tag) in _W_NAMESPACES or local == "docId"):
+            parent = el.getparent()
+            if parent is not None:
+                parent.remove(el)
+                _note(stripped, _DOCX_DROP_ELEMENTS[local])
+            continue
+        for attr in list(el.attrib):
+            attr_local = _local(attr) if attr.startswith("{") else attr
+            in_w = _ns(attr) in _W_NAMESPACES
+            if in_w and attr_local == "author":
+                if el.attrib[attr]:
+                    el.attrib[attr] = ""  # required on revisions and comments
+                    _note(stripped, "revision and comment authors")
+            elif in_w and attr_local in ("initials", "date"):
+                del el.attrib[attr]
+                _note(stripped, f"revision and comment {_PLURAL[attr_local]}")
+            elif in_w and attr_local.startswith("rsid"):
+                del el.attrib[attr]
+                _note(stripped, "rsid")
+            elif attr_local == "dateUtc":
+                del el.attrib[attr]
+                _note(stripped, "revision and comment dates")
+            elif attr_local in ("descr", "title", "name") and _LOCAL_PATH.match(el.attrib[attr]):
+                el.attrib[attr] = ""
+                _note(stripped, "local file paths of inserted pictures")
 
 
 # ---------------------------------------------------------------------------
