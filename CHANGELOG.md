@@ -10,6 +10,32 @@ exhaustive lists.
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-11-18
+
+This release fixes 18 security problems found by an outside audit, one of them
+critical: duress mode could leave the real investigation unencrypted. Read the
+Security section and do what it says for your setup. It also adds
+`openfoia search` (one query to every records source), CourtListener and the
+Federal Register as sources, versioned extraction runs, optional offline
+semantic search, and an MCP server so AI agents can use OpenFOIA through the
+same safeguards as the command line.
+
+### Breaking changes
+
+- The web UI no longer accepts its token in a `?token=` URL. `openfoia serve`
+  opens a single-use login link; API clients send `Authorization: Bearer`.
+- Exports and downloads now go to `<data dir>/exports/` by default instead of
+  the current directory, so `purge` can find them.
+- `openfoia init --duress-password` without a real passphrase (`--encrypt` or
+  `--password`) now refuses and exits 1.
+- `openfoia purge` exits 1 and lists the files when any could not be removed.
+- Entity extraction asks before sending document text to an AI provider that
+  is not on this machine (or needs `ai.allow_remote`), and refuses in Tor mode.
+- `analyze extract --force` keeps the earlier entities as an older run instead
+  of deleting them.
+- `OPENFOIA_SEC_USER_AGENT` is used in direct mode only; over Tor, SEC gets the
+  common browser User-Agent.
+
 ### Added
 
 - `openfoia search "<query>"`: one query to every records source (or those
@@ -1049,6 +1075,7 @@ security/OPSEC pass; the notes below describe what it changed, factually.
 Baseline for this changelog. Earlier tags (`v0.0.1` through `v2.0.0`,
 2026-02-19 to 2026-03-22) predate it; see the git history for details.
 
+[5.0.0]: https://github.com/JordanCoin/openfoia/compare/v4.7.0...v5.0.0
 [4.7.0]: https://github.com/JordanCoin/openfoia/compare/v4.6.2...v4.7.0
 [4.6.2]: https://github.com/JordanCoin/openfoia/compare/v4.6.1...v4.6.2
 [4.6.1]: https://github.com/JordanCoin/openfoia/compare/v4.6.0...v4.6.1
