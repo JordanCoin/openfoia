@@ -11,6 +11,7 @@ import hashlib
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from html import escape
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
@@ -225,30 +226,191 @@ def _strip_trackers(html: str) -> str:
     return html
 
 
-def _sanitize_for_archive(html: str) -> str:
-    """Strip every remote-loading construct from HTML before archiving it.
+#: First element of every archived page. Defense in depth only: the tree
+#: re-serialization below is what makes the page inert, but if a construct
+#: ever slips past it, the browser still refuses to fetch anything.
+ARCHIVE_CSP_META = (
+    '<meta http-equiv="Content-Security-Policy" '
+    "content=\"default-src 'none'; style-src 'unsafe-inline'\">"
+)
 
-    Tracker-domain filtering alone is not enough for a file that will be
-    reopened later: any surviving <script>, <img>, <iframe> or stylesheet
-    <link> re-contacts its origin. An archived page must be inert.
+#: Tags kept in an archived page. Nothing here loads a resource, runs code,
+#: navigates, or submits anything. Every other tag is dropped and its text kept,
+#: except _ARCHIVE_DROP_WITH_CONTENT, whose contents go too.
+_ARCHIVE_ALLOWED_TAGS = frozenset(
+    {
+        "a", "abbr", "address", "article", "aside", "b", "bdi", "bdo", "blockquote",
+        "br", "caption", "center", "cite", "code", "col", "colgroup", "dd", "del",
+        "details", "dfn", "div", "dl", "dt", "em", "figcaption", "figure", "footer",
+        "h1", "h2", "h3", "h4", "h5", "h6", "header", "hgroup", "hr", "i", "ins",
+        "kbd", "li", "main", "mark", "nav", "ol", "p", "pre", "q", "rp", "rt", "ruby",
+        "s", "samp", "section", "small", "span", "strong", "sub", "summary", "sup",
+        "table", "tbody", "td", "tfoot", "th", "thead", "time", "tr", "u", "ul",
+        "var", "wbr",
+    }
+)  # fmt: skip
+
+#: Elements whose contents are code, styling or embedded documents rather than
+#: page text. Dropped with everything inside them.
+_ARCHIVE_DROP_WITH_CONTENT = frozenset(
+    {
+        "applet", "frameset", "iframe", "math", "noembed", "noframes", "object",
+        "script", "select", "style", "svg", "template",
+    }
+)  # fmt: skip
+
+_ARCHIVE_VOID_TAGS = frozenset({"br", "col", "hr", "wbr"})
+
+#: Attributes kept on allowed tags. None of them holds a URL, a script or CSS.
+#: Notably absent: src, href, srcset, style, on*, background, action, formaction,
+#: xlink:href, poster, data, cite, ping, longdesc, manifest.
+_ARCHIVE_ALLOWED_ATTRS = frozenset(
+    {
+        "abbr", "align", "colspan", "datetime", "dir", "headers", "id", "lang",
+        "open", "reversed", "rowspan", "scope", "span", "start", "title", "value",
+    }
+)  # fmt: skip
+
+
+class _ArchiveSanitizer(HTMLParser):
+    """Rebuild a page from its parse events, keeping only inert markup.
+
+    Nothing from the source is copied through as markup: every tag and
+    attribute written out is one this class chose from an allowlist, and every
+    piece of text is escaped. A construct the parser misreads (a mangled tag, an
+    unusual end tag) can only lose content, never smuggle markup through: the
+    browser parses our output, not the original page.
     """
-    # Drop scripts (and their contents) outright.
-    html = re.sub(r"<script\b[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
-    html = re.sub(r"<noscript\b[^>]*>.*?</noscript>", "", html, flags=re.DOTALL | re.IGNORECASE)
-    # Drop remote subresource elements.
-    html = re.sub(
-        r"<(?:img|iframe|frame|embed|object|video|audio|source|track)\b[^>]*/?>",
-        "",
-        html,
-        flags=re.IGNORECASE,
-    )
-    # Drop <link> elements that fetch (stylesheets, preloads, prefetch...).
-    html = re.sub(r"<link\b[^>]*>", "", html, flags=re.IGNORECASE)
-    # Drop inline event handlers (onload=, onerror=, ...).
-    html = re.sub(r"\son[a-z]+\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s>]+)", "", html, flags=re.IGNORECASE)
-    # Neutralise any remaining external url() references in inline styles.
-    html = re.sub(r"url\(\s*['\"]?https?://[^)]*\)", "url(about:blank)", html, flags=re.IGNORECASE)
-    return html
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.title_parts: list[str] = []
+        self.body: list[str] = []
+        self._open: list[str] = []
+        self._drop: str | None = None
+        self._drop_depth = 0
+        self._in_title = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self._start(tag.lower(), attrs, self_closing=False)
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self._start(tag.lower(), attrs, self_closing=True)
+
+    def _start(self, tag: str, attrs: list[tuple[str, str | None]], *, self_closing: bool) -> None:
+        if self._drop is not None:
+            if tag == self._drop and not self_closing:
+                self._drop_depth += 1
+            return
+        if tag in _ARCHIVE_DROP_WITH_CONTENT:
+            if not self_closing:
+                self._drop, self._drop_depth = tag, 1
+            return
+        if tag == "title":
+            self._in_title = not self_closing
+            return
+        if tag not in _ARCHIVE_ALLOWED_TAGS:
+            return  # unwrap: drop the tag, keep the text inside it
+
+        kept = [
+            (name.lower(), value)
+            for name, value in attrs
+            if name.lower() in _ARCHIVE_ALLOWED_ATTRS and value is not None
+        ]
+        if tag == "a":
+            # Keep where a link pointed as hover text, never as a live link.
+            href = next((v for n, v in attrs if n.lower() == "href" and v), None)
+            if href and not any(n == "title" for n, _ in kept):
+                kept.append(("title", href))
+        rendered = "".join(f' {n}="{escape(v, quote=True)}"' for n, v in kept)
+        self.body.append(f"<{tag}{rendered}>")
+        if tag in _ARCHIVE_VOID_TAGS:
+            return
+        if self_closing:
+            self.body.append(f"</{tag}>")
+        else:
+            self._open.append(tag)
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if self._drop is not None:
+            if tag == self._drop:
+                self._drop_depth -= 1
+                if self._drop_depth == 0:
+                    self._drop = None
+            return
+        if tag == "title":
+            self._in_title = False
+            return
+        if tag in self._open:
+            # Close everything opened since, so the output stays well nested.
+            while self._open:
+                top = self._open.pop()
+                self.body.append(f"</{top}>")
+                if top == tag:
+                    break
+
+    def handle_data(self, data: str) -> None:
+        if self._drop is not None:
+            return
+        if self._in_title:
+            self.title_parts.append(data)
+            return
+        self.body.append(escape(data, quote=False))
+
+    # Comments (IE conditional comments included), doctypes, processing
+    # instructions and CDATA sections are not page text: drop them.
+    def handle_comment(self, data: str) -> None:
+        pass
+
+    def handle_decl(self, decl: str) -> None:
+        pass
+
+    def handle_pi(self, data: str) -> None:
+        pass
+
+    def unknown_decl(self, data: str) -> None:
+        pass
+
+    def document(self) -> str:
+        while self._open:
+            self.body.append(f"</{self._open.pop()}>")
+        title = " ".join("".join(self.title_parts).split())
+        # The CSP is the first tag in the file: <html> and <head> are implied
+        # by the HTML parser, so nothing can come before the policy.
+        return (
+            "<!DOCTYPE html>\n"
+            f"{ARCHIVE_CSP_META}"
+            '<meta charset="utf-8">'
+            '<meta name="referrer" content="no-referrer">'
+            f"<title>{escape(title, quote=False)}</title>\n"
+            f"<body>{''.join(self.body)}</body>\n"
+        )
+
+
+def _sanitize_for_archive(html: str) -> str:
+    """Rebuild *html* as an inert page for the local archive.
+
+    An archived page is reopened later, from disk, and from the journalist's
+    real IP even when it was fetched over Tor. Anything in it that loads a
+    resource, runs script, refreshes or submits tells the page's author when,
+    and from where, it was re-read. Regex filtering of the source cannot be made
+    complete (the November 2026 audit found seven bypasses), so the page is
+    parsed and rebuilt from an allowlist of tags and attributes, with a
+    Content-Security-Policy that forbids every fetch as its first element.
+
+    The archive keeps the page's text and basic structure (headings,
+    paragraphs, lists, tables, emphasis). Images, styling, forms, embedded
+    media, SVG and scripts are not kept. Links keep their text; where they
+    pointed is kept as hover text (title), not as a clickable link.
+    """
+    sanitizer = _ArchiveSanitizer()
+    # Best-effort parsing: malformed markup must not abort the archive. Whatever
+    # was rebuilt before a parser error is still inert.
+    with contextlib.suppress(Exception):
+        sanitizer.feed(html)
+        sanitizer.close()
+    return sanitizer.document()
 
 
 def _extract_content(html: str) -> tuple[str, str]:

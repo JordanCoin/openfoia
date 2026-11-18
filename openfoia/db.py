@@ -9,7 +9,6 @@ from __future__ import annotations
 import importlib
 import os
 import shutil
-import sqlite3
 import stat
 import sys
 import tempfile
@@ -17,6 +16,7 @@ from collections.abc import Generator
 from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
@@ -101,7 +101,7 @@ def secure_delete_plaintext_db(db_path: Path) -> None:
     touching them, leaving the whole pre-encryption database recoverable by
     file carving. Best-effort on SSDs — see docs/THREAT_MODEL.md.
     """
-    from .security import secure_delete  # lazy: circular import
+    from .security import secure_delete  # lazy: monkeypatched in tests
 
     db_path = Path(db_path)
     for candidate in (db_path, *(Path(str(db_path) + s) for s in _DB_SIDECAR_SUFFIXES)):
@@ -335,11 +335,16 @@ def _upgrade_schema_once(password: str | None) -> None:
     run_migrations(password=password)
 
 
-def run_migrations(password: str | None = None) -> None:
-    """Run alembic migrations to bring the database schema up to date."""
+def run_migrations(password: str | None = None, db_path: Path | None = None) -> None:
+    """Run alembic migrations to bring the database schema up to date.
+
+    *db_path* targets a specific file (the decoy profile is built this way, so
+    its schema is exactly what a real ``init`` produces).
+    """
     from alembic import command  # lazy: heavy; only migrations need it
 
-    db_path = get_db_path(password=password)
+    if db_path is None:
+        db_path = get_db_path(password=password)
 
     alembic_cfg = _alembic_config()
 
@@ -359,19 +364,27 @@ def run_migrations(password: str | None = None) -> None:
         command.upgrade(alembic_cfg, "head")
 
 
-def init_db(seed: bool = True, password: str | None = None) -> None:
-    """Initialize the database, running migrations and optionally seeding data."""
+def init_db(seed: bool = True, password: str | None = None, db_path: Path | None = None) -> None:
+    """Initialize the database, running migrations and optionally seeding data.
+
+    *db_path* initializes that file instead of the one :func:`get_db_path`
+    resolves to; the decoy profile uses it so it is built exactly like a real
+    database.
+    """
     # Ensure data directory exists
     get_data_dir()
 
     # Run alembic migrations (creates/updates tables)
-    run_migrations(password=password)
+    run_migrations(password=password, db_path=db_path)
 
     if seed:
-        engine = get_engine(password=password)
-        seed_agencies(engine)
+        engine = get_engine(db_path=db_path, password=password)
+        try:
+            seed_agencies(engine)
+        finally:
+            engine.dispose()
 
-    _restrict_db_permissions(get_db_path(password=password))
+    _restrict_db_permissions(db_path or get_db_path(password=password))
 
 
 def ensure_db() -> None:
@@ -395,11 +408,24 @@ def _restrict_db_permissions(db_path: Path) -> None:
                 os.chmod(candidate, 0o600)
 
 
+def _readonly_uri(path: Path | str) -> str:
+    """A ``file:`` URI that opens *path* read-only (URI-special characters escaped)."""
+    return "file:" + quote(str(Path(path).resolve())) + "?mode=ro"
+
+
+def _schema_names(conn: Any, schema: str = "main") -> set[str]:
+    return {r[0] for r in conn.execute(f"SELECT name FROM {schema}.sqlite_master")}
+
+
 def encrypt_database(password: str) -> None:
     """Encrypt an existing plaintext SQLite database with SQLCipher.
 
-    Reads the current plaintext database, creates an encrypted copy,
-    then swaps it in place. Raises RuntimeError if SQLCipher is not available.
+    Copies the plaintext database into a new encrypted file, checks the copy
+    (it opens with the key, passes ``quick_check`` and holds every table,
+    index, trigger and virtual table the original has), shreds the plaintext
+    original and its -wal/-shm/-journal files in place, and moves the copy
+    into its place. Raises RuntimeError if SQLCipher is not available or the
+    copy fails a check; the original is untouched in that case.
     """
     if not _HAS_SQLCIPHER:
         raise RuntimeError(
@@ -409,27 +435,62 @@ def encrypt_database(password: str) -> None:
     db_path = get_db_path()
     if not db_path.exists():
         raise FileNotFoundError(f"Database not found: {db_path}")
+    with open(db_path, "rb") as f:
+        if f.read(16) != b"SQLite format 3\x00":
+            raise RuntimeError(f"{db_path.name} is not a plaintext database (already encrypted?)")
 
     # Create encrypted copy in a temp file next to the original
     tmp_fd, tmp_path = tempfile.mkstemp(suffix=".db", dir=db_path.parent, prefix=".encrypting_")
     os.close(tmp_fd)
 
     try:
-        # Open plaintext database with regular sqlite3
-        plain_conn = sqlite3.connect(str(db_path))
+        # Copy with SQLCipher's own exporter. Replaying iterdump() broke on
+        # any database with stored pages: the FTS5 index (a virtual table) is
+        # dumped as raw sqlite_master rows whose shadow tables do not exist
+        # yet when the dump's INSERTs fire the triggers, so `db encrypt`
+        # failed with "no such table: document_pages_fts". sqlcipher_export
+        # copies every ordinary table with its rows (FTS shadow tables and
+        # any table added later, e.g. extraction runs or page vectors),
+        # every index, and the triggers, views and virtual tables as schema
+        # entries, so nothing has to be listed here by name.
+        #
+        # The plaintext file is attached READ-ONLY. A read-write connection
+        # checkpoints a -wal file into the main file when it closes and then
+        # plain-unlinks it, which would free the WAL's plaintext blocks
+        # without ever overwriting them; read-only leaves the WAL in place
+        # for secure_delete_plaintext_db below.
+        enc_conn = sqlcipher.connect(tmp_path, uri=True)  # URI on: ATTACH honors ?mode=ro
+        try:
+            enc_conn.execute(sqlcipher_key_pragma(password))
+            enc_conn.execute("PRAGMA cipher_compatibility = 4")
+            enc_conn.execute(
+                f"ATTACH DATABASE {sqlcipher_key_literal(_readonly_uri(db_path))} AS plain KEY ''"
+            )
+            original = _schema_names(enc_conn, "plain")
+            enc_conn.execute("SELECT sqlcipher_export('main', 'plain')")
+            enc_conn.commit()
+            enc_conn.execute("DETACH DATABASE plain")
+        finally:
+            enc_conn.close()
 
-        # Open new encrypted database with SQLCipher
+        # Check the copy opens with the key and holds every object before the
+        # original is destroyed.
         enc_conn = sqlcipher.connect(tmp_path)
-        enc_conn.execute(sqlcipher_key_pragma(password))
-        enc_conn.execute("PRAGMA cipher_compatibility = 4")
-
-        # Dump plaintext and replay into encrypted DB
-        for line in plain_conn.iterdump():
-            enc_conn.execute(line)
-
-        enc_conn.commit()
-        enc_conn.close()
-        plain_conn.close()
+        try:
+            enc_conn.execute(sqlcipher_key_pragma(password))
+            enc_conn.execute("PRAGMA cipher_compatibility = 4")
+            copied = _schema_names(enc_conn)
+            if enc_conn.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                raise RuntimeError("the encrypted copy failed its integrity check")
+        finally:
+            enc_conn.close()
+        if not original:
+            raise RuntimeError("could not read the plaintext database's schema")
+        if missing := original - copied:
+            raise RuntimeError(f"the encrypted copy is missing {sorted(missing)}")
+        with open(tmp_path, "rb") as f:
+            if f.read(16) == b"SQLite format 3\x00":
+                raise RuntimeError("the copy was written unencrypted")
 
         # Shred the plaintext original IN PLACE before swapping the encrypted
         # file in. Renaming it away first would free its blocks untouched and
@@ -438,9 +499,10 @@ def encrypt_database(password: str) -> None:
         shutil.move(tmp_path, db_path)
         os.chmod(db_path, 0o600)
     except Exception:
-        # Clean up temp file on failure
-        if Path(tmp_path).exists():
-            os.unlink(tmp_path)
+        # Clean up temp file on failure (its contents are encrypted)
+        for leftover in (tmp_path, *(tmp_path + s for s in _DB_SIDECAR_SUFFIXES)):
+            if Path(leftover).exists():
+                os.unlink(leftover)
         raise
 
 

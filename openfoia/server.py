@@ -2,21 +2,35 @@
 
 Binds only to localhost. Requires token authentication.
 Your data never leaves your machine.
+
+Authentication: the session token never travels in a URL. `openfoia serve`
+opens the browser at ``/login?nonce=...``, a single-use link that expires
+after LOGIN_NONCE_TTL seconds. That endpoint swaps the nonce for an HttpOnly,
+SameSite=Strict session cookie and redirects to ``/``. From then on the token
+is accepted only from that cookie or an ``Authorization: Bearer`` header. A
+browser's command line is readable by every local account, so whatever is
+put there must be worthless once used.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
+import html
 import secrets
 import socket
+import sys
+import threading
+import time
+from collections.abc import Callable
+from enum import Enum
 from pathlib import Path
 from uuid import uuid4
 
 import uvicorn
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import func
@@ -41,6 +55,82 @@ from .models import utcnow as _utcnow
 #: Hard cap on a single uploaded document (100 MiB), matching CLI ingest.
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 
+#: Seconds a login link stays valid. It is single-use as well.
+LOGIN_NONCE_TTL = 60.0
+
+#: Name of the HttpOnly cookie that carries the session token.
+SESSION_COOKIE = "openfoia_session"
+
+
+class NonceResult(str, Enum):
+    OK = "ok"
+    USED = "used"  # this link was valid once and has been used already
+    INVALID = "invalid"  # unknown, malformed or expired
+
+
+class LoginNonces:
+    """Single-use, short-lived login nonces.
+
+    Every live nonce is compared with ``secrets.compare_digest``. A consumed
+    nonce is forgotten except for a hash, so presenting it again can be
+    reported as "already used" (the warning sign that someone else on this
+    machine took the link first) without keeping anything that still works.
+    """
+
+    def __init__(self, ttl: float = LOGIN_NONCE_TTL, clock: Callable[[], float] = time.monotonic):
+        self.ttl = ttl
+        self._clock = clock
+        self._live: dict[str, float] = {}  # nonce -> expiry
+        self._used: dict[str, float] = {}  # sha256(nonce) -> when to forget it
+        self._lock = threading.Lock()
+
+    def issue(self) -> str:
+        nonce = secrets.token_urlsafe(32)
+        with self._lock:
+            self._prune()
+            self._live[nonce] = self._clock() + self.ttl
+        return nonce
+
+    def consume(self, presented: str | None) -> NonceResult:
+        data = (presented or "").encode("utf-8", "surrogatepass")
+        with self._lock:
+            self._prune()
+            match = None
+            for nonce in self._live:
+                # No early exit: look at every live nonce the same way.
+                if secrets.compare_digest(nonce.encode(), data):
+                    match = nonce
+            if match is not None:
+                del self._live[match]
+                self._used[hashlib.sha256(data).hexdigest()] = self._clock() + 3600
+                return NonceResult.OK
+            if data and hashlib.sha256(data).hexdigest() in self._used:
+                return NonceResult.USED
+            return NonceResult.INVALID
+
+    def _prune(self) -> None:
+        now = self._clock()
+        self._live = {n: exp for n, exp in self._live.items() if exp > now}
+        self._used = {h: exp for h, exp in self._used.items() if exp > now}
+
+
+def login_url(host: str, port: int, nonce: str) -> str:
+    """The single-use link that logs a browser in."""
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    return f"http://{host}:{port}/login?nonce={nonce}"
+
+
+def _message_page(title: str, message: str, status_code: int) -> HTMLResponse:
+    """A minimal static page; the text is ours, never request data."""
+    body = (
+        "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
+        f"<title>OpenFOIA: {html.escape(title)}</title></head>"
+        "<body style='font-family:sans-serif;max-width:40rem;margin:4rem auto'>"
+        f"<h1>{html.escape(title)}</h1><p>{html.escape(message)}</p></body></html>"
+    )
+    return HTMLResponse(body, status_code=status_code)
+
 
 class _UploadTooLarge(Exception):
     """Internal signal that an upload exceeded MAX_UPLOAD_BYTES."""
@@ -62,8 +152,14 @@ def _default_data_dir() -> Path:
     return get_data_dir()
 
 
-def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
-    """Create the FastAPI application with token authentication."""
+def create_app(
+    token: str, data_dir: Path | None = None, nonces: LoginNonces | None = None
+) -> FastAPI:
+    """Create the FastAPI application with token authentication.
+
+    Log a browser in with ``app.state.login_nonces.issue()`` and
+    :func:`login_url`; API clients send ``Authorization: Bearer <token>``.
+    """
 
     app = FastAPI(
         title="OpenFOIA",
@@ -75,6 +171,7 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
 
     # Store token and data directory in app state
     app.state.auth_token = token
+    app.state.login_nonces = nonces or LoginNonces()
     from .db import _ensure_private_dir  # lazy: db import probes for SQLCipher
 
     app.state.data_dir = _ensure_private_dir(Path(data_dir) if data_dir else _default_data_dir())
@@ -91,15 +188,10 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
         allowed_hosts=["127.0.0.1", "localhost", "::1", "[::1]"],
     )
 
-    # CORS - only allow localhost
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["http://127.0.0.1", "http://localhost"],
-        allow_origin_regex=r"^https?://(127\.0\.0\.1|localhost)(:\d+)?$",
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # No CORS middleware: the UI is same-origin and nothing else should read
+    # this API from a browser. (A credentialed CORS allowance for every
+    # localhost origin would let any page served from another local port read
+    # the investigation once the session lives in a cookie.)
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
@@ -120,30 +212,107 @@ def create_app(token: str, data_dir: Path | None = None) -> FastAPI:
             "frame-ancestors 'none'; "
             "base-uri 'none'"
         )
-        # Keep the ?token= out of outbound Referer headers and shared caches.
+        # Keep URLs (a login nonce in /login?nonce=) out of outbound Referer
+        # headers and shared caches.
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
+        # Other sites may not embed anything from here (a <script>/<img> probe
+        # of /static/app.css or /api/health would tell a hostile page that
+        # OpenFOIA is running on this machine).
+        response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
         return response
 
-    # Token verification dependency
-    async def verify_token(
-        request: Request,
-        token: str | None = Query(None, alias="token"),
-    ):
-        # Check query param first, then cookie
-        auth_token = token or request.cookies.get("openfoia_token")
+    def _presented_token(request: Request) -> str | None:
+        """The session token from the Authorization header or the cookie.
+
+        Never from the query string: a URL ends up in browser history, argv,
+        logs and Referer headers.
+        """
+        auth = request.headers.get("authorization", "")
+        scheme, _, value = auth.partition(" ")
+        if scheme.lower() == "bearer" and value.strip():
+            return value.strip()
+        cookie = request.cookies.get(SESSION_COOKIE)
+        if cookie is None:
+            return None
+        # The cookie is ambient: a page on another local port is same-site
+        # and would get it attached. Refuse anything a browser marks as not
+        # coming from this exact origin.
+        fetch_site = request.headers.get("sec-fetch-site")
+        if fetch_site not in (None, "same-origin", "none"):
+            return None
+        origin = request.headers.get("origin")
+        if origin is not None and origin != f"http://{request.headers.get('host', '')}":
+            return None
+        return cookie
+
+    def _authorized(request: Request) -> bool:
+        presented = _presented_token(request) or ""
         # Constant-time: a plain != leaks the token prefix through timing.
-        if not secrets.compare_digest(auth_token or "", app.state.auth_token):
+        return secrets.compare_digest(
+            presented.encode("utf-8", "surrogatepass"), app.state.auth_token.encode()
+        )
+
+    # Token verification dependency
+    async def verify_token(request: Request):
+        if not _authorized(request):
             raise HTTPException(status_code=401, detail="Invalid or missing token")
-        return auth_token
+        return True
 
     # === Routes ===
 
+    @app.get("/login")
+    async def login(nonce: str | None = Query(None)):
+        """Swap a single-use login nonce for the session cookie."""
+        result = app.state.login_nonces.consume(nonce)
+        if result is NonceResult.OK:
+            # 303 to a clean URL: the nonce leaves the address bar and is never
+            # sent as a Referer (Referrer-Policy: no-referrer as well).
+            response = RedirectResponse("/", status_code=303)
+            response.set_cookie(
+                SESSION_COOKIE,
+                app.state.auth_token,
+                httponly=True,
+                samesite="strict",
+                path="/",
+            )
+            return response
+        if result is NonceResult.USED:
+            print(
+                "WARNING: a login link that was already used was presented again. "
+                "If you did not open it twice, another program or account on this "
+                "machine may have taken it first: stop the server (Ctrl+C) and "
+                "start `openfoia serve` again.",
+                file=sys.stderr,
+            )
+            return _message_page(
+                "Login link already used",
+                "This login link has already been used. If that was not you, another "
+                "program on this computer may have opened it first: stop the server "
+                "(Ctrl+C in its terminal) and run openfoia serve again.",
+                403,
+            )
+        return _message_page(
+            "Login link expired",
+            "This login link is invalid or has expired (links work once, for "
+            f"{int(app.state.login_nonces.ttl)} seconds). Press Enter in the terminal "
+            "running openfoia serve for a new one (or restart it).",
+            401,
+        )
+
     @app.get("/", response_class=HTMLResponse)
-    async def index(token: str = Depends(verify_token)):
+    async def index(request: Request):
         """Serve the main web interface."""
+        if not _authorized(request):
+            return _message_page(
+                "Not logged in",
+                "Open the login link printed by openfoia serve. Press Enter in its "
+                "terminal for a new one.",
+                401,
+            )
         return get_index_html()
 
     @app.get("/api/health")
@@ -814,7 +983,7 @@ def get_index_html() -> str:
                         <p>Token-authenticated session</p>
                     </div>
                     <div class="mt-4 pt-4 border-t border-white/10 text-xs text-gray-500">
-                        Data directory: <code>~/.openfoia/</code>
+                        Data directory: shown in the terminal running <code>openfoia serve</code>
                     </div>
                 </div>
             </div>
@@ -861,9 +1030,9 @@ def get_index_html() -> str:
     <div id="toast" class="toast hidden text-white"></div>
 
     <script>
-        // Get token from URL
-        const urlParams = new URLSearchParams(window.location.search);
-        const token = urlParams.get('token');
+        // Authentication rides in an HttpOnly session cookie that same-origin
+        // fetch() sends by itself; this script never sees the token, and no
+        // URL carries it.
 
         // --- Helpers ---
         function showToast(msg, isError) {
@@ -871,10 +1040,6 @@ def get_index_html() -> str:
             t.textContent = msg;
             t.className = 'toast ' + (isError ? 'bg-red-600' : 'bg-green-600');
             setTimeout(function() { t.classList.add('hidden'); }, 3000);
-        }
-
-        function apiUrl(path) {
-            return path + (path.includes('?') ? '&' : '?') + 'token=' + token;
         }
 
         function esc(s) {
@@ -886,7 +1051,7 @@ def get_index_html() -> str:
         // --- Stats ---
         async function loadStats() {
             try {
-                const resp = await fetch(apiUrl('/api/stats'));
+                const resp = await fetch('/api/stats');
                 const data = await resp.json();
                 document.getElementById('stat-requests').textContent = data.requests.total;
                 document.getElementById('stat-documents').textContent = data.documents.total;
@@ -958,7 +1123,7 @@ def get_index_html() -> str:
             try {
                 var url = '/api/requests?limit=10';
                 if (currentStatusFilter) url += '&status=' + currentStatusFilter;
-                const resp = await fetch(apiUrl(url));
+                const resp = await fetch(url);
                 const data = await resp.json();
                 renderRequestsTable(
                     document.getElementById('requests-list'),
@@ -973,7 +1138,7 @@ def get_index_html() -> str:
         // --- Deadlines ---
         async function loadDeadlines() {
             try {
-                const resp = await fetch(apiUrl('/api/deadlines'));
+                const resp = await fetch('/api/deadlines');
                 const data = await resp.json();
                 var el = document.getElementById('deadlines-list');
                 el.replaceChildren();
@@ -1029,7 +1194,7 @@ def get_index_html() -> str:
             if (q.length < 2) { agencyDropdown.classList.add('hidden'); return; }
             agencySearchTimeout = setTimeout(async function() {
                 try {
-                    var resp = await fetch(apiUrl('/api/agencies?query=' + encodeURIComponent(q)));
+                    var resp = await fetch('/api/agencies?query=' + encodeURIComponent(q));
                     var data = await resp.json();
                     agencyDropdown.replaceChildren();
                     if (data.agencies.length === 0) {
@@ -1087,7 +1252,7 @@ def get_index_html() -> str:
             btn.textContent = 'Submitting...';
 
             try {
-                var resp = await fetch(apiUrl('/api/requests'), {
+                var resp = await fetch('/api/requests', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -1133,7 +1298,7 @@ def get_index_html() -> str:
             panel.classList.toggle('hidden');
             if (!panel.classList.contains('hidden')) {
                 try {
-                    var resp = await fetch(apiUrl('/api/requests?limit=50'));
+                    var resp = await fetch('/api/requests?limit=50');
                     var data = await resp.json();
                     var sel = document.getElementById('upload-request-id');
                     sel.replaceChildren();
@@ -1161,7 +1326,7 @@ def get_index_html() -> str:
             formData.append('file', fileInput.files[0]);
 
             try {
-                var resp = await fetch(apiUrl('/api/documents/upload?request_id=' + requestId), {
+                var resp = await fetch('/api/documents/upload?request_id=' + requestId, {
                     method: 'POST',
                     body: formData,
                 });
@@ -1198,7 +1363,7 @@ def get_index_html() -> str:
                 if (et) url += 'entity_type=' + et + '&';
 
                 try {
-                    var resp = await fetch(apiUrl(url));
+                    var resp = await fetch(url);
                     var data = await resp.json();
                     resultsEl.replaceChildren();
                     if (data.entities.length === 0) {
@@ -1239,7 +1404,7 @@ def get_index_html() -> str:
         // --- View Entity Graph ---
         document.getElementById('btn-view-graph').addEventListener('click', async function() {
             try {
-                var resp = await fetch(apiUrl('/api/graph'));
+                var resp = await fetch('/api/graph');
                 var data = await resp.json();
                 showToast('Graph: ' + data.nodes.length + ' nodes, ' + data.edges.length + ' edges', false);
             } catch (e) { showToast('Failed to load graph.', true); }
@@ -1254,16 +1419,35 @@ def get_index_html() -> str:
 </html>"""
 
 
+def _reissue_on_enter(nonces: LoginNonces, host: str, port: int) -> None:
+    """Print a fresh login link each time Enter is pressed in the terminal."""
+    while True:
+        try:
+            line = sys.stdin.readline()
+        except (OSError, ValueError):
+            return
+        if not line:
+            return
+        print(
+            f"New login link (works once, for {int(nonces.ttl)} s): {login_url(host, port, nonces.issue())}"
+        )
+
+
 def run_server(
     host: str = "127.0.0.1",
     port: int = 0,
     token: str | None = None,
     data_dir: Path | None = None,
+    open_browser: Callable[[str], object] | None = None,
 ) -> None:
-    """Run the OpenFOIA server."""
+    """Run the OpenFOIA server.
+
+    *open_browser*, if given, is called with the single-use login link once
+    the server is accepting connections.
+    """
     # Generate token if not provided
     if token is None:
-        token = secrets.token_urlsafe(16)
+        token = secrets.token_urlsafe(32)
 
     # Find available port if not specified
     if port == 0:
@@ -1271,18 +1455,38 @@ def run_server(
             s.bind(("127.0.0.1", 0))
             port = s.getsockname()[1]
 
-    # Create app
-    app = create_app(token=token, data_dir=data_dir)
+    if data_dir is None:
+        data_dir = _default_data_dir()
+
+    nonces = LoginNonces()
+    app = create_app(token=token, data_dir=data_dir, nonces=nonces)
+    url = login_url(host, port, nonces.issue())
+    interactive = bool(sys.stdin) and sys.stdin.isatty()
 
     # Print startup message
-    url = f"http://{host}:{port}/?token={token}"
     print("\nOpenFOIA")
     print("-" * 50)
-    print(f"Local server: {url}")
-    print(f"Data stored:  {data_dir or Path.home() / '.openfoia'}")
+    print(f"Login link:   {url}")
+    print(f"              (works once, for {int(nonces.ttl)} seconds", end="")
+    print("; press Enter here for a new one)" if interactive else ")")
+    print(f"Data stored:  {data_dir}")
     print("-" * 50)
     print("Your data never leaves this machine.")
     print("Press Ctrl+C to stop the server.\n")
 
-    # Run server
-    uvicorn.run(app, host=host, port=port, log_level="warning")
+    server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="warning"))
+
+    if open_browser is not None:
+
+        def _open_when_ready() -> None:
+            deadline = time.monotonic() + 30
+            while not server.started and time.monotonic() < deadline:
+                time.sleep(0.05)
+            open_browser(url)
+
+        threading.Thread(target=_open_when_ready, daemon=True).start()
+
+    if interactive:
+        threading.Thread(target=_reissue_on_enter, args=(nonces, host, port), daemon=True).start()
+
+    server.run()

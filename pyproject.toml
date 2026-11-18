@@ -59,9 +59,12 @@ encryption = ["sqlcipher3-binary>=0.5.0"]
 # extensions, e.g. macOS system Python) search falls back to numpy. The model
 # itself is a separate, explicit download: openfoia docs embed-model.
 semantic = ["model2vec>=0.4.0,<1", "sqlite-vec>=0.1.6,<0.2"]
+# MCP server (openfoia mcp serve, stdio only). The low-level
+# Server(on_list_tools=..., on_call_tool=...) API it uses is the mcp 2.x one.
+mcp = ["mcp>=2.0,<3"]
 # Everything
 all = [
-    "openfoia[ocr,fax,mail,cloud-ai,ner,tor,browser,email-files,encryption,semantic]",
+    "openfoia[ocr,fax,mail,cloud-ai,ner,tor,browser,email-files,encryption,semantic,mcp]",
 ]
 # Development
 dev = [

@@ -34,6 +34,7 @@ from urllib.parse import urlsplit
 
 from ..db import get_data_dir
 from ..net import _retry_after, egress_client
+from ..termsafe import safe_text
 from .base import (
     AdapterRequestError,
     RecordAdapter,
@@ -148,8 +149,8 @@ def clean_line(value: Any, limit: int = MAX_FIELD) -> str:
     """One printable line from an API value: no control characters, capped at *limit*."""
     if value is None:
         return ""
-    text = " ".join(str(value).split())
-    text = "".join(ch for ch in text if ch.isprintable())
+    # The shared sanitizer keeps U+200C/U+200D, which Persian and Indic names need.
+    text = safe_text(" ".join(str(value).split()))
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
@@ -710,7 +711,7 @@ class CourtListenerAdapter(RecordAdapter):
             return dest
         # follow_redirects stays off: a redirect is a second, unvalidated URL.
         async with egress_client(self._egress, timeout=120, follow_redirects=False) as client:
-            await download_to_file(client, url, dest, max_bytes=MAX_PDF_BYTES)
+            await download_to_file(client, url, dest, max_bytes=MAX_PDF_BYTES, egress=self._egress)
         return dest
 
     def store(

@@ -31,7 +31,7 @@ openfoia portable     # creates a marker file
 openfoia init         # database created ON the USB
 ```
 
-From that point, everything stays on the USB. Unplug it and there's no trace on the host.
+From that point OpenFOIA keeps its data, config and library caches on the USB and creates nothing in the host's home directory. The operating system can still keep traces (swap, temp files, browser and shell history); see [USB.md](USB.md#security-considerations).
 
 ---
 
@@ -446,6 +446,95 @@ openfoia analyze graph --view
 
 ---
 
+## AI agents over MCP
+
+`openfoia mcp serve` runs OpenFOIA as an [MCP](https://modelcontextprotocol.io)
+server, so an MCP client (Claude Desktop, Claude Code, or any other) can use it
+as tools. The tools run the same code as the CLI: `openfoia_search` is
+`openfoia search`, with the same warning, the same Tor rules and the same JSON
+as `openfoia search --json`; `openfoia_docs_grep` is `docs grep`.
+
+```bash
+openfoia install-extras mcp     # the MCP Python SDK; the core install does not need it
+openfoia mcp tools              # what an agent would see (works without the extra)
+```
+
+The client starts the server itself and talks to it over stdin and stdout.
+There is no network port: nothing on your network can connect to it.
+
+**Claude Code:**
+
+```bash
+claude mcp add openfoia -- openfoia mcp serve
+```
+
+**Claude Desktop:** add this to `claude_desktop_config.json` (Settings →
+Developer → Edit Config), then restart Claude Desktop. If Claude Desktop cannot
+find `openfoia`, use the full path that `which openfoia` prints.
+
+```json
+{
+  "mcpServers": {
+    "openfoia": {
+      "command": "openfoia",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+To let the agent search public-records sources, add `"--allow-network"` to
+`args` (or `claude mcp add openfoia -- openfoia mcp serve --allow-network`).
+For portable mode or a second data directory, add
+`"env": {"OPENFOIA_DATA_DIR": "/path/to/data"}`.
+
+| Tool | What it does | Network |
+|---|---|---|
+| `openfoia_search` | `openfoia search`: one query to every records source, per-source status, provenance on every row | Yes, only with `--allow-network`, only after a confirmed call |
+| `openfoia_docs_grep` | `docs grep` over stored pages (FTS5 keyword, or `mode=semantic` when the semantic extra and model are installed; the reply names the engine) | No |
+| `openfoia_read_page` | One stored page with its citation | No |
+| `openfoia_list_cases` | Cases, document counts, which is active | No |
+| `openfoia_case_summary` | `case show` / `case export --format json`: documents, notes, logged queries | No |
+| `openfoia_list_requests` | Your FOIA requests and their status | No |
+| `openfoia_entities` | Extracted entities and a summary of their relationship graph, for a document or a case | No |
+
+The local tools use the active case unless the agent passes `case` or
+`all_docs`, like the CLI. No tool takes a file path, and no tool deletes,
+purges, sends FOIA requests, sends email, fax or mail, ingests files or changes
+config: those stay CLI commands you run yourself.
+
+**How a search is gated.** Three things must all hold before a query leaves
+the machine: you started the server with `--allow-network` (the model cannot
+turn it on); the agent called `openfoia_search` once without `confirmed` and got
+the warning back (which sources, Tor or direct); and it called again with
+`confirmed: true`. The agent is told to show you the warning and to confirm
+only after you agree, but the model sets `confirmed`, not you, so also keep
+your client's approval prompt on for `openfoia_search`. When Tor is configured
+(`network.tor`), a call asking for `egress: direct` is refused, and if Tor is
+not running nothing is sent.
+
+**What the client and its model provider see.** The server runs on your
+machine; the model usually does not. Everything a tool returns (passages, page
+text, case names and notes, the queries logged to a case, entity names, your
+FOIA request subjects) goes to the client, and the client sends it to its model
+provider (Anthropic, for Claude Desktop and Claude Code) as part of the
+conversation. If a document must not leave the machine, do not let an agent
+read it, or use a client with a local model. See `docs/THREAT_MODEL.md`.
+
+**Logs.** The server writes nothing to stdout except protocol messages. Logs go
+to stderr, which MCP clients keep in log files, so by default they hold only
+the message and the error type, never a query or document text. `--verbose`
+logs details (and so can log content). Stray output from libraries goes to the
+null device.
+
+**Encrypted database.** The server cannot ask for a password (stdin is the
+protocol), so it reads the key the same way the CLI does without a prompt:
+`OPENFOIA_DB_PASSWORD` in its environment, or the config file. Putting
+`OPENFOIA_DB_PASSWORD` in the client's config file stores your database
+password in plaintext there.
+
+---
+
 ## Custom entity types
 
 If your investigation involves specific patterns (contract numbers, grant IDs, case numbers), teach OpenFOIA to find them:
@@ -476,22 +565,43 @@ If you have ollama running, the CSV import is smart — it'll figure out messy c
 ### Encrypt your database
 
 ```bash
-openfoia init --password <your-secret>
+openfoia init --encrypt
 # or encrypt an existing database:
-openfoia db encrypt --password <your-secret>
+openfoia db encrypt
 ```
 
-Requires SQLCipher: `pip install openfoia[encryption]`
+Both prompt for the passphrase. Requires SQLCipher: `pip install openfoia[encryption]`
+
+Later commands read the passphrase from `OPENFOIA_DB_PASSWORD`. Set it
+with `read` so it is typed without echo and never appears on a command line:
+
+```bash
+read -rs OPENFOIA_DB_PASSWORD && export OPENFOIA_DB_PASSWORD   # bash, zsh
+read -s -x OPENFOIA_DB_PASSWORD                                # fish
+```
+
+The variable lasts until the terminal closes and is readable by programs
+running as your user.
+
+Never type a passphrase as a command-line argument (`--password VALUE`,
+`OPENFOIA_DB_PASSWORD=VALUE openfoia ...`): it is saved in your shell history
+and is visible in the process list while the command runs. If you already
+did, delete those lines from `~/.bash_history` / `~/.zsh_history` (fish:
+`history delete --contains openfoia`), and treat that passphrase as exposed.
+`openfoia purge --secure` also removes lines that mention `openfoia` or
+`run.sh`, but only when you purge.
 
 ### Duress mode
 
 If you're forced to unlock your device, a second password opens a decoy database with harmless-looking data:
 
 ```bash
-openfoia init --password real-secret --duress-password fake-secret
+openfoia init --encrypt --duress   # prompts for both passphrases
 ```
 
-The real password opens your investigation. The duress password opens weather data and meeting minutes.
+The real database must be encrypted; `init` refuses to put a decoy next to a
+plaintext one (for an existing database: `openfoia db encrypt`, then
+`openfoia init --duress`). The real password opens your investigation. The duress password opens weather data and meeting minutes.
 
 ### Destroy everything
 
@@ -517,6 +627,12 @@ openfoia browse https://example.gov/records --tor --save
 ```
 
 Requires Tor service running locally and `pip install openfoia[browser]`.
+
+With `--tor`, Chromium sends hostnames to Tor's SOCKS proxy (Tor does the DNS
+lookup), and the browser's own DNS resolver is switched off for the session,
+so a name that somehow bypassed the proxy fails instead of being looked up on
+your network. The browser gets a throwaway home directory inside the data
+directory, removed when it exits.
 
 ---
 
@@ -571,6 +687,11 @@ openfoia records download <ID>        # Download FOIA docs
 # Cross-reference
 openfoia crossref                     # Check all entities against all sources
 
+# AI agents (MCP, stdio only)
+openfoia mcp tools                    # List the tools an agent gets
+openfoia mcp serve                    # Started by the MCP client; offline tools only
+openfoia mcp serve --allow-network    # Also let openfoia_search ask the records sources
+
 # Entity types
 openfoia entities add                 # Add custom pattern
 openfoia entities import file.csv     # Import from spreadsheet
@@ -578,7 +699,7 @@ openfoia entities test -t "text"      # Test patterns
 openfoia entities list                # Show configured types
 
 # Safety
-openfoia db encrypt --password X      # Encrypt database
+openfoia db encrypt                   # Encrypt database (prompts)
 openfoia purge --secure --yes         # Destroy all data
 openfoia browse <url> --tor           # Anonymous browsing
 ```

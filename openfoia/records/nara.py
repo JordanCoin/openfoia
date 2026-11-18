@@ -284,7 +284,9 @@ class NARAAdapter(RecordAdapter):
             await _throttle()
             try:
                 async with egress_client(self._egress, timeout=120) as client:
-                    await download_to_file(client, url, dest, max_bytes=MAX_OBJECT_BYTES)
+                    await download_to_file(
+                        client, url, dest, max_bytes=MAX_OBJECT_BYTES, egress=self._egress
+                    )
             except Exception as exc:
                 out.append((obj, dest, f"failed: {type(exc).__name__}: {exc}"))
                 continue

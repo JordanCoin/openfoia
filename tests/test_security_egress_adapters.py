@@ -24,7 +24,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from openfoia.net import DEFAULT_USER_AGENT, EgressMode, EgressPolicy, egress_client
+from openfoia.net import EgressMode, EgressPolicy, egress_client
 from openfoia.records.cia import CIAReadingRoomAdapter
 from openfoia.records.courtlistener import CourtListenerAdapter
 from openfoia.records.documentcloud import DocumentCloudAdapter
@@ -36,7 +36,6 @@ from openfoia.records.nara import NARAAdapter
 from openfoia.records.opencorporates import OpenCorporatesAdapter
 from openfoia.records.propublica_nonprofit import ProPublicaNonprofitAdapter
 from openfoia.records.regulations import RegulationsGovAdapter
-from openfoia.records.sec_edgar import DEFAULT_USER_AGENT as SEC_DEFAULT_USER_AGENT
 from openfoia.records.sec_edgar import SECEdgarAdapter
 from openfoia.records.usaspending import USASpendingAdapter
 
@@ -254,15 +253,19 @@ def test_sec_edgar_search_threads_policy_via_shared_request(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# SEC EDGAR's descriptive User-Agent must survive egress routing
+# SEC EDGAR: a User-Agent the user declares must survive egress routing
 # ---------------------------------------------------------------------------
 
+DECLARED_UA = "Jane Doe jane@example.org"
 
-def test_sec_edgar_sends_descriptive_user_agent_not_generic_default(monkeypatch):
+
+def test_sec_edgar_sends_the_declared_user_agent_not_generic_default(monkeypatch):
     """_request() passes _edgar_headers() as per-call headers to client.get();
-    those must reach the wire even though egress_client's own default is the
-    generic browser UA."""
+    a UA declared in OPENFOIA_SEC_USER_AGENT must reach the wire even though
+    egress_client's own default is the generic browser UA."""
     import openfoia.records.base as base_mod
+
+    monkeypatch.setenv("OPENFOIA_SEC_USER_AGENT", DECLARED_UA)
 
     fake_client = _FakeAsyncClient(
         get_responses=[_FakeResponse({"hits": {"total": 0, "hits": []}})]
@@ -278,8 +281,7 @@ def test_sec_edgar_sends_descriptive_user_agent_not_generic_default(monkeypatch)
 
     _method, _url, kwargs = fake_client.calls[0]
     sent_headers = kwargs.get("headers") or {}
-    assert sent_headers.get("User-Agent") == SEC_DEFAULT_USER_AGENT
-    assert sent_headers.get("User-Agent") != DEFAULT_USER_AGENT
+    assert sent_headers.get("User-Agent") == DECLARED_UA
 
 
 def test_sec_edgar_ua_wins_through_the_real_egress_client_header_merge(monkeypatch):
@@ -287,6 +289,7 @@ def test_sec_edgar_ua_wins_through_the_real_egress_client_header_merge(monkeypat
     (only the transport is swapped for an in-memory one — no sockets)."""
     import openfoia.records.base as base_mod
 
+    monkeypatch.setenv("OPENFOIA_SEC_USER_AGENT", DECLARED_UA)
     seen: dict = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -307,8 +310,7 @@ def test_sec_edgar_ua_wins_through_the_real_egress_client_header_merge(monkeypat
     adapter = SECEdgarAdapter()
     asyncio.run(adapter.search("Palantir"))
 
-    assert seen["user_agent"] == SEC_DEFAULT_USER_AGENT
-    assert seen["user_agent"] != DEFAULT_USER_AGENT
+    assert seen["user_agent"] == DECLARED_UA
 
 
 # ---------------------------------------------------------------------------

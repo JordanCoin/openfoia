@@ -23,9 +23,10 @@ if config.config_file_name is not None:
 
 logger = logging.getLogger("alembic.env")
 
-# Set the SQLAlchemy URL dynamically from our db module
-db_path = get_db_path()
-config.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+# Set the SQLAlchemy URL dynamically from our db module, unless the caller
+# (db.run_migrations with an explicit db_path) already chose the file.
+if not config.get_main_option("sqlalchemy.url"):
+    config.set_main_option("sqlalchemy.url", f"sqlite:///{get_db_path()}")
 
 # Target metadata for autogenerate
 target_metadata = Base.metadata

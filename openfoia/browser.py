@@ -22,6 +22,29 @@ import webbrowser
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+#: Query parameters that carry a long-lived credential. A browser's command
+#: line is readable by every local account (/proc/<pid>/cmdline, `ps`), so such
+#: a URL must never be handed to a browser process. `openfoia serve` opens a
+#: single-use, short-lived login link (/login?nonce=...) instead.
+_CREDENTIAL_PARAMS = frozenset({"token", "access_token", "auth", "session"})
+
+
+def _argv_safe_url(url: str) -> str:
+    """Drop credential-bearing query parameters before *url* goes on an argv."""
+    parts = urlsplit(url)
+    if not parts.query:
+        return url
+    query = parse_qsl(parts.query, keep_blank_values=True)
+    kept = [(k, v) for k, v in query if k.lower() not in _CREDENTIAL_PARAMS]
+    if len(kept) == len(query):
+        return url
+    print(
+        "Refusing to put a session token on the browser's command line "
+        "(any local account can read it there); opening the page without it."
+    )
+    return urlunsplit(parts._replace(query=urlencode(kept)))
 
 
 class BrowserType(str, Enum):
@@ -177,6 +200,7 @@ def launch_browser(
         True if browser launched successfully
     """
     system = platform.system()
+    url = _argv_safe_url(url)
 
     # Resolve browser
     if browser is None:
@@ -232,6 +256,7 @@ def launch_browser(
 
 def _launch_macos(url: str, browser: Browser, private: bool, tor_mode: bool) -> bool:
     """Launch browser on macOS."""
+    url = _argv_safe_url(url)
     browser_type = browser.browser_type
 
     if browser_type == BrowserType.DEFAULT:
@@ -301,6 +326,7 @@ def _launch_macos(url: str, browser: Browser, private: bool, tor_mode: bool) -> 
 
 def _launch_linux(url: str, browser: Browser, private: bool, tor_mode: bool) -> bool:
     """Launch browser on Linux."""
+    url = _argv_safe_url(url)
     browser_type = browser.browser_type
     cmd = browser.path
 
@@ -342,6 +368,7 @@ def _launch_linux(url: str, browser: Browser, private: bool, tor_mode: bool) -> 
 
 def _launch_windows(url: str, browser: Browser, private: bool, tor_mode: bool) -> bool:
     """Launch browser on Windows."""
+    url = _argv_safe_url(url)
     browser_type = browser.browser_type
     path = browser.path
 

@@ -10,8 +10,9 @@ There is no network code here. Each source is searched by its own
 ``openfoia.net.egress_client()``. Sources come from the records registry, so a
 newly registered adapter is searched without any change to this module.
 
-Results are untrusted third-party text. :func:`clean` makes a value safe to
-print to a terminal; JSON callers should dump with ``ensure_ascii=True``.
+Results are untrusted third-party text. :func:`clean` (an alias of
+:func:`openfoia.termsafe.safe_text`) makes a value safe to print to a
+terminal; JSON callers should dump with :func:`openfoia.termsafe.safe_json`.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from typing import Any
 
 from . import net
 from .net import EgressPolicy, TorUnavailableError
+from .termsafe import safe_text
 
 logger = logging.getLogger(__name__)
 
@@ -38,20 +40,8 @@ REASON_MAX = 200
 OK, NO_RESULTS, ERROR, SKIPPED = "ok", "no_results", "error", "skipped"
 
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}")
-_JOINERS = "\u200c\u200d"
-
-
-def clean(value: Any) -> str:
-    """One line of upstream text with control and format characters removed.
-
-    Drops ESC (terminal escape injection), C1 controls, bidi overrides and
-    lone surrogates; newlines and tabs become spaces. The zero-width
-    non-joiner and joiner are kept: they are part of Persian, Indic and emoji
-    spelling and cannot move the cursor or reorder text.
-    """
-    text = "" if value is None else str(value)
-    text = re.sub(r"[\r\n\t]+", " ", text)
-    return "".join(ch for ch in text if ch.isprintable() or ch in _JOINERS)
+#: One implementation for every terminal-bound value: see openfoia.termsafe.
+clean = safe_text
 
 
 def utc_now() -> str:

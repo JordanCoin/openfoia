@@ -25,6 +25,21 @@ exhaustive lists.
   older results after retrieval. The agent interface has the same search as
   the `search_records` tool, which needs `allow_network` in the agent config
   and a `confirmed` call after the user saw the warning (#66).
+- `openfoia mcp serve`: a local MCP server for Claude Desktop, Claude Code and
+  other MCP clients, over stdin/stdout only (no network port). Optional extra:
+  `openfoia install-extras mcp`; `openfoia mcp tools` lists the tools without
+  it. `openfoia_search` is the agent's `search_records` (same warning, same
+  JSON as `openfoia search --json`): it sends nothing unless the server was
+  started with `--allow-network`, the first call only returns the warning,
+  a configured Tor route cannot be switched to direct, and Tor fails closed.
+  Read-only local tools: `openfoia_docs_grep` (keyword, or semantic when that
+  extra and model are installed), `openfoia_read_page`, `openfoia_list_cases`,
+  `openfoia_case_summary`, `openfoia_list_requests`, `openfoia_entities`. No
+  tool deletes, purges, sends requests, email, fax or mail, ingests files,
+  takes a file path or changes config. stdout carries only protocol messages;
+  logs go to stderr without queries or document text. Everything a tool
+  returns goes to the client's model provider: see `docs/THREAT_MODEL.md`
+  (#66).
 - `records search --source courtlistener` and `records fetch -s courtlistener`:
   federal court dockets and filings from CourtListener's RECAP archive, and
   case law (#120). `--type` picks r (dockets with matching filings, the
@@ -150,6 +165,9 @@ exhaustive lists.
 
 ### Fixed
 
+- The GLiNER download notice said about 300 MB; gliner 0.2.30 downloads both
+  weight formats of `urchade/gliner_medium-v2.1`, about 1.6 GB. It now says so
+  (measured in `docs/benchmarks/gliner2.md`).
 - **`analyze export` wrote no relationships.** It passed each link's ends as
   database ids, but the FollowTheMoney writer joins them to entities by name, so
   every relationship was dropped and the export held only the entities.
@@ -239,6 +257,205 @@ exhaustive lists.
 - DocumentCloud searches now distinguish Cloudflare or bot-block responses and
   uncertain read timeouts from ordinary API failures, with a browser and local
   `docs ingest` fallback.
+
+### Security
+
+These come from an outside security audit (November 2026).
+
+- **Duress mode could leave the real investigation unencrypted.**
+  `openfoia init --duress-password X` without `--password`/`--encrypt` printed
+  "Duress mode configured" while the real database (`profile_0.db`) stayed a
+  plaintext SQLite file next to an encrypted decoy, which pointed an examiner
+  straight at it. `init` now refuses and creates nothing, `init --duress` on
+  an existing database refuses unless that database is encrypted, and success
+  is only printed after both files are checked on disk. **If you set up duress
+  mode this way, check:** `head -c 15 profile_0.db` printing `SQLite format 3`
+  means the real database is plaintext. Run `openfoia db encrypt`, then set up
+  the decoy again with `openfoia init --duress`.
+- `openfoia browse --tor` works. It asked Chromium for a `socks5h://` proxy,
+  a scheme Chromium does not support, so every Tor browse failed with
+  `ERR_NO_SUPPORTED_PROXIES` (closed, never in the clear). It now uses
+  `socks5://`, through which Chromium sends hostnames to Tor rather than
+  resolving them itself, and switches the browser's own DNS resolver off for
+  the session (`--host-resolver-rules`). The browser also gets a throwaway
+  home directory inside the data directory, so its crash reports and caches
+  do not land in your home directory.
+- `openfoia serve` no longer puts the web UI's session token on the browser's
+  command line, where every local account could read it. The browser opens a
+  login link (`/login?nonce=...`) that works once and expires after 60
+  seconds; it sets an HttpOnly, SameSite=Strict session cookie and redirects
+  to `/`. Press Enter in the server's terminal for a fresh link. A link used
+  twice shows "already used" and the terminal prints a warning. The token is
+  no longer accepted from a `?token=` query string: the UI uses the cookie,
+  API clients send `Authorization: Bearer`. The cookie is ignored on requests
+  a browser marks as coming from another origin (such as a page on another
+  local port), and the CORS allowance for every localhost origin is gone.
+  Every response, `/static/*` and `/api/health` included, carries
+  `Cross-Origin-Resource-Policy: same-origin` and
+  `X-Content-Type-Options: nosniff`. The startup banner shows the real data
+  directory instead of always `~/.openfoia/`.
+- Portable mode no longer creates `~/.openfoia` on the host. The config's
+  data directory follows portable mode (the `.openfoia-portable` marker or
+  `OPENFOIA_DATA_DIR`), and loading the config creates nothing. In portable
+  mode the caches of optional libraries (`HF_HOME`, `TORCH_HOME`,
+  `MPLCONFIGDIR`, `XDG_CACHE_HOME`) point at `cache/` in the data directory
+  unless you set them yourself; set `HF_HOME` to keep using models already
+  downloaded on this machine. What the OS itself records (swap, temp files,
+  browser and shell history) is unchanged; see `docs/THREAT_MODEL.md`.
+- Release workflow: every GitHub Action is pinned to a full commit SHA, no
+  checkout keeps the token in `.git/config`, and the release is split so the
+  job that installs dependencies and runs the tests has a read-only token,
+  while the job that tags and publishes (the only one that can write)
+  installs nothing and acts on the commit that was tested. CI's token is
+  read-only too. See `docs/RELEASING.md`.
+- Text from records APIs, crossref sources, imported FollowTheMoney files and
+  documents is now cleaned before it reaches the terminal. Terminal escape
+  sequences (for example OSC 52, which writes the clipboard, and OSC 0, which
+  retitles the window), other control characters, bidi overrides and lone
+  surrogates are removed; Rich markup in upstream text such as
+  `[link=...]` is printed as text instead of becoming a hyperlink. Zero-width
+  joiners are kept. `--json`/`--raw` output escapes the same characters as
+  `\uXXXX`. One shared helper (`openfoia/termsafe.py`) is used by the CLI and
+  by `openfoia search`. `case export --format md` output is cleaned the same way.
+- Entity extraction no longer sends document text to an AI provider that is
+  not on this machine without consent. Only `localhost` and loopback addresses
+  (127.0.0.0/8, `[::1]`) count as local; a base URL that merely contains
+  "localhost" (such as `https://localhost.example.net/`) does not. A remote
+  Ollama, a remote OpenAI-compatible server and the cloud APIs now print a
+  warning naming the host, and are used only after you confirm at the prompt
+  or set `"ai": {"allow_remote": true}` in config.json (or
+  `OPENFOIA_AI_ALLOW_REMOTE=1`); otherwise extraction falls back to the local
+  tiers. The agent interface and the `entities import` helpers follow the
+  same rule. In Tor mode a remote AI provider is never used, because these
+  requests cannot be routed through Tor.
+- SEC EDGAR requests no longer send the fixed User-Agent
+  `Research Client/1.0 (contact: research@example.org)`, which only this
+  project used and so marked every request as OpenFOIA's, over Tor too. Over
+  Tor they send the same common browser User-Agent as every other request.
+  Direct, they send `OPENFOIA_SEC_USER_AGENT` if you set it (SEC's fair-access
+  policy asks for a name and contact email, which identifies you), else the
+  common browser User-Agent, with a one-time notice that SEC may throttle
+  requests it considers undeclared.
+- Download URLs from records APIs are checked more strictly. Numeric host
+  spellings of internal addresses (`2130706433`, `127.1`, `0x7f000001`,
+  `0177.0.0.1`), `localhost.` with a trailing dot, `.local`/`.internal` names,
+  IPv4-mapped and NAT64 IPv6 forms and every address that is not globally
+  routable (including carrier-grade NAT, 100.64.0.0/10) are refused. In direct
+  mode the hostname is also resolved before the download and refused if any
+  address is not public. In Tor mode nothing is resolved locally (that would
+  leak the name outside Tor); there, protection against a name that points at
+  an internal address relies on the Tor exit relay's exit policy. Downloads
+  do not follow redirects. A DNS answer that changes between the check and the
+  download (DNS rebinding) is not prevented.
+- Email delivery no longer announces the computer's hostname (often the
+  owner's name, such as `janes-macbook-pro.local`) in the SMTP EHLO greeting,
+  which mail servers log and may copy into the headers the agency receives;
+  it sends the address literal `[127.0.0.1]` instead. In Tor mode
+  `request send` now warns that email, fax and physical mail are sent
+  directly, not through Tor, and asks before sending when run in a terminal.
+- Archived web pages could still make network requests when the saved file
+  was opened later, from your real IP even if the page was fetched over Tor:
+  the regex sanitizer missed `<svg/onload=…>`, `</script >`, `<meta
+  http-equiv=refresh>`, CSS `@import`, SVG `<image href>`, `<input
+  type=image>` and `<body background>`. Archived pages are now rebuilt from
+  the parsed page using a short list of text and structure tags (headings,
+  paragraphs, lists, tables, emphasis, links) with no attribute that can hold
+  a URL, script or style, and each file starts with a Content-Security-Policy
+  that blocks every load. Images, styling, forms, SVG and embedded media are
+  no longer kept; a link keeps its text and shows its old target on hover but
+  cannot be followed. Pages archived before this release are still unsafe to
+  open in a browser: delete them, or archive the URL again. The extracted text
+  is unchanged.
+- A small image could use gigabytes of memory while its metadata was stripped
+  (a 198 KiB, 8000x8000 PNG peaked at 5.4 GiB), on `docs ingest` and on web
+  UI uploads. The image is now copied without a Python object per pixel
+  (that PNG's 7000x7000 neighbour now peaks at about 420 MiB instead of
+  4.1 GiB), and an image over 50 megapixels is refused from its header before
+  it is decoded: it is stored with its metadata and reported as "metadata NOT
+  stripped: image too large to clean safely". JPEG comments, XMP, ICC profiles
+  and PNG text chunks, which were already dropped, are now listed in what was
+  stripped.
+- Cleaned PDF and DOCX files could be reported clean while they still named
+  people. PDFs kept any document-information key outside a fixed list (for
+  example `/Company`), the author and dates of comments and highlights, XMP
+  attached to images and pages, and EXIF/GPS inside embedded JPEG photos; a
+  PDF whose latest revision had no listed key was not rewritten at all, so
+  earlier revisions stayed in the file. DOCX files kept tracked-change and
+  comment authors, initials and dates, the reviewer list with account ids
+  (`people.xml`), revision-session ids, SharePoint data (`customXml`), the
+  attached-template path (often `C:\Users\<name>\...`), document variables,
+  the first-page thumbnail, the source paths of inserted pictures, EXIF/GPS in
+  embedded photos and zip timestamps. All of these are now removed. A PDF is
+  rebuilt from its pages with no document information at all (bookmarks,
+  attachments listed in the catalog and document JavaScript are not kept). What
+  the file can still carry and OpenFOIA cannot clean (attached files, JPEG 2000
+  images, EMF/WMF/GIF/TIFF images and embedded objects in a DOCX) is now
+  reported as "metadata only partly stripped; still present: ..." instead of
+  clean. Comment text and tracked insertions and deletions are content and are
+  kept: accept or reject changes and delete comments before publishing. If you
+  published or shared a PDF or DOCX that OpenFOIA had reported as stripped,
+  check it with a second tool (for example `exiftool` or `mat2 --show`, and
+  open it to look at comments and tracked changes), or ingest the original
+  again and use the new stored copy.
+- A small DOCX could use gigabytes of memory while its metadata was stripped:
+  a 1 MB file declaring a 1 GiB image part peaked at 3.1 GiB and was then
+  reported clean. The zip directory is now checked before anything is
+  decompressed (at most 128 MiB per part, 1 GiB in total, 10,000 parts, and no
+  part over 1 MiB that expands more than 200 times), and members are cleaned
+  one at a time. A file over a limit is stored as received and reported as
+  "metadata NOT stripped: too large to clean safely". Text extraction applies
+  the same check, so such a file is not opened for its text either.
+- **One unwritable file stopped `purge --secure`.** Ingest copied a read-only
+  original's mode (0444) onto the stored copy, and the first file purge could
+  not open for writing aborted the purge, leaving every file after it and the
+  shell history untouched. Stored copies are now 0600; purge makes read-only
+  files writable before overwriting, carries on past any file it cannot
+  overwrite (deleting it without overwriting if it can), always scrubs shell
+  history, and ends by listing every file that was not overwritten or is
+  still on disk, with exit status 1.
+- **The setup guides put passphrases on the command line.** TAILS.md, USB.md,
+  AIRGAP.md, GUIDE.md and THREAT_MODEL.md showed
+  `openfoia init --password ... --duress-password ...`, which writes both
+  passphrases into shell history. They now use `init --encrypt --duress` and
+  `db encrypt`, which prompt, and `read -rs OPENFOIA_DB_PASSWORD` for later
+  commands. **If you followed the old instructions,** delete those lines from
+  your shell history and treat both passphrases as exposed.
+- **The decoy database was easy to tell from a real one.** It was 0644 where
+  the real file is 0600, had no migration record or full-text index, three
+  agencies instead of the full list, and the same fixed content on every
+  install. It is now built through the same migrations and agency seed as a
+  real database, made 0600, and filled with randomized requests, documents and
+  entities spread over past months. The generator is public source code, so
+  the decoy still does not survive someone who reads it; see
+  docs/THREAT_MODEL.md. Re-create an existing decoy with `openfoia init --duress`.
+- **Shell-history scrubbing missed fish, `$HISTFILE` and `./run.sh`.**
+  `purge --secure` now also cleans `~/.local/share/fish/fish_history` and the
+  file `$HISTFILE` names, and removes `run.sh` wrapper lines, `python -m
+  openfoia` lines and their backslash continuations. It overwrites the old
+  bytes instead of truncating. It also tells you that the shell you run it
+  from writes its in-memory history back when it exits, and how to stop that.
+- **Exports were written to the current directory, where purge never looked.**
+  `analyze graph` (`graph.json`), `analyze export` (`entities.ftm.json`),
+  `entities export` and `records download` (`./downloads`) now default to
+  `exports/` in the data directory. When you name an output path elsewhere
+  (`--output`, `--csv`), it is recorded in `exports_manifest.json` in the data
+  directory; purge lists those files in its prompt and removes them. **Files
+  exported by earlier versions are not recorded**: find and delete any
+  `graph.json`, `graph.html`, `entities.ftm.json` and `downloads/` you left
+  in working directories. The purge prompt now also says what it does not
+  remove, and that fast purge does not overwrite.
+- **`init --force` left the old database recoverable.** It plain-unlinked
+  `data.db` and left its `-wal`/`-shm` files and, with duress mode, both
+  profile files. It now overwrites and removes all of them and says that
+  other files in the data directory were not touched.
+- **OCR page images were deleted with an ordinary unlink.** The rasterized
+  pages of a PDF being OCR'd are now overwritten before they are removed.
+- **`openfoia db encrypt` failed on any database with stored pages** ("no such
+  table: document_pages_fts"), so a database could not be encrypted once
+  documents had been ingested. It now copies with SQLCipher's exporter (every
+  table, index, trigger and full-text index), checks the encrypted copy before
+  touching the original, and reads the plaintext read-only so its `-wal` file
+  is overwritten rather than deleted by SQLite.
 
 ## [4.7.0] - 2026-10-23
 

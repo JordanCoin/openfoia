@@ -1,7 +1,8 @@
 """Configuration management for OpenFOIA.
 
 Supports:
-- Local config file (~/.openfoia/config.json)
+- Local config file (config.json in the data dir: ~/.openfoia/, or the data
+  dir on the USB stick in portable mode / with OPENFOIA_DATA_DIR)
 - Environment variables (OPENFOIA_*)
 - CLI overrides
 
@@ -29,8 +30,66 @@ def _default_config_path() -> Path:
     return get_data_dir() / "config.json"
 
 
-# Keep for backward compat but prefer _default_config_path()
+def _resolved_data_dir() -> Path:
+    from .db import get_data_dir  # lazy: keeps config free of db
+
+    return get_data_dir()
+
+
+# Keep for backward compat but prefer _default_config_path(). Only a path: it is
+# never created, and it is wrong in portable mode.
 DEFAULT_CONFIG_PATH = Path.home() / ".openfoia" / "config.json"
+
+
+def portable_data_dir() -> Path | None:
+    """The data dir when it is not ~/.openfoia (portable mode or OPENFOIA_DATA_DIR).
+
+    Mirrors the resolution order of ``db.get_data_dir()`` but creates nothing,
+    so it is safe to call before any command runs (``openfoia portable`` must
+    not create ~/.openfoia just by starting). None means the default home dir.
+    """
+    env_dir = os.environ.get("OPENFOIA_DATA_DIR")
+    if env_dir:
+        return Path(env_dir)
+    for base in (Path(__file__).parent.parent, Path.cwd()):
+        if (base / ".openfoia-portable").exists():
+            return base / "openfoia-data"
+    return None
+
+
+#: Third-party cache locations that default to the home directory: the
+#: Hugging Face hub (GLiNER's model), torch hub, matplotlib, and every library
+#: that honours XDG_CACHE_HOME (Chromium's and fontconfig's caches among them).
+_CACHE_ENV = {
+    "HF_HOME": ("cache", "huggingface"),
+    "TORCH_HOME": ("cache", "torch"),
+    "MPLCONFIGDIR": ("cache", "matplotlib"),
+    "XDG_CACHE_HOME": ("cache",),
+}
+
+
+def confine_caches_to_data_dir() -> dict[str, str]:
+    """In portable mode, point third-party caches at the data dir, not $HOME.
+
+    "Portable" means a .openfoia-portable marker or OPENFOIA_DATA_DIR (the way
+    docs/USB.md, TAILS.md and AIRGAP.md put the data on a stick). A portable
+    install promises not to leave files on the host. Optional dependencies do
+    not know about that promise: huggingface_hub, torch and friends write
+    under the home directory by default. Only variables the user has not set
+    are changed, and nothing happens for an ordinary ~/.openfoia install (it
+    keeps the caches it already has). Nothing is created here; each library
+    creates its own directory when it writes. Returns the variables set.
+    """
+    base = portable_data_dir()
+    if base is None:
+        return {}
+    applied = {}
+    for var, parts in _CACHE_ENV.items():
+        if not os.environ.get(var):
+            value = str(base.joinpath(*parts))
+            os.environ[var] = value
+            applied[var] = value
+    return applied
 
 
 @dataclass
@@ -42,6 +101,10 @@ class AIConfig:
     base_url: str | None = None
     api_key: str | None = None
     compact_prompt: str = "auto"  # auto, true, false (env OPENFOIA_AI_COMPACT_PROMPT)
+    # Consent to send document text to an LLM that is not on this machine (a
+    # cloud API, or Ollama on another host). Off by default; never used in Tor
+    # mode. Env OPENFOIA_AI_ALLOW_REMOTE. See pipeline.extract.remote_llm_refusal.
+    allow_remote: bool = False
 
     # For entity extraction
     extraction_temperature: float = 0.1
@@ -209,12 +272,10 @@ class OpenFOIAConfig:
     network: NetworkConfig = field(default_factory=NetworkConfig)
     records: RecordsConfig = field(default_factory=RecordsConfig)
 
-    # Data directory — override with OPENFOIA_DATA_DIR env var for portable / air-gapped installs
-    data_dir: Path = field(
-        default_factory=lambda: Path(
-            os.environ.get("OPENFOIA_DATA_DIR", str(Path.home() / ".openfoia"))
-        )
-    )
+    # Data directory. Resolved by db.get_data_dir() when the config is built, so
+    # OPENFOIA_DATA_DIR and portable mode (a .openfoia-portable marker) are
+    # honoured: a portable install must never fall back to ~/.openfoia.
+    data_dir: Path = field(default_factory=lambda: _resolved_data_dir())
 
 
 def load_config(
@@ -243,9 +304,10 @@ def load_config(
     # Override with environment variables
     config = _apply_env_overrides(config, env_prefix)
 
-    # Ensure data directory exists
-    config.data_dir.mkdir(parents=True, exist_ok=True)
-
+    # No mkdir here: the resolved data dir was already created (owner-only) by
+    # get_data_dir(), and anything else is created where data is written.
+    # Creating config.data_dir eagerly used to leave ~/.openfoia on the host in
+    # portable mode.
     return config
 
 
@@ -267,6 +329,7 @@ def _merge_config(config: OpenFOIAConfig, data: dict[str, Any]) -> OpenFOIAConfi
             or ai.get(ai.get("provider", ""), {}).get("api_key")
         )
         config.ai.compact_prompt = str(ai.get("compact_prompt", config.ai.compact_prompt)).lower()
+        config.ai.allow_remote = ai.get("allow_remote") is True
 
         # Handle ollama specifically
         if config.ai.provider == "ollama" and "ollama" in ai:
@@ -376,6 +439,8 @@ def _apply_env_overrides(config: OpenFOIAConfig, prefix: str) -> OpenFOIAConfig:
         config.ai.base_url = v
     if v := os.environ.get(f"{prefix}AI_COMPACT_PROMPT"):
         config.ai.compact_prompt = v.lower()
+    if v := os.environ.get(f"{prefix}AI_ALLOW_REMOTE"):
+        config.ai.allow_remote = v.strip().lower() in ("1", "true", "yes", "on")
 
     # Specific providers
     if v := os.environ.get(f"{prefix}ANTHROPIC_API_KEY"):
@@ -502,6 +567,7 @@ def save_config(config: OpenFOIAConfig, config_path: Path | str | None = None) -
             "provider": config.ai.provider,
             "model": config.ai.model,
             "compact_prompt": config.ai.compact_prompt,
+            "allow_remote": config.ai.allow_remote,
         },
         "ocr": {
             "backend": config.ocr.backend,

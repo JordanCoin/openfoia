@@ -419,7 +419,7 @@ class MuckRockAdapter(RecordAdapter):
                     # body first would let a compromised upstream force a
                     # large allocation before the size check ran.
                     written = await download_to_file(
-                        client, url, dest, max_bytes=MAX_DOWNLOAD_BYTES
+                        client, url, dest, max_bytes=MAX_DOWNLOAD_BYTES, egress=self._egress
                     )
                     downloaded.append(str(dest))
                     logger.info("Downloaded %s (%d bytes)", filename, written)

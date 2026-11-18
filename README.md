@@ -26,6 +26,16 @@ If you use [Claude Code](https://claude.ai/code), install the OpenFOIA plugin. Y
 
 The plugin ships a skill that teaches Claude how to run FOIA investigations, plus slash commands for the core loop: `/foia-search`, `/foia-investigate`, `/foia-graph`, `/foia-install`. The last one bootstraps the CLI on your machine.
 
+### With any MCP client (Claude Desktop, Claude Code, others)
+
+`openfoia mcp serve` runs OpenFOIA as a local MCP server over stdin/stdout (no network port). After `openfoia install-extras mcp`:
+
+```json
+{ "mcpServers": { "openfoia": { "command": "openfoia", "args": ["mcp", "serve"] } } }
+```
+
+or `claude mcp add openfoia -- openfoia mcp serve`. Agents get `openfoia_search` (the `openfoia search` code path: off unless you add `--allow-network`, and every search needs a confirmed second call after the warning) and read-only local tools over your cases, stored documents, entities and requests. No tool deletes, purges, sends requests or messages, or changes config. Whatever a tool returns goes to the client's model provider. Setup and details: [GUIDE.md, AI agents over MCP](docs/GUIDE.md#ai-agents-over-mcp).
+
 ### Shell install (no Claude Code needed)
 
 ```bash
@@ -71,7 +81,7 @@ openfoia request mark REQ-2026-001 denied              # starts the appeal clock
 | **Data interchange** | Import/export FollowTheMoney format (Aleph, OpenAleph, OpenSanctions) |
 | **Encrypted storage** | SQLCipher AES-256. Decoy profile mode |
 | **Forensic purge** | 3-pass overwrite, shell history scrub, free space fill |
-| **Portable mode** | `openfoia portable` keeps everything on the USB, nothing on the host |
+| **Portable mode** | `openfoia portable` keeps data, config and library caches on the USB; nothing is created in the host's home directory |
 | **Metadata stripping** | Strips image EXIF, PDF author and XMP, and DOCX author, company and revision data from the stored copy on `docs ingest` and web-UI upload; with [mat2](https://github.com/jvoisin/mat2) installed (preinstalled on Tails) also OpenDocument, XLSX, PPTX, EPUB, audio and video. Every file is reported as stripped or not; a format nothing here can clean is flagged, never shown as done. Email attachments and archived web pages are stored as received; see [THREAT_MODEL.md](docs/THREAT_MODEL.md) |
 
 ### PDF Extraction Engine
@@ -188,7 +198,7 @@ route (`network.tor`) is used. Over Tor, MuckRock and NARA are skipped because
 they only work with your personal key, which would identify you. `--since
 YYYY-MM-DD` drops results dated earlier after they arrive; the sources still
 get the same query. The agent interface has the same search as the
-`search_records` tool.
+`search_records` tool, and MCP clients as `openfoia_search`.
 
 ## Documentation
 
@@ -202,11 +212,11 @@ get the same query. The agent interface has the same search as the
 
 ## Privacy
 
-Everything runs on `127.0.0.1`. Token-authenticated. Encrypted at rest (optional). Forensically purgeable. Works offline. Open source.
+Everything runs on `127.0.0.1`. Token-authenticated: `openfoia serve` opens the browser with a login link that works once and expires after 60 seconds (press Enter in its terminal for a fresh one), and the session token never appears in a URL. Encrypted at rest (optional). Forensically purgeable. Works offline. Open source.
 
 **For sensitive investigations:** `openfoia serve --tor`
 
-**Portable mode:** `openfoia portable` keeps data on the USB; nothing touches the host.
+**Portable mode:** `openfoia portable` keeps data, config and caches on the USB and creates nothing in the host's home directory (the OS can still log activity; see [USB Install](docs/USB.md)).
 
 **When you're done:** `openfoia purge --secure --yes`
 
