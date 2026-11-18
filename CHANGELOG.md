@@ -278,6 +278,14 @@ exhaustive lists.
   while the job that tags and publishes (the only one that can write)
   installs nothing and acts on the commit that was tested. CI's token is
   read-only too. See `docs/RELEASING.md`.
+- SEC EDGAR requests no longer send the fixed User-Agent
+  `Research Client/1.0 (contact: research@example.org)`, which only this
+  project used and so marked every request as OpenFOIA's, over Tor too. Over
+  Tor they send the same common browser User-Agent as every other request.
+  Direct, they send `OPENFOIA_SEC_USER_AGENT` if you set it (SEC's fair-access
+  policy asks for a name and contact email, which identifies you), else the
+  common browser User-Agent, with a one-time notice that SEC may throttle
+  requests it considers undeclared.
 - Download URLs from records APIs are checked more strictly. Numeric host
   spellings of internal addresses (`2130706433`, `127.1`, `0x7f000001`,
   `0177.0.0.1`), `localhost.` with a trailing dot, `.local`/`.internal` names,

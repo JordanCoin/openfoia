@@ -43,6 +43,37 @@ def _no_controls(text: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# A12: SEC User-Agent
+# ---------------------------------------------------------------------------
+
+
+def test_sec_user_agent_over_tor_ignores_the_declared_one(monkeypatch):
+    from openfoia.records import sec_edgar
+
+    monkeypatch.setenv("OPENFOIA_SEC_USER_AGENT", "Jane Doe jane@example.org")
+    assert sec_edgar._edgar_headers(TOR) == {"User-Agent": DEFAULT_USER_AGENT}
+
+
+def test_sec_user_agent_direct_uses_the_declared_one(monkeypatch):
+    from openfoia.records import sec_edgar
+
+    monkeypatch.setenv("OPENFOIA_SEC_USER_AGENT", "Jane Doe jane@example.org")
+    assert sec_edgar._edgar_headers(DIRECT) == {"User-Agent": "Jane Doe jane@example.org"}
+
+
+def test_sec_user_agent_default_is_common_and_notice_is_shown_once(monkeypatch, capsys):
+    from openfoia.records import sec_edgar
+
+    monkeypatch.delenv("OPENFOIA_SEC_USER_AGENT", raising=False)
+    monkeypatch.setattr(sec_edgar, "_ua_notice_shown", False)
+    assert sec_edgar._edgar_headers(DIRECT) == {"User-Agent": DEFAULT_USER_AGENT}
+    assert sec_edgar._edgar_headers(DIRECT) == {"User-Agent": DEFAULT_USER_AGENT}
+    err = capsys.readouterr().err
+    assert err.count("fair-access") == 1 and "OPENFOIA_SEC_USER_AGENT" in err
+    assert "research@example.org" not in sec_edgar.DEFAULT_USER_AGENT
+
+
+# ---------------------------------------------------------------------------
 # A13: download URLs
 # ---------------------------------------------------------------------------
 

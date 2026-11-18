@@ -432,7 +432,6 @@ def test_a11_image_strip_memory_is_bounded(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@audit("A12 SEC requests send a fixed, OpenFOIA-only User-Agent, even over Tor")
 def test_a12_sec_user_agent_is_not_tool_unique(monkeypatch):
     import httpx
 
