@@ -13,16 +13,28 @@ exhaustive lists.
 ### Added
 
 - `openfoia analyze graph --view`: the graph page is reworked so a large case
-  can be read. Entity types have a colour and a shape, with a legend that
-  counts and toggles each type. Nodes are sized by connections (or mentions).
-  Names are placed where they do not cover each other and the best-connected
-  entities are always named; zooming in shows more. Hover gives a summary;
-  click lists the neighbours with the direction of each relationship and every
-  mention's source document, page and confidence, and dims the rest. New:
-  minimum-confidence filter, fit to screen (`F`), `/` to search, and a search
-  that finds entities hidden by a filter. Entities with no relationship are set
-  out in a block under the graph. Right-to-left and CJK names are drawn with
-  whatever fonts the machine has; the page ships none.
+  can be read.
+  - People, organizations and places each have a colour and a shape. Amounts,
+    dates and identifiers are small neutral marks whose names show on hover,
+    when a connected entity is selected, or when zoomed in.
+  - Large marks carry initials (legal forms such as LLC, Ltd, ООО, 有限公司 are
+    dropped first), medium marks a type icon, small marks nothing. Marks are
+    sized by connections (or mentions).
+  - Groups of entities that belong together are outlined and captioned with
+    their best-connected member and size.
+  - Names are placed where they do not cover each other; the best-connected
+    entities are always named. Zooming in shows more.
+  - Hover gives a summary. Click zooms to the entity and its neighbours, shows
+    the relationship type and direction beside each neighbour, lists every
+    mention's source document, page and confidence, and dims the rest.
+  - A table view lists the same entities with connections, mentions, documents
+    and most frequent relationship types; it is sortable, follows the filters
+    and the search box, and a row selects that entity in the graph.
+  - Minimum-confidence filter, fit to screen (`F`), `/` to search, a search that
+    finds entities hidden by a filter, light and dark themes that follow the
+    system setting. Entities with no relationship are set out in a block under
+    the graph. Right-to-left and CJK names are drawn with whatever fonts the
+    machine has; the page ships none.
 - The graph page now carries a Content-Security-Policy that blocks every
   network load and runs only its own inline script (pinned by hash).
 - Every outbound request now retries GET/HEAD up to 3 times on HTTP 429/503,

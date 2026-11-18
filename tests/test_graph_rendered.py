@@ -199,11 +199,16 @@ class Opened:
 def open_graph(browser):
     contexts = []
 
-    def _open(html: Path, viewport: dict | None = None) -> Opened:
+    def _open(html: Path, viewport: dict | None = None, scheme: str = "dark") -> Opened:
         # offline=True: the browser itself has no network, and anything that is
-        # not the file on disk is aborted and recorded.
+        # not the file on disk is aborted and recorded. The page follows the
+        # system colour scheme; the pixel checks are written for the dark one
+        # unless a test asks for light.
         ctx = browser.new_context(
-            viewport=viewport or VIEWPORT, device_scale_factor=1, offline=True
+            viewport=viewport or VIEWPORT,
+            device_scale_factor=1,
+            offline=True,
+            color_scheme=scheme,
         )
         contexts.append(ctx)
         ctx.route(lambda url: not url.startswith("file:"), lambda route: route.abort())
@@ -214,7 +219,10 @@ def open_graph(browser):
         page.on(
             "console",
             lambda m: (
-                problems.append(f"{m.type}: {m.text}") if m.type in ("error", "warning") else None
+                # The readback hint is caused by the tests' own getImageData calls.
+                problems.append(f"{m.type}: {m.text}")
+                if m.type in ("error", "warning") and "willReadFrequently" not in m.text
+                else None
             ),
         )
         page.on("pageerror", lambda e: problems.append(f"pageerror: {e}"))
@@ -261,6 +269,25 @@ def _by_key(snapshot: dict) -> dict[tuple[str, str], dict]:
 def _top_hubs(spec: Spec, count: int = 5) -> list[tuple[str, str]]:
     nb = spec.neighbours()
     return sorted(nb, key=lambda k: (-len(nb[k]), k))[:count]
+
+
+def _rgb(hex_colour: str) -> list[int]:
+    return [int(hex_colour[i : i + 2], 16) for i in (1, 3, 5)]
+
+
+def _luminance(hex_colour: str) -> float:
+    """WCAG relative luminance."""
+    channels = []
+    for v in _rgb(hex_colour):
+        c = v / 255
+        channels.append(c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+
+
+def _contrast(a: str, b: str) -> float:
+    """WCAG contrast ratio between two colours."""
+    la, lb = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
 
 
 # --- Correctness --------------------------------------------------------------
@@ -596,6 +623,9 @@ def test_500_node_graph_renders_and_settles_within_budget(large, open_graph):
     assert pairs <= allowed
     w, h = snap["width"], snap["height"]
     assert all(0 <= n["x"] <= w and 0 <= n["y"] <= h for n in snap["nodes"])
+    outlines = [c for c in snap["communities"] if c["hull"]]
+    _measure("community_outlines_drawn_520", len(outlines), ">= 3 (budget measured with them on)")
+    assert len(outlines) >= 3
     # Still responsive afterwards: a hover is answered and the loop stops again.
     hub = max(snap["nodes"], key=lambda n: n["degree"])
     t0 = time.monotonic()
@@ -684,6 +714,8 @@ def test_hostile_document_values_stay_text(tmp_path, open_graph):
     assert opened.snap()["entityCount"] == 3
 
     for node in opened.snap()["nodes"]:
+        # Selecting zooms in on the neighbourhood; wait for the view to stop first.
+        page.wait_for_function("() => window.openfoiaGraph.snapshot().settled")
         fresh = next(n for n in opened.snap()["nodes"] if n["label"] == node["label"])
         page.mouse.move(fresh["x"], fresh["y"])
         page.mouse.click(fresh["x"], fresh["y"])
@@ -854,15 +886,20 @@ def test_labels_are_legible_at_default_zoom(small, open_graph):
     # Measured from the pixels: height of the tallest run of text ink in a name
     # made of Latin capitals and lower case. A 12 px sans font has about 9 px of
     # ink from the top of a capital to the baseline, 11-12 px with descenders.
-    sample = next(r for r in labels if re.fullmatch(r"[A-Z][a-z]+ [A-Z][a-z]+", r["label"]))
+    # The sample is an ordinary name (not a hub's), drawn in the secondary ink. A
+    # pixel counts as text ink when it is nearer to that ink than to the surface.
+    sample = next(
+        r for r in labels if not r["hub"] and re.fullmatch(r"[A-Z][a-z]+ [A-Z][a-z]+", r["label"])
+    )
     ink_rows = opened.page.evaluate(
-        "(r) => { const x = Math.round(r.x), y = Math.round(r.y) - 2, w = Math.round(r.w), h = Math.round(r.h) + 4;"
+        "([r, ink, surface]) => { const x = Math.round(r.x), y = Math.round(r.y) - 2, w = Math.round(r.w), h = Math.round(r.h) + 4;"
         " const d = document.getElementById('graph').getContext('2d').getImageData(x, y, w, h).data;"
+        " const dist = (p, c) => Math.hypot(d[p] - c[0], d[p + 1] - c[1], d[p + 2] - c[2]);"
         " let rows = 0; for (let j = 0; j < h; j++) { let hit = false;"
         " for (let i = 0; i < w; i++) { const p = (j * w + i) * 4;"
-        " if (d[p + 3] > 200 && d[p] > 200 && d[p + 1] > 200 && d[p + 2] > 190) { hit = true; break; } }"
+        " if (d[p + 3] > 200 && dist(p, ink) < dist(p, surface)) { hit = true; break; } }"
         " if (hit) rows++; } return rows; }",
-        sample,
+        [sample, _rgb(snap["theme"]["labelInk"]), _rgb(snap["theme"]["surface"])],
     )
     label_pairs = sum(_rects_intersect(a, b) for i, a in enumerate(labels) for b in labels[i + 1 :])
     over_marks = 0
@@ -937,10 +974,36 @@ def test_selecting_a_hub_explains_it(small, open_graph):
     assert got_sources == expected_sources
 
     # Everything that is not the hub or a neighbour is visibly dimmed on the canvas.
-    after = _by_key(opened.snap())
+    # Selecting zooms in on the neighbourhood, and names may be written over
+    # dimmed marks. So the sample is the non-neighbours that are still on screen
+    # and have no name or relationship label drawn over their centre; the raw
+    # figure, with those left in, is reported next to it.
+    after_snap = opened.snap()
+    after = _by_key(after_snap)
     assert after[hub_key]["selected"]
-    sampled = [k for k in others if alpha_before[k] >= LIT_ALPHA_MIN]
+    text_boxes = after_snap["labels"] + after_snap["edgeLabels"]
+
+    def clear_of_text(n):
+        point = {"x": n["x"] - 2, "y": n["y"] - 2, "w": 4, "h": 4}
+        return not any(_rects_intersect(point, b) for b in text_boxes)
+
+    def on_screen(n):
+        return 0 <= n["x"] < after_snap["width"] and 0 <= n["y"] < after_snap["height"]
+
+    was_solid = [k for k in others if alpha_before[k] >= LIT_ALPHA_MIN]
+    raw_dimmed = sum(
+        opened.alpha_at(after[k]["x"], after[k]["y"]) <= DIMMED_ALPHA_MAX
+        for k in was_solid
+        if on_screen(after[k])
+    )
+    raw_total = sum(on_screen(after[k]) for k in was_solid)
+    sampled = [k for k in was_solid if on_screen(after[k]) and clear_of_text(after[k])]
     dimmed = sum(opened.alpha_at(after[k]["x"], after[k]["y"]) <= DIMMED_ALPHA_MAX for k in sampled)
+    _measure(
+        "non_neighbours_dimmed_including_those_under_a_name",
+        f"{raw_dimmed}/{raw_total}",
+        "reported, not asserted",
+    )
     lit = sum(opened.alpha_at(after[k]["x"], after[k]["y"]) >= LIT_ALPHA_MIN for k in truth)
     _measure(
         "hub_panel_neighbours",
@@ -950,7 +1013,8 @@ def test_selecting_a_hub_explains_it(small, open_graph):
     _measure("hub_panel_sources", f"{len(got_sources)} of {len(expected_sources)} mentions", "all")
     _measure("non_neighbours_dimmed", f"{dimmed}/{len(sampled)}", f">= {MIN_SAMPLE_AGREEMENT:.0%}")
     _measure("neighbours_fully_drawn", f"{lit}/{len(truth)}", f">= {MIN_SAMPLE_AGREEMENT:.0%}")
-    assert len(sampled) >= 0.8 * len(others)
+    assert len(was_solid) >= 0.8 * len(others)
+    assert len(sampled) >= 40
     assert dimmed >= MIN_SAMPLE_AGREEMENT * len(sampled)
     assert lit >= MIN_SAMPLE_AGREEMENT * len(truth)
     # Only the hub and its neighbours are named while it is selected.
@@ -1003,3 +1067,514 @@ def test_isolates_do_not_displace_the_connected_graph(small, open_graph):
     assert off_y <= MAX_MAIN_COMPONENT_OFFSET_FRACTION
     assert area_fraction >= MIN_MAIN_COMPONENT_AREA_FRACTION
     assert inside == []
+
+
+# --- Design: marks, initials, attributes, relationship labels, groups, table, themes ---
+
+# A plain mark has no ink of another colour inside it. Two bold initials at the
+# smallest large size (13 px radius, about 10 px type) cover well over 12 pixels;
+# the smallest icon (7 px radius) covers well over 4.
+MIN_INITIALS_INK_PX = 12
+MIN_ICON_INK_PX = 4
+# With a 40-neighbour hub selected, at least a fifth of its relationships should
+# be readable on the graph itself; the details panel lists all of them.
+MIN_RELATIONSHIP_LABELS_FRACTION = 0.20
+# Groups found by the page should match the planted strands for at least 90% of
+# connected entities (bridges and two-entity fragments are the rest).
+MIN_COMMUNITY_AGREEMENT = 0.90
+# WCAG AA for body text.
+MIN_TEXT_CONTRAST = 4.5
+# Every mark must be reachable within 12 px of its centre (a 24 px target).
+HIT_REACH_PX = 11
+
+_PIXELS_JS = """([x, y, half, targets, tol]) => {
+  const x0 = Math.round(x - half), y0 = Math.round(y - half), n = Math.max(1, Math.round(2 * half));
+  const d = document.getElementById('graph').getContext('2d').getImageData(x0, y0, n, n).data;
+  const counts = targets.map(() => 0); let total = 0;
+  for (let p = 0; p < d.length; p += 4) {
+    if (d[p + 3] < 200) continue;
+    total++;
+    targets.forEach((t, i) => { if (Math.hypot(d[p] - t[0], d[p + 1] - t[1], d[p + 2] - t[2]) < tol) counts[i]++; });
+  }
+  return {total, counts};
+}"""
+
+_INK_ROWS_JS = """([r, ink, surface]) => {
+  const x = Math.round(r.x), y = Math.round(r.y) - 2, w = Math.round(r.w), h = Math.round(r.h) + 4;
+  const d = document.getElementById('graph').getContext('2d').getImageData(x, y, w, h).data;
+  const dist = (p, c) => Math.hypot(d[p] - c[0], d[p + 1] - c[1], d[p + 2] - c[2]);
+  let rows = 0;
+  for (let j = 0; j < h; j++) {
+    let hit = false;
+    for (let i = 0; i < w; i++) { const p = (j * w + i) * 4; if (d[p + 3] > 200 && dist(p, ink) < dist(p, surface)) { hit = true; break; } }
+    if (hit) rows++;
+  }
+  return rows;
+}"""
+
+
+def _pixels(opened: Opened, node: dict, half: float, targets: list, tol: float = 45) -> dict:
+    return opened.page.evaluate(_PIXELS_JS, [node["x"], node["y"], half, targets, tol])
+
+
+def test_marks_show_initials_icons_or_nothing_by_size(small, open_graph):
+    """Large marks carry initials, medium marks a type icon, small marks are plain."""
+    opened = open_graph(small.path("graph.html"))
+    opened.wait_settled()
+    snap = opened.snap()
+    theme = snap["theme"]
+    white = [255, 255, 255]
+    actors = [n for n in snap["nodes"] if not n["attribute"] and n["visible"]]
+    large = [n for n in actors if n["tier"] == "large"]
+    medium = [n for n in actors if n["tier"] == "medium"]
+    # Judge each small mark by itself: leave out the few a name or caption is drawn over.
+    boxes = snap["labels"] + [c["captionRect"] for c in snap["communities"] if c["captionRect"]]
+
+    def under_text(n):
+        me = {
+            "x": n["x"] - n["r"] - 2,
+            "y": n["y"] - n["r"] - 2,
+            "w": 2 * n["r"] + 4,
+            "h": 2 * n["r"] + 4,
+        }
+        return any(_rects_intersect(me, b) for b in boxes if b.get("label") != n["label"])
+
+    plain = [n for n in actors if n["tier"] == "small" and n["degree"] > 0 and not under_text(n)]
+    assert len(large) >= 3 and len(medium) >= 20 and len(plain) >= 20
+    assert all(n["r"] >= 13 for n in large) and all(n["r"] < 7 for n in plain)
+
+    ink_large = []
+    for n in large:
+        px = _pixels(opened, n, n["r"] * 0.6, [white, _rgb(theme[n["type"]])])
+        # Initials in white on a tinted fill: white ink, and a fill that is neither
+        # white nor the full-strength hue.
+        ink_large.append(px["counts"][0])
+        assert px["counts"][0] >= MIN_INITIALS_INK_PX, n["label"]
+        assert px["total"] - px["counts"][0] - px["counts"][1] >= MIN_INITIALS_INK_PX, n["label"]
+        assert n["initials"]
+    ink_medium = []
+    for n in medium:
+        px = _pixels(opened, n, n["r"] * 0.6, [white, _rgb(theme[n["type"]])])
+        ink_medium.append(px["counts"][0])
+        assert px["counts"][0] >= MIN_ICON_INK_PX, n["label"]
+        assert px["counts"][1] >= MIN_ICON_INK_PX, n["label"]
+    stray = 0
+    for n in plain:
+        px = _pixels(opened, n, n["r"] * 0.45, [white, _rgb(theme[n["type"]])])
+        stray += px["counts"][0]
+        assert px["counts"][1] >= 0.9 * px["total"], n["label"]
+    assert stray == 0
+    _measure(
+        "white_ink_px_inside_large_marks",
+        f"min {min(ink_large)} over {len(large)} marks",
+        f">= {MIN_INITIALS_INK_PX}",
+    )
+    _measure(
+        "white_ink_px_inside_medium_marks",
+        f"min {min(ink_medium)} over {len(medium)} marks",
+        f">= {MIN_ICON_INK_PX}",
+    )
+    _measure("white_ink_px_inside_small_marks", f"{stray} over {len(plain)} marks", "== 0")
+
+
+INITIALS_CASES = [
+    ("ООО «Северный Мост Инвест»", "organization", "СМ"),  # noqa: RUF001  (Cyrillic, legal form)
+    ("Grace Ferreira", "person", "GF"),
+    ("华东建设集团有限公司", "organization", "华东"),  # CJK organization: two characters
+    ("王建国", "person", "王"),  # CJK person: one character
+    ("خالد المنصوري", "person", "خا"),  # Arabic: first letter of each word
+    ("אופק השקעות בע״מ", "organization", "אה"),  # Hebrew, legal form
+    ("Halcyon Shipping Co.", "organization", "HS"),
+    ("Anatolia Construction A.Ş.", "organization", "AC"),
+    ("Levant Trading LLC", "organization", "LT"),
+    ("Tietê Consulting Ltda", "organization", "TC"),
+    ("Atlantico Logistics S.A.", "organization", "AL"),
+    ("Acme GmbH", "organization", "A"),
+    ("grace o'brien", "person", "GO"),
+    ("ЗАО «Альфа»", "organization", "А"),  # noqa: RUF001
+    ("𝒜lpha 𝔅eta", "person", "𝒜𝔅"),  # noqa: RUF001  (outside the BMP: whole code points)
+    ("LLC", "organization", "L"),  # nothing left after dropping legal forms: keep the word
+    ("", "person", ""),
+]
+
+
+def test_initials(small, open_graph):
+    opened = open_graph(small.path("graph.html"))
+    opened.wait_settled()
+    got = opened.page.evaluate(
+        "(cases) => cases.map(c => window.openfoiaGraph.initials(c[0], c[1]))",
+        [[label, kind] for label, kind, _ in INITIALS_CASES],
+    )
+    for (label, kind, expected), value in zip(INITIALS_CASES, got, strict=True):
+        # A zero-width non-joiner keeps Arabic initials from joining; it is not a letter.
+        assert value.replace("‌", "") == expected, (label, kind, value)
+    # The planted hubs carry their initials in the page model.
+    nodes = _by_key(opened.snap())
+    for key in small.spec.main_hubs:
+        assert nodes[key]["initials"] == opened.page.evaluate(
+            "(c) => window.openfoiaGraph.initials(c[0], c[1])", [key[1], key[0]]
+        )
+        assert 1 <= len(nodes[key]["initials"].replace("‌", "")) <= 2
+
+
+def test_money_and_dates_are_muted_and_unnamed_until_asked(small, open_graph):
+    opened = open_graph(small.path("graph.html"))
+    opened.wait_settled()
+    snap = opened.snap()
+    theme = snap["theme"]
+    attrs = [n for n in snap["nodes"] if n["type"] in ("money", "date")]
+    actors = [n for n in snap["nodes"] if not n["attribute"]]
+    assert len(attrs) >= 50 and all(n["attribute"] for n in attrs)
+    hues = [_rgb(theme[t]) for t in ("person", "organization", "location")]
+    muted_px, hue_px = [], 0
+    for n in attrs:
+        px = _pixels(opened, n, n["r"] + 1.5, [_rgb(theme["muted"]), *hues], tol=40)
+        muted_px.append(px["counts"][0])
+        hue_px += sum(px["counts"][1:])
+    with_muted = sum(1 for c in muted_px if c >= 3)
+    named_at_default = [r["label"] for r in snap["labels"] if r["type"] in ("money", "date")]
+    _measure("attribute_marks_drawn_in_muted_ink", f"{with_muted}/{len(attrs)}", ">= 95%")
+    _measure("hue_px_inside_attribute_marks", hue_px, "== 0")
+    _measure(
+        "largest_attribute_radius_vs_smallest_actor_radius",
+        f"{max(n['r'] for n in attrs):.1f} px vs {min(n['r'] for n in actors):.1f} px",
+        "attribute < actor",
+    )
+    _measure("attribute_names_at_default_zoom", len(named_at_default), "== 0")
+    assert with_muted >= 0.95 * len(attrs)
+    assert hue_px == 0
+    assert max(n["r"] for n in attrs) < min(n["r"] for n in actors)
+    assert named_at_default == []
+
+    # Select a hub: the amounts and dates tied to it are now named.
+    hub_key = _top_hubs(small.spec, 1)[0]
+    truth = small.spec.neighbours()[hub_key]
+    hub = _by_key(snap)[hub_key]
+    opened.page.mouse.click(hub["x"], hub["y"])
+    opened.page.mouse.move(snapshot_safe_x(opened), 4)
+    opened.page.wait_for_function("() => window.openfoiaGraph.snapshot().settled")
+    named = {
+        (r["type"], r["label"]) for r in opened.snap()["labels"] if r["type"] in ("money", "date")
+    }
+    attr_neighbours = {k for k in truth if k[0] in ("money", "date")}
+    _measure("attribute_names_with_hub_selected", f"{len(named)} of {len(attr_neighbours)}", ">= 1")
+    assert attr_neighbours
+    assert named and named <= attr_neighbours
+
+
+def test_selected_hub_shows_relationship_types_on_the_graph(small, open_graph):
+    spec = small.spec
+    opened = open_graph(small.path("graph.html"))
+    opened.wait_settled()
+    hub_key = _top_hubs(spec, 1)[0]
+    truth = spec.neighbours()[hub_key]
+    assert opened.snap()["edgeLabels"] == []  # nothing selected, no relationship labels
+    hub = _by_key(opened.snap())[hub_key]
+    opened.page.mouse.click(hub["x"], hub["y"])
+    opened.page.mouse.move(snapshot_safe_x(opened), 4)
+    opened.page.wait_for_function("() => window.openfoiaGraph.snapshot().settled")
+    snap = opened.snap()
+    edge_labels = snap["edgeLabels"]
+
+    # What the fixture says the relationship is, with the arrow the page uses:
+    # "→" when the selected entity is the source, "←" when it is the target.
+    expected: dict[tuple[str, str], set[str]] = {}
+    for a, b, rel in spec.links:
+        ka = (spec.mentions[a].type, spec.mentions[a].label)
+        kb = (spec.mentions[b].type, spec.mentions[b].label)
+        if ka == hub_key:
+            expected.setdefault(kb, set()).add("→ " + rel)
+        elif kb == hub_key:
+            expected.setdefault(ka, set()).add("← " + rel)
+    assert set(expected) == truth
+    for lab in edge_labels:
+        key = (lab["toType"], lab["to"])
+        assert key in truth
+        if not lab["text"].endswith("…"):
+            assert set(lab["text"].split(", ")) == expected[key], lab
+    assert len({(lab["toType"], lab["to"]) for lab in edge_labels}) == len(edge_labels)
+
+    overlaps = sum(
+        _rects_intersect(a, b) for i, a in enumerate(edge_labels) for b in edge_labels[i + 1 :]
+    )
+    # A relationship label under a name is inside that name's own box; it must not
+    # touch any other name, and a label on a line must not touch any name at all.
+    over_names = 0
+    for lab in edge_labels:
+        for name in snap["labels"]:
+            if lab["at"] == "name" and name["label"] == lab["to"] and name["type"] == lab["toType"]:
+                continue
+            over_names += _rects_intersect(lab, name)
+    on_screen = sum(
+        lab["x"] >= 0 and lab["x"] + lab["w"] <= snap["width"] and 0 <= lab["y"] <= snap["height"]
+        for lab in edge_labels
+    )
+    need = math.ceil(MIN_RELATIONSHIP_LABELS_FRACTION * len(truth))
+    _measure(
+        "relationship_labels_with_hub_selected",
+        f"{len(edge_labels)} of {len(truth)} ({sum(lab['at'] == 'edge' for lab in edge_labels)} on the"
+        f" line, {sum(lab['at'] == 'name' for lab in edge_labels)} under the neighbour's name)",
+        f">= {need} ({MIN_RELATIONSHIP_LABELS_FRACTION:.0%})",
+    )
+    _measure("relationship_label_pairs_overlapping", overlaps, "== 0")
+    _measure("relationship_labels_over_names", over_names, "== 0")
+    assert len(edge_labels) >= need
+    assert on_screen == len(edge_labels)
+    assert overlaps == 0
+    assert over_names == 0
+    assert opened.problems == []
+
+    opened.page.keyboard.press("Escape")
+    opened.page.wait_for_function("() => window.openfoiaGraph.snapshot().settled")
+    after = opened.snap()
+    assert after["edgeLabels"] == []
+    # Closing the selection goes back to the whole graph.
+    assert after["autoFit"] is True
+    assert all(
+        0 <= n["x"] <= after["width"] and 0 <= n["y"] <= after["height"] for n in after["nodes"]
+    )
+
+
+def _point_in_polygon(x: float, y: float, poly: list) -> bool:
+    inside = False
+    for i in range(len(poly)):
+        x1, y1 = poly[i]
+        x2, y2 = poly[(i + 1) % len(poly)]
+        if (y1 > y) != (y2 > y) and x < (x2 - x1) * (y - y1) / (y2 - y1) + x1:
+            inside = not inside
+    return inside
+
+
+def test_community_outlines_name_the_planted_strands(small, open_graph):
+    spec = small.spec
+    opened = open_graph(small.path("graph.html"))
+    opened.wait_settled()
+    snap = opened.snap()
+    nodes = _by_key(snap)
+    drawn = [c for c in snap["communities"] if c["hull"]]
+    assert len(drawn) == 3  # the fixture plants three strands
+
+    # Each caption names the best-connected member of its own group, and its size.
+    for c in drawn:
+        members = [n for n in snap["nodes"] if n["community"] == c["id"]]
+        top = max(members, key=lambda n: n["degree"])
+        assert c["top"] == top["label"]
+        assert c["size"] == len(members)
+        assert c["caption"] is not None
+        assert c["caption"].startswith(top["label"][:27])
+        assert f"{len(members)} entities" in c["caption"]
+    # Each planted hub is the named member of one group and sits inside that group's outline.
+    assert {(c["topType"], c["top"]) for c in drawn} == set(spec.main_hubs)
+    for key in spec.main_hubs:
+        own = next(c for c in drawn if (c["topType"], c["top"]) == key)
+        assert nodes[key]["community"] == own["id"]
+        assert _point_in_polygon(nodes[key]["x"], nodes[key]["y"], own["hull"])
+        assert all(
+            _point_in_polygon(n["x"], n["y"], own["hull"])
+            for n in snap["nodes"]
+            if n["community"] == own["id"]
+        )
+
+    # The groups agree with the planted strands.
+    hub_cluster = {nodes[k]["community"]: spec.cluster[k] for k in spec.main_hubs}
+    connected = [(k, n) for k, n in nodes.items() if n["degree"] > 0]
+    agree = sum(hub_cluster.get(n["community"]) == spec.cluster[k] for k, n in connected)
+    captions = [c["captionRect"] for c in drawn]
+    caption_overlaps = sum(
+        _rects_intersect(a, b) for i, a in enumerate(captions) for b in captions[i + 1 :]
+    ) + sum(_rects_intersect(a, b) for a in captions for b in snap["labels"])
+    _measure("community_outlines_drawn", len(drawn), "== 3 planted strands")
+    _measure(
+        "entities_in_the_group_of_their_planted_strand",
+        f"{agree}/{len(connected)} = {agree / len(connected):.3f}",
+        f">= {MIN_COMMUNITY_AGREEMENT}",
+    )
+    _measure("captions_overlapping_names_or_each_other", caption_overlaps, "== 0")
+    assert agree >= MIN_COMMUNITY_AGREEMENT * len(connected)
+    assert caption_overlaps == 0
+    # The outline is a faint wash, not a categorical colour: points inside an
+    # outline but away from every mark and name are nearly transparent on the
+    # canvas (a line may cross a few of them, hence the median).
+    text = snap["labels"] + captions
+    alphas = []
+    for c in drawn:
+        xs = [p[0] for p in c["hull"]]
+        ys = [p[1] for p in c["hull"]]
+        for gx in range(int(min(xs)), int(max(xs)), 9):
+            for gy in range(int(min(ys)), int(max(ys)), 9):
+                if not _point_in_polygon(gx, gy, c["hull"]):
+                    continue
+                if any(math.hypot(gx - n["x"], gy - n["y"]) < n["r"] + 8 for n in snap["nodes"]):
+                    continue
+                if any(
+                    _rects_intersect({"x": gx - 4, "y": gy - 4, "w": 8, "h": 8}, t) for t in text
+                ):
+                    continue
+                alphas.append(opened.alpha_at(gx, gy))
+    assert len(alphas) >= 100
+    wash = statistics.median(alphas) / 255
+    _measure("community_outline_fill_opacity", round(wash, 3), "0 < opacity <= 0.06 (a wash)")
+    assert 0 < wash <= 0.06
+
+
+def _table_rows(page) -> list[dict]:
+    return page.eval_on_selector_all(
+        "#table-body tr",
+        "els => els.map(e => ({type: e.getAttribute('data-type'),"
+        " label: e.querySelector('.row-label').textContent,"
+        " nums: Array.from(e.querySelectorAll('td.num')).map(t => Number(t.textContent)),"
+        " rels: e.querySelector('td.rels').textContent}))",
+    )
+
+
+def test_table_view_lists_the_visible_entities(small, open_graph):
+    spec = small.spec
+    opened = open_graph(small.path("graph.html"))
+    opened.wait_settled()
+    page = opened.page
+    nb = spec.neighbours()
+    page.click("#view-table")
+    assert opened.snap()["mode"] == "table"
+    assert page.locator("#table-view").is_visible()
+
+    rows = _table_rows(page)
+    assert {(r["type"], r["label"]) for r in rows} == spec.entity_keys
+    assert len(rows) == len(spec.entity_keys)
+    # Default order: most connected first. Connections, mentions and documents match the fixture.
+    conns = [r["nums"][0] for r in rows]
+    assert conns == sorted(conns, reverse=True)
+    assert (rows[0]["type"], rows[0]["label"]) == _top_hubs(spec, 1)[0]
+    for r in rows:
+        key = (r["type"], r["label"])
+        ms = spec.mentions_of(key)
+        assert r["nums"] == [len(nb[key]), len(ms), len({m.doc for m in ms})], key
+    assert page.get_attribute('#table-head th[data-key="connections"]', "aria-sort") == "descending"
+    hub_rels = {
+        rel
+        for a, b, rel in spec.links
+        for i in (a, b)
+        if (spec.mentions[i].type, spec.mentions[i].label) == (rows[0]["type"], rows[0]["label"])
+    }
+    assert rows[0]["rels"].split(" ")[0] in hub_rels
+
+    # The table honours the type filter, the confidence filter and the search box.
+    page.click('#legend .legend-item[data-type="person"]')
+    rows = _table_rows(page)
+    assert {(r["type"], r["label"]) for r in rows} == {
+        k for k in spec.entity_keys if k[0] != "person"
+    }
+    page.fill("#conf-range", "80")
+    page.dispatch_event("#conf-range", "input")
+    visible = {k for k, n in _by_key(opened.snap()).items() if n["visible"]}
+    assert 0 < len(visible) < len(spec.entity_keys)
+    assert {(r["type"], r["label"]) for r in _table_rows(page)} == visible
+    page.click("#reset-btn")
+    page.fill("#search-input", "halcyon")
+    rows = _table_rows(page)
+    assert rows and {(r["type"], r["label"]) for r in rows} == {
+        k for k in spec.entity_keys if "halcyon" in k[1].lower()
+    }
+    page.fill("#search-input", "")
+
+    # Sorting by another column.
+    page.click('#table-head th[data-key="name"] button')
+    names = [r["label"] for r in _table_rows(page)]
+    assert page.get_attribute('#table-head th[data-key="name"]', "aria-sort") == "ascending"
+    assert names[0] == min(names, key=lambda s: s.lower()) or names == sorted(names, key=str.lower)
+    page.click('#table-head th[data-key="connections"] button')
+
+    # Keyboard focus on a row gives the same summary as hovering the mark.
+    target_row = page.locator("#table-body tr").nth(3)
+    label = target_row.locator(".row-label").inner_text()
+    kind = target_row.get_attribute("data-type")
+    target_row.focus()
+    assert page.locator("#tooltip").is_visible()
+    assert page.inner_text("#tooltip .tt-title") == label
+
+    # Selecting a row goes back to the graph with that entity selected and in view.
+    target_row.press("Enter")
+    page.wait_for_function("() => window.openfoiaGraph.snapshot().settled")
+    snap = opened.snap()
+    assert snap["mode"] == "graph"
+    assert not page.locator("#table-view").is_visible()
+    node = _by_key(snap)[(kind, label)]
+    assert node["selected"]
+    assert 0 < node["x"] < snap["width"] and 0 < node["y"] < snap["height"]
+    assert page.inner_text("#info-content h2") == label
+    assert opened.problems == []
+    _measure(
+        "table_rows_vs_visible_entities", f"{len(spec.entity_keys)} rows", "== visible entities"
+    )
+
+
+def test_light_theme_has_dark_ink_on_a_light_surface(small, open_graph):
+    opened = open_graph(small.path("graph.html"), scheme="light")
+    opened.wait_settled()
+    page = opened.page
+    snap = opened.snap()
+    theme = snap["theme"]
+    assert theme["name"] == "light"
+    label_contrast = _contrast(theme["labelInk"], theme["surface"])
+    hub_contrast = _contrast(theme["ink"], theme["surface"])
+    _measure("light_theme_label_contrast", round(label_contrast, 2), f">= {MIN_TEXT_CONTRAST}")
+    _measure("light_theme_hub_label_contrast", round(hub_contrast, 2), f">= {MIN_TEXT_CONTRAST}")
+    assert label_contrast >= MIN_TEXT_CONTRAST and hub_contrast >= MIN_TEXT_CONTRAST
+    assert _luminance(theme["surface"]) > 0.9 > _luminance(theme["labelInk"])
+    # What is actually on screen: the page background is the light surface, and
+    # an ordinary name is drawn in the dark ink.
+    body = page.evaluate("() => getComputedStyle(document.body).backgroundColor")
+    assert body == "rgb({}, {}, {})".format(*_rgb(theme["surface"]))
+    sample = next(
+        r
+        for r in snap["labels"]
+        if not r["hub"] and re.fullmatch(r"[A-Z][a-z]+ [A-Z][a-z]+", r["label"])
+    )
+    rows = page.evaluate(_INK_ROWS_JS, [sample, _rgb(theme["labelInk"]), _rgb(theme["surface"])])
+    assert rows >= 8
+    # Marks use the light theme's own steps of the three hues.
+    person = next(n for n in snap["nodes"] if n["type"] == "person" and n["tier"] == "medium")
+    px = _pixels(opened, person, person["r"] * 0.9, [_rgb("#2a78d6")], tol=30)
+    assert px["counts"][0] >= 10
+    assert opened.problems == []
+
+    # The dark theme is the reverse, and the button switches between them.
+    page.click("#theme-btn")
+    dark = opened.snap()["theme"]
+    assert dark["name"] == "dark"
+    assert _luminance(dark["surface"]) < 0.05 < _luminance(dark["labelInk"])
+    assert _contrast(dark["labelInk"], dark["surface"]) >= MIN_TEXT_CONTRAST
+    assert (
+        page.evaluate("() => getComputedStyle(document.body).backgroundColor") == "rgb(26, 26, 25)"
+    )
+    _measure(
+        "dark_theme_label_contrast",
+        round(_contrast(dark["labelInk"], dark["surface"]), 2),
+        f">= {MIN_TEXT_CONTRAST}",
+    )
+
+
+def test_small_marks_have_a_24px_hit_area(small, open_graph):
+    opened = open_graph(small.path("graph.html"))
+    opened.wait_settled()
+    nodes = [n for n in opened.snap()["nodes"] if n["visible"]]
+
+    def clearance(n):
+        return min(
+            math.hypot(n["x"] - o["x"], n["y"] - o["y"]) - o["r"] for o in nodes if o is not n
+        )
+
+    small_marks = [n for n in nodes if n["r"] < 6]
+    target = max(small_marks, key=clearance)
+    assert clearance(target) > 2 * HIT_REACH_PX
+    page = opened.page
+    for dx, dy in ((HIT_REACH_PX, 0), (0, -HIT_REACH_PX), (-8, 8)):
+        page.mouse.move(target["x"] + dx, target["y"] + dy)
+        page.wait_for_selector("#tooltip", state="visible")
+        assert page.inner_text("#tooltip .tt-title") == target["label"]
+        page.mouse.move(snapshot_safe_x(opened), 4)
+        page.wait_for_selector("#tooltip", state="hidden")
+    _measure(
+        "hit_reach_for_a_small_mark",
+        f"hover registers {HIT_REACH_PX} px from the centre of a {target['r']:.1f} px mark",
+        f">= {HIT_REACH_PX} px (24 px target)",
+    )
