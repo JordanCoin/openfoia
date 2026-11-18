@@ -25,6 +25,21 @@ exhaustive lists.
   older results after retrieval. The agent interface has the same search as
   the `search_records` tool, which needs `allow_network` in the agent config
   and a `confirmed` call after the user saw the warning (#66).
+- `records search --source courtlistener` and `records fetch -s courtlistener`:
+  federal court dockets and filings from CourtListener's RECAP archive, and
+  case law (#120). `--type` picks r (dockets with matching filings, the
+  default), rd (filings), d (dockets) or o (opinions); `-j` takes court ids.
+  Fetching a docket id stores a docket sheet with its first page of entries,
+  parties and attorneys (up to 4 API requests); `rd:<id>` stores a filing's
+  text, or downloads its PDF from storage.courtlistener.com (without the
+  token) and ingests it when CourtListener has no text; `op:<id>` stores an
+  opinion. Needs a free personal token in `OPENFOIA_COURTLISTENER_API_KEY`
+  (environment only, not config.json, not sent over Tor). Requests are counted
+  locally against CourtListener's 5 a minute, 50 an hour and 125 a day: the
+  minute window is waited out, an exhausted hour or day is refused with the
+  time it frees up, and a 429 with a long `Retry-After` stops further requests
+  until then. API strings are stripped of control characters and capped
+  before they are shown or stored.
 - `openfoia analyze graph --view`: the graph page is reworked so a large case
   can be read.
   - People, organizations and places each have a colour and a shape. Amounts,

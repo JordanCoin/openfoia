@@ -26,6 +26,7 @@ import pytest
 
 from openfoia.net import DEFAULT_USER_AGENT, EgressMode, EgressPolicy, egress_client
 from openfoia.records.cia import CIAReadingRoomAdapter
+from openfoia.records.courtlistener import CourtListenerAdapter
 from openfoia.records.documentcloud import DocumentCloudAdapter
 from openfoia.records.fec import FECAdapter
 from openfoia.records.federal_register import FederalRegisterAdapter
@@ -128,6 +129,7 @@ def test_no_bare_httpx_asyncclient_in_records_adapters():
         CIAReadingRoomAdapter,
         NARAAdapter,
         FederalRegisterAdapter,
+        CourtListenerAdapter,
     ],
 )
 def test_adapter_accepts_egress_policy_kwarg(adapter_cls):
@@ -151,6 +153,7 @@ def test_adapter_accepts_egress_policy_kwarg(adapter_cls):
         CIAReadingRoomAdapter,
         NARAAdapter,
         FederalRegisterAdapter,
+        CourtListenerAdapter,
     ],
 )
 def test_adapter_defaults_to_direct_policy_when_unspecified(adapter_cls):
@@ -392,3 +395,20 @@ def test_documentcloud_token_withheld_over_tor(monkeypatch, policy, leaked):
     asyncio.run(adapter.search("Acme"))
     assert sent and all(_credentials(r) == leaked for r in sent)
     assert adapter.credentials_withheld is policy.is_tor
+
+
+@pytest.mark.parametrize("policy, leaked", [(TOR, set()), (EgressPolicy(), {"Token cl-131"})])
+def test_courtlistener_token_withheld_over_tor(monkeypatch, tmp_path, policy, leaked):
+    import openfoia.records.courtlistener as courtlistener_mod
+
+    monkeypatch.setenv("OPENFOIA_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OPENFOIA_COURTLISTENER_API_KEY", "cl-131")
+    sent = _capture_requests(monkeypatch, courtlistener_mod, {"count": 0, "results": []})
+    adapter = CourtListenerAdapter(egress=policy)
+    result = asyncio.run(adapter.search("Acme"))
+    assert all(_credentials(r) == leaked for r in sent)
+    assert adapter.credentials_withheld is policy.is_tor
+    if policy.is_tor:
+        assert sent == [] and "not used over Tor" in result.error
+    else:
+        assert sent and result.error is None

@@ -1924,7 +1924,12 @@ def _verdict_summary(counts: dict[str, int]) -> str:
 
 def _doc_source(request_number: str | None) -> str:
     prefix = (request_number or "").split("-", 1)[0]
-    return {"DC": "documentcloud", "MUCKROCK": "muckrock", "NARA": "nara"}.get(prefix, "local")
+    return {
+        "DC": "documentcloud",
+        "MUCKROCK": "muckrock",
+        "NARA": "nara",
+        "CL": "courtlistener",
+    }.get(prefix, "local")
 
 
 @docs_app.command("list")
@@ -5039,6 +5044,24 @@ _FILTER_SOURCES = {
 }
 #: Sources whose search is paged until the CLI's --limit, with their page-size cap.
 _PAGED_SOURCES = {"documentcloud": 100, "federalregister": 1000}
+#: Sources that cannot answer without a personal key: skipped in --all-sources without one.
+_KEYED_SOURCES = {
+    "nara": "OPENFOIA_NARA_API_KEY",
+    "courtlistener": "OPENFOIA_COURTLISTENER_API_KEY",
+}
+
+
+def _courtlistener_note(requests: int = 1) -> str:
+    """What a CourtListener call discloses and costs, for the notice before it is sent."""
+    from .records.courtlistener import DAY_LIMIT, budget_used
+
+    used = budget_used()["day"]
+    what = "1 request" if requests == 1 else f"up to {requests} requests"
+    return (
+        f"courtlistener.com with your API token, which identifies you; CourtListener logs "
+        f"API searches against your account unless query logging is off in your profile. "
+        f"Uses {what} of {DAY_LIMIT} a day ({used} used in the last 24 hours on this machine)."
+    )
 
 
 async def _search_one(adapter, source: str, query: str, limit: int, kwargs: dict[str, Any]):
@@ -5165,6 +5188,8 @@ def _records_search_all(
             f"Note: {query!r} also goes to catalog.archives.gov with your API key "
             f"(counted against the 10,000/month quota). {ATTRIBUTION}"
         )
+    if "courtlistener" in sources and getattr(adapters["courtlistener"], "has_key", False):
+        say(f"Note: {query!r} also goes to {_courtlistener_note()}")
 
     async def one(source: str):
         for key, owners in _FILTER_SOURCES.items():
@@ -5172,10 +5197,10 @@ def _records_search_all(
                 return source, None, f"skipped ({key} filter not supported)"
         try:
             adapter = adapters[source]
-            if source == "nara" and not adapter.has_key:
+            if source in _KEYED_SOURCES and not adapter.has_key:
                 if getattr(adapter, "credentials_withheld", False):
                     return source, None, "skipped (personal key not sent over Tor)"
-                return source, None, "skipped (no OPENFOIA_NARA_API_KEY)"
+                return source, None, f"skipped (no {_KEYED_SOURCES[source]})"
             result = await _search_one(adapter, source, query, limit, kwargs)
         except Exception as e:
             return source, None, f"error: {e}"
@@ -5234,11 +5259,14 @@ def records_search(
         "-s",
         help=(
             "Data source (opencorporates, sec, muckrock, documentcloud, usaspending, "
-            "nonprofits, govinfo, fec, regulations, federalregister, cia, nara)"
+            "nonprofits, govinfo, fec, regulations, federalregister, cia, nara, courtlistener)"
         ),
     ),
     jurisdiction: str | None = typer.Option(
-        None, "--jurisdiction", "-j", help="Jurisdiction filter (e.g. us_ca, gb)"
+        None,
+        "--jurisdiction",
+        "-j",
+        help="Jurisdiction filter (e.g. us_ca, gb); courtlistener: court ids (e.g. dcd nysd)",
     ),
     filing_type: str | None = typer.Option(
         None,
@@ -5246,7 +5274,8 @@ def records_search(
         "-t",
         help=(
             "sec: filing type (e.g. 10-K, 8-K). federalregister: document type "
-            "(rule, proposed-rule, notice, presidential; comma-separated)"
+            "(rule, proposed-rule, notice, presidential; comma-separated). courtlistener: "
+            "r dockets (default), rd filings, d dockets only, o opinions"
         ),
     ),
     agency: str | None = typer.Option(
@@ -5300,6 +5329,8 @@ def records_search(
       documentcloud   - Public documents with extracted text
       muckrock        - Completed FOIA requests (key: OPENFOIA_MUCKROCK_TOKEN)
       nara            - National Archives Catalog (key: OPENFOIA_NARA_API_KEY)
+      courtlistener   - Federal court dockets, filings (RECAP) and case law
+                        (key: OPENFOIA_COURTLISTENER_API_KEY; 125 requests a day)
       cia             - CIA FOIA Reading Room (often blocked to scripts)
       opencorporates  - Company registrations worldwide
       sec             - SEC EDGAR filings (US public companies)
@@ -5320,6 +5351,7 @@ def records_search(
         openfoia records search "PAS" --all-sources
         openfoia records search "PAS" -s documentcloud --rank child,school,gifted
         openfoia records search -s nara --ancestor 7283224 --all --max 500 --json
+        openfoia records search "Acme Corp" -s courtlistener -t rd -j dcd
         openfoia records search "Acme Corp" -s sec --csv results.csv
         openfoia records search "facial recognition" -s federalregister --agency DHS -t rule
         openfoia records search -s federalregister --docket EPA-HQ-OAR-2021-0317
@@ -5379,6 +5411,8 @@ def records_search(
     # Pipe-safe modes: stdout carries only JSON, so no spinner or Rich markup.
     quiet = raw or json_lines
 
+    if source == "courtlistener":
+        _courtlistener_key_or_exit(adapter)  # before "Sending": without a key nothing is sent
     if source == "federalregister":
         # The filters are sent too, and a docket id says as much as a query.
         sent = ([repr(query)] if query else []) + [
@@ -5415,6 +5449,8 @@ def records_search(
                 "one per second, each counted against the monthly quota.",
                 err=True,
             )
+    elif source == "courtlistener":
+        typer.echo(f"Note: sending {query!r} to {_courtlistener_note()}", err=True)
 
     try:
         if quiet:
@@ -5562,6 +5598,38 @@ def _print_search_result(
             )
         _emit_table(table, csv_path)
         rprint("\n[dim]Fetch full text: openfoia records fetch <ID> --source documentcloud[/dim]")
+
+    elif source == "courtlistener":
+        from .records.courtlistener import DOCKET_FETCH_REQUESTS
+
+        # Text cells: upstream strings are never read as Rich markup.
+        table = Table(expand=True)
+        table.add_column("ID", style="dim", width=12, no_wrap=True)
+        table.add_column("Case", style="cyan", ratio=3)
+        table.add_column("Court", width=8)
+        table.add_column("Docket #", width=14)
+        table.add_column("Filed", width=10)
+        table.add_column("Filings", width=7)
+        for e in entities:
+            x = e.extra_data
+            docs = x.get("documents") or []
+            filings = f"{len(docs)}{'+' if x.get('more_documents') else ''}" if docs else "-"
+            table.add_row(
+                Text(next(iter(e.identifiers.values()), "-")),
+                Text(e.name),
+                Text(e.jurisdiction or "-"),
+                Text(x.get("docket_number") or "-"),
+                Text(x.get("date") or "-"),
+                Text(filings),
+            )
+        _emit_table(table, csv_path)
+        if result.total_results > 2000:
+            rprint("[dim]CourtListener docket counts over 2,000 are estimates (about ±6%).[/dim]")
+        rprint(
+            "\n[dim]Fetch a docket sheet: openfoia records fetch <ID> -s courtlistener "
+            f"(up to {DOCKET_FETCH_REQUESTS} API requests); a filing's text: rd:<id>; "
+            "an opinion: op:<id>[/dim]"
+        )
 
     elif source == "usaspending":
         table = Table(expand=True)
@@ -5901,6 +5969,7 @@ def records_fetch(
         openfoia records fetch 7283224 -s nara --list-objects
         openfoia records fetch 7283224 -s nara --objects
         openfoia records fetch 2026-21024 -s federalregister
+        openfoia records fetch 4214664 rd:2974081 -s courtlistener
     """
     import asyncio
 
@@ -5920,6 +5989,16 @@ def records_fetch(
     if not ids:
         rprint("[red]Give at least one document id or --from <results.json>.[/red]")
         raise typer.Exit(2)
+    if source == "courtlistener":
+        from rich.markup import escape
+
+        from .records.courtlistener import canonical_id
+
+        try:
+            ids = list(dict.fromkeys(canonical_id(i) for i in ids))
+        except ValueError as e:
+            rprint(f"[red]{escape(str(e))}[/red]")
+            raise typer.Exit(2) from None
     if source == "cia":
         for doc_id in ids:
             _records_fetch_cia(doc_id)
@@ -5936,7 +6015,12 @@ def records_fetch(
         ids = list(dict.fromkeys(_number(i) for i in ids))
     # Sources whose adapter has pull_text() (federalregister: PDF download and
     # ingest); the prefix is the stored request number's.
-    prefixes = {"documentcloud": "DC-", "nara": "NARA-", "federalregister": "FR-"}
+    prefixes = {
+        "documentcloud": "DC-",
+        "nara": "NARA-",
+        "federalregister": "FR-",
+        "courtlistener": "CL-",
+    }
     if source not in prefixes:
         rprint(
             f"[yellow]Fetch not yet supported for '{source}'. Use 'records download' for MuckRock.[/yellow]"
@@ -5951,6 +6035,8 @@ def records_fetch(
 
     policy = _records_policy_or_exit()
     adapter = get_adapter(source, egress=policy)
+    if source == "courtlistener":
+        _courtlistener_key_or_exit(adapter)
     typer.echo(f"Fetching from {source} ({_route_note(policy, adapter)}).", err=True)
     if source == "federalregister":
         typer.echo(
@@ -5972,6 +6058,11 @@ def records_fetch(
                 adapter, ids, download=objects, as_json=as_json, route=_route_note(policy)
             )
             return
+    if source == "courtlistener":
+        from .records.courtlistener import DOCKET_FETCH_REQUESTS
+
+        cost = sum(1 if ":" in i else DOCKET_FETCH_REQUESTS for i in ids)
+        typer.echo(f"Note: fetching from {_courtlistener_note(cost)}", err=True)
     case_id = active_case_id_in_db()
 
     stored: dict[str, str | None] = {}  # id -> name of another case holding it
@@ -5998,6 +6089,8 @@ def records_fetch(
         try:
             if source == "federalregister":
                 result_id, text = _records_fetch_federalregister(adapter, doc_id)
+            elif source == "courtlistener":
+                result_id, text = _courtlistener_pull(adapter, doc_id, case_id, _route_note(policy))
             else:
                 result_id, text = asyncio.run(adapter.pull_text(doc_id, case_id=case_id))
         except Exception as e:
@@ -6133,6 +6226,55 @@ def _ingest_nara_objects(entity, naid: str, results) -> int:
         )
         done += 1
     return done
+
+
+def _courtlistener_pull(adapter, doc_id: str, case_id: str | None, route: str):
+    """Fetch one CourtListener id and store it; a filing with no text falls back to its PDF."""
+    import asyncio
+
+    from rich.markup import escape
+
+    entity = asyncio.run(adapter.fetch(doc_id))
+    if entity is None:
+        return None, None
+    x = entity.extra_data
+    for err in x.get("errors") or []:
+        rprint(f"  {doc_id}  [yellow]{escape(err)}[/yellow]")
+    result_id, text = adapter.store(entity, case_id)
+    if text or not doc_id.startswith("rd:"):
+        return result_id, text
+    if x.get("pdf_refused"):
+        rprint(f"  {doc_id}  [yellow]PDF link refused: not on storage.courtlistener.com[/yellow]")
+    if not x.get("pdf_url"):
+        if not x.get("is_available"):
+            rprint(f"  {doc_id}  [yellow]not in the RECAP archive (only on PACER, paid)[/yellow]")
+        return None, None
+
+    from .db import ensure_db, get_data_dir
+    from .pipeline.ingest import DocumentIngester
+
+    rprint(
+        f"  {doc_id}  [dim]no text on CourtListener; downloading the PDF from "
+        f"storage.courtlistener.com ({route}; API token not sent, not counted)[/dim]"
+    )
+    path = asyncio.run(adapter.download_pdf(entity, get_data_dir() / "downloads" / "courtlistener"))
+    ensure_db()
+    result = asyncio.run(DocumentIngester(storage_path=get_data_dir() / "docs").ingest_file(path))
+    _persist_ingested(
+        [result],
+        request_number=f"CL-{doc_id}",
+        subject=entity.name,
+        body=f"Downloaded from CourtListener: {entity.source_url}",
+    )
+    return result.document_id, result.extracted_text
+
+
+def _courtlistener_key_or_exit(adapter) -> None:
+    from .records.courtlistener import NO_KEY_MESSAGE, TOR_KEY_MESSAGE
+
+    if not adapter.has_key:
+        rprint(f"[red]{TOR_KEY_MESSAGE if adapter.credentials_withheld else NO_KEY_MESSAGE}[/red]")
+        raise typer.Exit(1)
 
 
 def _nara_key_or_exit(adapter) -> None:
@@ -6522,6 +6664,7 @@ _CREST_RE = re.compile(r"(?:CIA|NSA)-RDP\d{2}[A-Z]?-?\d{5}[A-Z]\d{12}-\d")
 _SOURCE_LABEL = {
     "nara": "National Archives Catalog",
     "documentcloud": "DocumentCloud",
+    "courtlistener": "CourtListener",
     "muckrock": "MuckRock",
     "cia": "CIA Reading Room",
 }
