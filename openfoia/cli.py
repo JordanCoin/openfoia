@@ -3771,7 +3771,9 @@ def analyze_graph(
         json_path.write_text(json_mod.dumps(graph_data, indent=2))
 
         rprint(f"[green]Graph exported to {json_path}[/green]")
-        rprint(f"  Entities: {len(nodes)}")
+        # The graph page draws one node per (type, label); say so, so the two counts match.
+        distinct = len({(n["type"], n["label"]) for n in nodes})
+        rprint(f"  Entities: {distinct} ({len(nodes)} mentions)")
         rprint(f"  Relationships: {len(edges)}")
         if name:
             rprint(f"  Saved as: [cyan]{name}[/cyan]")

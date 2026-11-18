@@ -5,9 +5,7 @@ Produces:
 2. An HTML graph visualization of the best result
 3. Timing for each backend
 
-Note: The graph HTML uses innerHTML for the info panel. This is safe because
-all content comes from the local extraction pipeline (not user input), and
-the graph is a local file opened in the browser for inspection only.
+The graph HTML builds its info panel with createElement/textContent only.
 """
 
 import asyncio
@@ -254,7 +252,7 @@ const h=document.createElement('h3');h.textContent=n.label;el.appendChild(h);
 const sub=document.createElement('p');sub.style.color='#888';
 sub.textContent=n.type+' | confidence: '+(n.confidence*100).toFixed(0)+'%';el.appendChild(sub);
 if(rels.length){const b=document.createElement('p');b.style.marginTop='8px';
-b.innerHTML='<b>Connections:</b>';el.appendChild(b);
+const bb=document.createElement('b');bb.textContent='Connections:';b.appendChild(bb);el.appendChild(b);
 rels.forEach(r=>{const other=r.source===n.id?byId[r.target]:byId[r.source];
 if(other){const c=document.createElement('p');c.style.color='#ccc';
 c.textContent='\u2192 '+r.label+' \u2192 '+other.label;el.appendChild(c)}})}

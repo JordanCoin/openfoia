@@ -12,6 +12,19 @@ exhaustive lists.
 
 ### Added
 
+- `openfoia analyze graph --view`: the graph page is reworked so a large case
+  can be read. Entity types have a colour and a shape, with a legend that
+  counts and toggles each type. Nodes are sized by connections (or mentions).
+  Names are placed where they do not cover each other and the best-connected
+  entities are always named; zooming in shows more. Hover gives a summary;
+  click lists the neighbours with the direction of each relationship and every
+  mention's source document, page and confidence, and dims the rest. New:
+  minimum-confidence filter, fit to screen (`F`), `/` to search, and a search
+  that finds entities hidden by a filter. Entities with no relationship are set
+  out in a block under the graph. Right-to-left and CJK names are drawn with
+  whatever fonts the machine has; the page ships none.
+- The graph page now carries a Content-Security-Policy that blocks every
+  network load and runs only its own inline script (pinned by hash).
 - Every outbound request now retries GET/HEAD up to 3 times on HTTP 429/503,
   connection errors and read timeouts (exponential backoff with jitter,
   honoring `Retry-After` up to 30s), and is spaced to at most 10 requests per
@@ -28,8 +41,20 @@ exhaustive lists.
   (`OPENFOIA_NETWORK_MAX_ATTEMPTS`, default 3, 1 disables retry) sets the retry
   count for commands that read `network` config (#56).
 
+### Changed
+
+- The graph page draws one node per entity (same type and label). Mentions of
+  the same label with different types used to be merged into one node; they are
+  now separate. The header and `analyze graph` output report entities and
+  mentions separately (`Entities: 260 (319 mentions)`).
+- The graph layout no longer uses random starting positions, so the same export
+  opens with the same layout every time. It still cools and stops (#58).
+
 ### Fixed
 
+- The graph page's document reader no longer builds its text with `innerHTML`;
+  it uses text nodes and elements only. A `source_url` that is not `http(s)` is
+  no longer turned into a link. The page is written as UTF-8 on every platform.
 - With `network.tor: true`, personal credentials still went out with records
   requests and told the server who was asking, even though the real IP was
   hidden: `OPENFOIA_MUCKROCK_TOKEN`, `OPENFOIA_NARA_API_KEY` /
