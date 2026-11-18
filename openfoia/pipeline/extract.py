@@ -519,7 +519,7 @@ GLINER_MODEL_ID = "urchade/gliner_medium-v2.1"
 
 
 def _get_gliner():
-    """Lazily load the GLiNER model (downloads ~300MB on first use).
+    """Lazily load the GLiNER model (downloads about 1.6 GB on first use).
 
     Loads from the local Hugging Face cache first so a cached model never
     contacts huggingface.co (principle 1). Only if the cache is missing do we
@@ -541,7 +541,7 @@ def _get_gliner():
             if was_offline:
                 raise
             logger.warning(
-                "GLiNER model not cached; downloading ~300MB from huggingface.co "
+                "GLiNER model not cached; downloading about 1.6 GB from huggingface.co "
                 "(one-time; your IP is visible to Hugging Face)"
             )
             hf_constants.HF_HUB_OFFLINE = False

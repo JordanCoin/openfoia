@@ -165,6 +165,9 @@ exhaustive lists.
 
 ### Fixed
 
+- The GLiNER download notice said about 300 MB; gliner 0.2.30 downloads both
+  weight formats of `urchade/gliner_medium-v2.1`, about 1.6 GB. It now says so
+  (measured in `docs/benchmarks/gliner2.md`).
 - **`analyze export` wrote no relationships.** It passed each link's ends as
   database ids, but the FollowTheMoney writer joins them to entities by name, so
   every relationship was dropped and the export held only the entities.
