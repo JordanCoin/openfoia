@@ -37,6 +37,11 @@ exhaustive lists.
     machine has; the page ships none.
 - The graph page now carries a Content-Security-Policy that blocks every
   network load and runs only its own inline script (pinned by hash).
+- With mat2 installed (`apt install mat2`; preinstalled on Tails), ingest also
+  cleans OpenDocument, XLSX, PPTX, EPUB, audio, video, HEIC, GIF, SVG and other
+  formats the built-in stripper does not cover. mat2's result is checked with a
+  second `mat2 --show`, not trusted: a broken install, an unsupported format,
+  a timeout or metadata left behind are reported as not stripped (#121).
 - Every outbound request now retries GET/HEAD up to 3 times on HTTP 429/503,
   connection errors and read timeouts (exponential backoff with jitter,
   honoring `Retry-After` up to 30s), and is spaced to at most 10 requests per
@@ -89,6 +94,27 @@ exhaustive lists.
 - Entity extraction drops full sentences, run-on lines over 80 characters,
   and OCR garbage like `EC .Orchestrating a or g-?te' 22`, and down-weights
   punctuation-heavy text and PERSON hits over 5 words (#57).
+- **Ingest no longer reports a file as done when its metadata was left in.**
+  `docs ingest` printed the same green check for a file it stripped and one it
+  could not (an `.odt`, `.xlsx`, legacy `.doc`, or a PDF it could not open),
+  and directory ingest printed nothing per file. Each file now says what
+  happened to its stored copy (`stripped 4 metadata fields`, `plain text, no
+  embedded metadata`, `metadata NOT stripped: ...`), and the run ends with a
+  count and the names of copies that still carry metadata. The agent's
+  `process_document` tool returns the same verdict (#121).
+- **Web-UI uploads were stored with all their metadata.** `/api/documents/upload`
+  never stripped anything, though the README said it did. It now strips like
+  `docs ingest` and returns the verdict as `metadata` in its response.
+- **A PDF whose author sat only in its XMP packet was stored unchanged.** XMP
+  was removed only when the `/Info` dictionary also had a sensitive key.
+- **Ingesting a photo crashed when Pillow was not installed.** Pillow is not a
+  core dependency, so on a clean install every `.jpg`, `.png`, `.tiff` or
+  `.webp` failed with `No module named PIL` and was not ingested. Without
+  Pillow, images now go to mat2 if it is installed; otherwise they are ingested
+  and reported as `metadata NOT stripped`, with the install command. A
+  truncated or corrupt image also no longer crashes the ingest: it is reported
+  as not stripped. Pillow is now listed in the `ocr` extra, which already
+  pulled it in.
 - **Names in non-Latin scripts were thrown away by every extractor.** Entity
   scoring counted only `A-Z` letters and looked for an `A-Z` capital, so every
   name in Cyrillic, Greek, Arabic, Persian, Hebrew, Devanagari, Bengali, Thai,

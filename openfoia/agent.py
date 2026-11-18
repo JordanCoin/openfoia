@@ -556,11 +556,22 @@ Please contact me if you have questions about this request.
         ingester = DocumentIngester(storage_path=storage_path)
         result = await ingester.ingest_file(resolved, request_id=params.get("request_id"))
 
+        from .pipeline.metadata import describe
+
+        stripped_info = result.metadata.get("metadata_stripped")
+        metadata_clean, metadata_note = describe(stripped_info)
         return {
             "document_id": result.document_id,
             "filename": result.filename,
             "pages": result.page_count,
             "text_extracted": result.page_count is not None and result.page_count > 0,
+            # The same verdict the CLI prints, so an agent can warn its user that a
+            # stored copy still carries author, device or location metadata.
+            "metadata": {
+                "clean": metadata_clean,
+                "status": (stripped_info or {}).get("status"),
+                "note": metadata_note,
+            },
             "message": "Document processed. Use extract_entities to analyze.",
         }
 

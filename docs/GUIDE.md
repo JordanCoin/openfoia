@@ -99,7 +99,7 @@ openfoia docs ingest ./my-documents/
 openfoia docs ingest ./response.pdf
 ```
 
-Documents are copied to `~/.openfoia/docs/`, metadata is stripped automatically (EXIF, PDF author, DOCX revision history), and they're ready for analysis.
+Documents are copied to `~/.openfoia/docs/` and metadata is stripped from the stored copy: image EXIF, PDF author and XMP, DOCX author, company and revision data. With mat2 installed (`apt install mat2`; it comes with Tails), OpenDocument, XLSX, PPTX, EPUB, audio and video are cleaned too. Each file's line says what happened, for example `stripped 4 metadata fields` or `metadata NOT stripped: no metadata stripper for .odt`, and the run ends with a count of stored copies that still carry metadata. The files you point it at are never modified.
 
 **How a PDF's text is read.** The `pdf-extract` binary reads each page's
 text layer and gives every page a verdict: `text_layer` (readable),

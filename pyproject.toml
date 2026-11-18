@@ -28,6 +28,8 @@ dependencies = [
 ocr = [
     "pytesseract>=0.3.10",
     "pdf2image>=1.16.0",
+    # Also strips image metadata (EXIF) on ingest; pytesseract needs it anyway.
+    "pillow>=10.0.0",
 ]
 # Delivery gateways
 fax = ["twilio>=8.10.0", "reportlab>=4.0.0"]
@@ -65,6 +67,8 @@ dev = [
     # tests/test_plugin.py parses plugin frontmatter. Test-only -- keep it out
     # of core deps.
     "pyyaml>=6.0",
+    # Image metadata stripping is tested for real, not only the no-Pillow path.
+    "pillow>=10.0.0",
 ]
 
 [project.scripts]
