@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
+import site
 import socket
 import struct
 import subprocess
@@ -22,6 +23,122 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent
+
+
+# ---------------------------------------------------------------------------
+# A7: portable mode leaves nothing in the host's home directory
+# ---------------------------------------------------------------------------
+
+#: Variables that would let a library write somewhere other than $HOME. They
+#: are removed so that anything defaulting to the home directory lands in the
+#: empty fake one, where the test sees it.
+_HOME_REDIRECTS = (
+    "OPENFOIA_DATA_DIR",
+    "OPENFOIA_DB_PASSWORD",
+    "XDG_CACHE_HOME",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "XDG_STATE_HOME",
+    "HF_HOME",
+    "TORCH_HOME",
+    "MPLCONFIGDIR",
+)
+
+
+def _run_cli(args, *, cwd, home):
+    env = {k: v for k, v in os.environ.items() if k not in _HOME_REDIRECTS}
+    env.update(
+        HOME=str(home),
+        USERPROFILE=str(home),
+        OPENFOIA_AI_PROVIDER="none",
+        PYTHONPATH=str(REPO),
+        PYTHONDONTWRITEBYTECODE="1",
+        # Packages installed with `pip install --user` live under the real
+        # home; keep them importable (read-only) without un-faking $HOME.
+        PYTHONUSERBASE=site.getuserbase(),
+    )
+    return subprocess.run(
+        [sys.executable, "-c", "from openfoia.cli import app; app()", *args],
+        cwd=cwd,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+
+def test_portable_session_leaves_host_home_empty(tmp_path):
+    """init, ingest, graph and purge from a portable stick write nothing to $HOME."""
+    home = tmp_path / "host-home"
+    home.mkdir()
+    usb = tmp_path / "usb"
+    usb.mkdir()
+    (usb / ".openfoia-portable").touch()
+    doc = usb / "memo.txt"
+    doc.write_text("Jane Doe of Acme Corp met the minister in Ankara on 3 March 2026.\n")
+
+    for args in (
+        ["init"],
+        ["docs", "ingest", str(doc)],
+        ["analyze", "graph", "--all", "--output", str(usb / "graph.json")],
+        ["purge", "--yes"],
+    ):
+        result = _run_cli(args, cwd=usb, home=home)
+        assert result.returncode == 0, (args, result.stdout, result.stderr)
+        left = sorted(str(p.relative_to(home)) for p in home.rglob("*"))
+        assert left == [], f"`openfoia {' '.join(args)}` wrote to the host home: {left}"
+
+    assert not (usb / "openfoia-data" / "data.db").exists(), "purge left the database"
+
+
+def test_portable_mode_points_library_caches_at_the_stick(tmp_path, monkeypatch):
+    """Optional deps (GLiNER via huggingface_hub, torch) cache under $HOME by default."""
+    from openfoia.config import _CACHE_ENV, confine_caches_to_data_dir
+
+    usb = tmp_path / "usb"
+    usb.mkdir()
+    (usb / ".openfoia-portable").touch()
+    monkeypatch.chdir(usb)
+    monkeypatch.delenv("OPENFOIA_DATA_DIR", raising=False)
+    for var in _CACHE_ENV:
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("TORCH_HOME", "/user/chose/this")
+
+    applied = confine_caches_to_data_dir()
+
+    assert os.environ["HF_HOME"] == str(usb / "openfoia-data" / "cache" / "huggingface")
+    assert os.environ["XDG_CACHE_HOME"] == str(usb / "openfoia-data" / "cache")
+    assert os.environ["TORCH_HOME"] == "/user/chose/this", "an explicit setting was overridden"
+    assert "TORCH_HOME" not in applied
+    assert not (usb / "openfoia-data").exists(), "resolving the caches must create nothing"
+
+
+def test_caches_stay_put_outside_portable_mode(tmp_path, monkeypatch):
+    from openfoia.config import _CACHE_ENV, confine_caches_to_data_dir
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("OPENFOIA_DATA_DIR", raising=False)
+    for var in _CACHE_ENV:
+        monkeypatch.delenv(var, raising=False)
+
+    assert confine_caches_to_data_dir() == {}
+    assert "HF_HOME" not in os.environ
+
+
+def test_config_data_dir_follows_portable_mode(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    usb = tmp_path / "usb"
+    usb.mkdir()
+    (usb / ".openfoia-portable").touch()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("OPENFOIA_DATA_DIR", raising=False)
+    monkeypatch.chdir(usb)
+
+    from openfoia.config import OpenFOIAConfig
+
+    assert OpenFOIAConfig().data_dir == usb / "openfoia-data"
+    assert list(home.iterdir()) == []
 
 
 # ---------------------------------------------------------------------------

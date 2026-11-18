@@ -294,7 +294,6 @@ def test_a6_decoy_schema_matches_a_real_database(data_dir):
 # ---------------------------------------------------------------------------
 
 
-@audit("A7 load_config() creates ~/.openfoia even in portable mode")
 def test_a7_portable_mode_writes_nothing_to_host_home(tmp_path, monkeypatch):
     home = tmp_path / "host-home"
     home.mkdir()

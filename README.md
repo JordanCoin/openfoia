@@ -71,7 +71,7 @@ openfoia request mark REQ-2026-001 denied              # starts the appeal clock
 | **Data interchange** | Import/export FollowTheMoney format (Aleph, OpenAleph, OpenSanctions) |
 | **Encrypted storage** | SQLCipher AES-256. Decoy profile mode |
 | **Forensic purge** | 3-pass overwrite, shell history scrub, free space fill |
-| **Portable mode** | `openfoia portable` keeps everything on the USB, nothing on the host |
+| **Portable mode** | `openfoia portable` keeps data, config and library caches on the USB; nothing is created in the host's home directory |
 | **Metadata stripping** | Strips image EXIF, PDF author and XMP, and DOCX author, company and revision data from the stored copy on `docs ingest` and web-UI upload; with [mat2](https://github.com/jvoisin/mat2) installed (preinstalled on Tails) also OpenDocument, XLSX, PPTX, EPUB, audio and video. Every file is reported as stripped or not; a format nothing here can clean is flagged, never shown as done. Email attachments and archived web pages are stored as received; see [THREAT_MODEL.md](docs/THREAT_MODEL.md) |
 
 ### PDF Extraction Engine
@@ -206,7 +206,7 @@ Everything runs on `127.0.0.1`. Token-authenticated: `openfoia serve` opens the 
 
 **For sensitive investigations:** `openfoia serve --tor`
 
-**Portable mode:** `openfoia portable` keeps data on the USB; nothing touches the host.
+**Portable mode:** `openfoia portable` keeps data, config and caches on the USB and creates nothing in the host's home directory (the OS can still log activity; see [USB Install](docs/USB.md)).
 
 **When you're done:** `openfoia purge --secure --yes`
 

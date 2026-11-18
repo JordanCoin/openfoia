@@ -264,6 +264,14 @@ exhaustive lists.
   `Cross-Origin-Resource-Policy: same-origin` and
   `X-Content-Type-Options: nosniff`. The startup banner shows the real data
   directory instead of always `~/.openfoia/`.
+- Portable mode no longer creates `~/.openfoia` on the host. The config's
+  data directory follows portable mode (the `.openfoia-portable` marker or
+  `OPENFOIA_DATA_DIR`), and loading the config creates nothing. In portable
+  mode the caches of optional libraries (`HF_HOME`, `TORCH_HOME`,
+  `MPLCONFIGDIR`, `XDG_CACHE_HOME`) point at `cache/` in the data directory
+  unless you set them yourself; set `HF_HOME` to keep using models already
+  downloaded on this machine. What the OS itself records (swap, temp files,
+  browser and shell history) is unchanged; see `docs/THREAT_MODEL.md`.
 
 ## [4.7.0] - 2026-10-23
 

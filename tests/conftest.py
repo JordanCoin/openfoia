@@ -49,6 +49,27 @@ def fast_egress(monkeypatch):
     monkeypatch.setattr(net, "_next_slot", {})
 
 
+@pytest.fixture(autouse=True)
+def restore_cache_env():
+    """Undo the cache redirection the CLI applies in portable mode.
+
+    Tests point OPENFOIA_DATA_DIR at a temp dir and invoke the CLI in-process;
+    without this, HF_HOME and friends would keep naming that temp dir for the
+    rest of the session.
+    """
+    import os
+
+    from openfoia.config import _CACHE_ENV
+
+    saved = {var: os.environ.get(var) for var in _CACHE_ENV}
+    yield
+    for var, value in saved.items():
+        if value is None:
+            os.environ.pop(var, None)
+        else:
+            os.environ[var] = value
+
+
 def pytest_configure(config):
     config.addinivalue_line(
         "markers", "allow_network: test may open real outbound network connections"

@@ -52,6 +52,11 @@ def _root(
     ),
 ) -> None:
     """Crowdsourced FOIA automation with AI-powered document analysis."""
+    # Portable mode: keep model/library caches on the stick, not in the host's
+    # home directory. A no-op for an ordinary install.
+    from .config import confine_caches_to_data_dir
+
+    confine_caches_to_data_dir()
 
 
 # === Init Command ===

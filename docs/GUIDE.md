@@ -31,7 +31,7 @@ openfoia portable     # creates a marker file
 openfoia init         # database created ON the USB
 ```
 
-From that point, everything stays on the USB. Unplug it and there's no trace on the host.
+From that point OpenFOIA keeps its data, config and library caches on the USB and creates nothing in the host's home directory. The operating system can still keep traces (swap, temp files, browser and shell history); see [USB.md](USB.md#security-considerations).
 
 ---
 

@@ -1,7 +1,12 @@
 # Portable Encrypted USB Install
 
-Run OpenFOIA entirely from an encrypted USB drive. No traces are left on the
-host machine (assuming no swap and careful use).
+Run OpenFOIA entirely from an encrypted USB drive. With the data directory on
+the stick (`OPENFOIA_DATA_DIR`, or the `.openfoia-portable` marker that
+`openfoia portable` creates), OpenFOIA writes its database, config, documents
+and library caches to the stick and creates nothing in the host's home
+directory. The operating system can still record activity on the host (swap,
+temp files, browser and shell history): see Security Considerations below and
+`docs/THREAT_MODEL.md`.
 
 ## What You Need
 
@@ -140,7 +145,16 @@ Then: `chmod +x run.sh` and use `./run.sh serve`, `./run.sh request list`, etc.
   encrypted USB if concerned.
 - **Browser cache**: When using `openfoia browse`, Playwright stores browser
   profiles in a temp directory. Use `--headless` and the profiles are cleaned
-  up on exit.
+  up on exit. The browser's own home directory (crash reports, caches) is a
+  throwaway folder inside the data directory, removed when the session ends.
+- **Library caches**: In portable mode (the marker or `OPENFOIA_DATA_DIR`),
+  OpenFOIA points the caches of optional libraries at `cache/` inside the
+  data directory: `HF_HOME` (GLiNER and other Hugging Face models),
+  `TORCH_HOME`, `MPLCONFIGDIR` and `XDG_CACHE_HOME`. A variable you set
+  yourself is left alone, so to reuse models already downloaded on this
+  machine, set `HF_HOME` to that cache. On macOS and Windows, pip ignores
+  `XDG_CACHE_HOME` and caches downloads under the user's home during
+  `openfoia install-extras`.
 - **USB forensics**: Even with LUKS/VeraCrypt, wear-leveling on flash storage
   means deleted data may persist in spare blocks. For maximum security, use a
   hardware-encrypted USB drive (e.g., Apricorn Aegis, Kingston IronKey).

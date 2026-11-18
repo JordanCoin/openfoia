@@ -139,6 +139,20 @@ arrive at the destination either way.
    that happens the browser shows "Login link already used" and the terminal
    prints a warning: stop the server and start it again. An account that can
    read your memory or attach a debugger to your processes is out of scope.
+7. **What portable mode keeps off the host.** With a `.openfoia-portable`
+   marker, the database, config, documents, and the caches of optional model
+   libraries (Hugging Face, torch, matplotlib, and anything that honours
+   `XDG_CACHE_HOME`) live in `openfoia-data/` on the stick, and the browser
+   started by `openfoia browse` gets a throwaway home directory there too.
+   OpenFOIA is built not to create files in the host's home directory (the
+   test suite checks `init`, `docs ingest`, `analyze graph` and `purge`). It
+   cannot control the operating system: swap, temp files under `/tmp` or `TMPDIR`
+   (Playwright puts its browser profile there), the browser history of
+   `openfoia serve`, shell history, and OS indexing (Spotlight, recent-files
+   lists) can still record activity on the host. On macOS and Windows, a
+   library that ignores `XDG_CACHE_HOME` (pip, for one, uses
+   `~/Library/Caches` or `%LOCALAPPDATA%`) may still write there during
+   `openfoia install-extras`.
 
 ## Semantic search embeddings
 
