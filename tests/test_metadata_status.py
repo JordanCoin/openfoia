@@ -124,7 +124,25 @@ def test_docx_author_is_stripped_and_reported(tmp_path):
     assert describe(result) == (True, f"stripped {len(result['stripped'])} metadata fields")
 
 
-@pytest.mark.parametrize("name", ["broken.pdf", "broken.docx", "broken.jpg"])
+def _has_pillow() -> bool:
+    try:
+        from PIL import Image  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+needs_pillow = pytest.mark.skipif(not _has_pillow(), reason="Pillow not installed")
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "broken.pdf",
+        "broken.docx",
+        pytest.param("broken.jpg", marks=needs_pillow),
+    ],
+)
 def test_file_a_built_in_handler_cannot_open_is_a_failure_not_a_clean_file(tmp_path, name):
     path = tmp_path / name
     path.write_bytes(b"not really that format")
@@ -135,6 +153,73 @@ def test_file_a_built_in_handler_cannot_open_is_a_failure_not_a_clean_file(tmp_p
     clean, note = describe(result)
     assert not clean
     assert note.startswith("metadata NOT stripped: could not open the file as")
+
+
+def _jpeg_with_exif(path: Path) -> Path:
+    from PIL import Image
+
+    img = Image.radial_gradient("L").convert("RGB")  # 256x256, big enough to truncate
+    exif = Image.Exif()
+    exif[0x013B] = SOURCE  # Artist
+    img.save(path, "JPEG", exif=exif.tobytes())
+    assert SOURCE.encode() in path.read_bytes()
+    return path
+
+
+@needs_pillow
+def test_jpeg_exif_is_stripped(tmp_path):
+    path = _jpeg_with_exif(tmp_path / "photo.jpg")
+
+    result = strip_metadata(path)
+
+    assert result["status"] == "stripped"
+    assert SOURCE.encode() not in path.read_bytes()
+    assert describe(result)[0]
+
+
+@needs_pillow
+def test_truncated_image_is_a_failure_not_a_crash(tmp_path):
+    """Image.open succeeds on a truncated JPEG; decoding it used to raise OSError."""
+    path = _jpeg_with_exif(tmp_path / "cut.jpg")
+    data = path.read_bytes()
+    path.write_bytes(data[: len(data) // 2])
+
+    result = strip_metadata(path)
+
+    assert result["status"] == "failed"
+    assert describe(result) == (False, "metadata NOT stripped: could not decode the image")
+    assert list(tmp_path.iterdir()) == [path]
+
+
+def test_image_without_pillow_is_reported_not_crashed(tmp_path, monkeypatch):
+    """Pillow is optional. Without it an image is not cleaned, and the user is told how to fix it.
+
+    This used to raise ModuleNotFoundError, which aborted the ingest of the file.
+    """
+    _no_mat2(monkeypatch)
+    monkeypatch.setattr(metadata_mod, "_pillow_available", lambda: False)
+    path = tmp_path / "photo.jpg"
+    path.write_bytes(b"\xff\xd8\xff\xe0 not decoded")
+
+    result = strip_metadata(path)
+
+    assert result["status"] == "unsupported"
+    clean, note = describe(result)
+    assert not clean
+    assert "pip install pillow" in note
+    assert "install-extras ocr" in note
+
+
+def test_image_without_pillow_goes_to_mat2_when_installed(fake_mat2, monkeypatch):
+    monkeypatch.setattr(metadata_mod, "_pillow_available", lambda: False)
+    odt = fake_mat2("ok")
+    path = odt.with_suffix(".jpg")
+    odt.rename(path)
+
+    result = strip_metadata(path)
+
+    assert result["status"] == "stripped"
+    assert result["backend"] == "mat2"
 
 
 def test_plain_text_has_no_embedded_metadata(tmp_path):
@@ -342,6 +427,26 @@ def test_docs_ingest_flags_a_file_it_could_not_clean(tmp_path, data_dir, monkeyp
     assert "Metadata: 0 clean, 1 still carrying metadata" in out
     assert "1 stored copy still carries the metadata it arrived with" in out
     assert "✓ dirty.odt" not in out
+
+
+def test_docs_ingest_of_a_photo_without_pillow_still_ingests_and_warns(
+    tmp_path, data_dir, monkeypatch
+):
+    from openfoia.cli import app
+
+    _no_mat2(monkeypatch)
+    monkeypatch.setattr(metadata_mod, "_pillow_available", lambda: False)
+    photo = tmp_path / "photo.jpg"
+    photo.write_bytes(b"\xff\xd8\xff\xe0 not decoded")
+
+    result = CliRunner().invoke(app, ["docs", "ingest", str(photo)])
+    out = " ".join(result.output.split())
+
+    assert result.exit_code == 0, result.output
+    assert "Ingested 1 document" in out
+    assert "⚠ photo.jpg" in out
+    assert "needs Pillow" in out
+    assert "Metadata: 0 clean, 1 still carrying metadata" in out
 
 
 def test_docs_ingest_directory_reports_each_file(tmp_path, data_dir, monkeypatch):

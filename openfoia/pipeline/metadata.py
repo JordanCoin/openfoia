@@ -47,6 +47,10 @@ NOT_STRIPPED = frozenset({"unsupported", "failed", "partial"})
 
 MAT2_TIMEOUT_SECONDS = 120
 MAT2_HINT = "install mat2 to clean it (apt install mat2; preinstalled on Tails)"
+PILLOW_HINT = (
+    "image metadata stripping needs Pillow, which is not installed "
+    "(pip install pillow, or openfoia install-extras ocr)"
+)
 
 
 def strip_metadata(file_path: Path | str, keep_hash: bool = True) -> dict[str, Any]:
@@ -70,6 +74,19 @@ def strip_metadata(file_path: Path | str, keep_hash: bool = True) -> dict[str, A
     suffix = file_path.suffix.lower()
 
     if suffix in IMAGE_EXTENSIONS:
+        # Pillow is optional (the ocr extra brings it). Without it, hand the image
+        # to mat2 if that is installed; otherwise report it instead of crashing
+        # the whole ingest on the import.
+        if not _pillow_available():
+            mat2 = shutil.which("mat2")
+            if mat2:
+                return _strip_with_mat2(mat2, file_path, keep_hash)
+            return {
+                "stripped": [],
+                "file_type": "image",
+                "status": "unsupported",
+                "error": PILLOW_HINT,
+            }
         return _strip_image_metadata(file_path, keep_hash)
     if suffix in PDF_EXTENSIONS:
         return _strip_pdf_metadata(file_path, keep_hash)
@@ -138,8 +155,19 @@ def _strip_image_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
     if fmt == "JPG":
         fmt = "JPEG"
 
-    clean = Image.new(img.mode, img.size)
-    clean.putdata(list(img.getdata()))
+    # Image.open is lazy: a truncated or corrupt file opens fine and only fails
+    # here, when the pixels are decoded.
+    try:
+        pixels = (
+            img.get_flattened_data()  # Pillow 12+; getdata is removed in Pillow 14
+            if hasattr(img, "get_flattened_data")
+            else img.getdata()
+        )
+        clean = Image.new(img.mode, img.size)
+        clean.putdata(list(pixels))
+    except Exception as exc:
+        logger.warning("Could not decode image %s: %s", file_path, exc)
+        return {**result, "status": "failed", "error": "could not decode the image"}
 
     save_kwargs: dict[str, Any] = {}
     if fmt == "JPEG":
@@ -147,7 +175,16 @@ def _strip_image_metadata(file_path: Path, keep_hash: bool) -> dict[str, Any]:
     if fmt == "PNG" and "transparency" in info:
         save_kwargs["transparency"] = info["transparency"]
 
-    clean.save(file_path, format=fmt, **save_kwargs)
+    # Write beside the file and swap it in, so a failed save cannot leave a
+    # half-written copy behind.
+    tmp = file_path.with_name(file_path.name + ".clean")
+    try:
+        clean.save(tmp, format=fmt, **save_kwargs)
+        tmp.replace(file_path)
+    except Exception as exc:
+        tmp.unlink(missing_ok=True)
+        logger.warning("Could not save cleaned image %s: %s", file_path, exc)
+        return {**result, "status": "failed", "error": "could not save the cleaned image"}
 
     return result
 
@@ -509,6 +546,14 @@ def _strip_with_mat2(mat2: str, file_path: Path, keep_hash: bool) -> dict[str, A
     else:
         result["status"] = "stripped"
     return result
+
+
+def _pillow_available() -> bool:
+    try:
+        from PIL import Image  # noqa: F401
+    except ImportError:
+        return False
+    return True
 
 
 def describe(info: dict[str, Any] | None) -> tuple[bool, str]:

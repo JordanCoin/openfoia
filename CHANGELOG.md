@@ -107,6 +107,14 @@ exhaustive lists.
   `docs ingest` and returns the verdict as `metadata` in its response.
 - **A PDF whose author sat only in its XMP packet was stored unchanged.** XMP
   was removed only when the `/Info` dictionary also had a sensitive key.
+- **Ingesting a photo crashed when Pillow was not installed.** Pillow is not a
+  core dependency, so on a clean install every `.jpg`, `.png`, `.tiff` or
+  `.webp` failed with `No module named PIL` and was not ingested. Without
+  Pillow, images now go to mat2 if it is installed; otherwise they are ingested
+  and reported as `metadata NOT stripped`, with the install command. A
+  truncated or corrupt image also no longer crashes the ingest: it is reported
+  as not stripped. Pillow is now listed in the `ocr` extra, which already
+  pulled it in.
 - **Names in non-Latin scripts were thrown away by every extractor.** Entity
   scoring counted only `A-Z` letters and looked for an `A-Z` capital, so every
   name in Cyrillic, Greek, Arabic, Persian, Hebrew, Devanagari, Bengali, Thai,
