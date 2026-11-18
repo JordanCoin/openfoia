@@ -13,6 +13,19 @@ from email.utils import getaddresses
 from ..models import utcnow as _utcnow
 from .base import DeliveryGateway, DeliveryPayload, DeliveryResult, DeliveryStatus
 
+#: The name sent in EHLO. smtplib's default is socket.getfqdn(): the machine's
+#: hostname ("janes-macbook-pro.local"), which the mail server logs and often
+#: copies into a Received: header the agency reads. An address literal is
+#: valid EHLO syntax (RFC 5321) and is what many mail clients send.
+EHLO_NAME = "[127.0.0.1]"
+
+#: Shown by `request send` in Tor mode: SMTP is not routed through Tor.
+TOR_SMTP_WARNING = (
+    "Tor mode is on, but email is sent over SMTP directly, not through Tor: your "
+    "mail server sees your real IP address (and may copy it into the message "
+    "headers the agency receives)."
+)
+
 
 def validate_single_recipient(address: str) -> str:
     """Return *address* if it is exactly one plain email address.
@@ -55,6 +68,9 @@ class EmailGateway(DeliveryGateway):
     - Automatic read receipts (sometimes)
     - Easy attachment handling
     - Paper trail via sent folder
+
+    SMTP goes direct, never through Tor (see TOR_SMTP_WARNING); the EHLO
+    greeting does not carry this machine's hostname (EHLO_NAME).
     """
 
     def __init__(
@@ -123,7 +139,9 @@ class EmailGateway(DeliveryGateway):
             # Send
             def _send():
                 context = ssl.create_default_context()
-                with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+                with smtplib.SMTP(
+                    self.smtp_host, self.smtp_port, local_hostname=EHLO_NAME
+                ) as server:
                     if self.use_tls:
                         server.starttls(context=context)
                     if self.smtp_user and self.smtp_password:

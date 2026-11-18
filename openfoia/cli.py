@@ -1392,8 +1392,6 @@ def request_send(
         body = body_file.read_text()
     elif not body:
         rprint("[yellow]Enter request body (Ctrl+D when done):[/yellow]")
-        import sys
-
         body = sys.stdin.read()
 
     # Build payload
@@ -1534,6 +1532,26 @@ def request_send(
             api_key=lob_api_key,
             return_address=return_addr,
         )
+
+    # No delivery gateway is routed through Tor. Say so before anything is sent.
+    from .config import load_config
+
+    if load_config().network.tor:
+        from .gateways.email import TOR_SMTP_WARNING
+
+        tor_warning = (
+            TOR_SMTP_WARNING
+            if method == "email"
+            else (
+                f"Tor mode is on, but {method_labels[method]} is sent through "
+                f"{'Twilio' if method == 'fax' else 'Lob'} directly, not through Tor: "
+                "that service sees your real IP address."
+            )
+        )
+        rprint(f"\n[yellow]WARNING: {_safe(tor_warning)}[/yellow]")
+        if sys.stdin.isatty() and not typer.confirm("Send anyway?", default=False):
+            rprint("[dim]Not sent.[/dim]")
+            raise typer.Exit(1)
 
     rprint(f"\n[cyan]Sending via {method_labels[method]}...[/cyan]")
     result = asyncio.run(gateway.send(payload))

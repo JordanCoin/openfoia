@@ -23,7 +23,7 @@ TOR = EgressPolicy(mode=EgressMode.TOR)
 DIRECT = EgressPolicy()
 
 HOSTILE = (
-    "Acme \x1b]52;c;cm0gLXJmIH4K\x1b\\ \x1b]0;pwned\x07 \x9b31m ‮evil‬ "
+    "Acme \x1b]52;c;cm0gLXJmIH4K\x1b\\ \x1b]0;pwned\x07 \x9b31m \u202eevil\u202c "
     "\x1b[2J [link=https://evil.example/x]Verify[/link] Corp"
 )
 
@@ -39,7 +39,7 @@ def data_dir(tmp_path, monkeypatch):
 
 
 def _no_controls(text: str) -> bool:
-    return not any(ch in text for ch in "\x1b\x07\x9b‮‬")
+    return not any(ch in text for ch in "\x1b\x07\x9b\u202e\u202c")
 
 
 # ---------------------------------------------------------------------------
@@ -50,8 +50,8 @@ def _no_controls(text: str) -> bool:
 def test_safe_text_strips_controls_and_bidi_but_keeps_joiners():
     from openfoia.termsafe import safe_text
 
-    persian = "می‌خواهم"  # ZWNJ is part of the spelling
-    family = "\U0001f469‍\U0001f467"  # ZWJ emoji sequence
+    persian = "\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645"  # ZWNJ is part of the spelling
+    family = "\U0001f469\u200d\U0001f467"  # ZWJ emoji sequence
     out = safe_text(f"{HOSTILE} {persian} {family} \ud800")
     assert _no_controls(out)
     assert "\ud800" not in out
@@ -62,7 +62,7 @@ def test_safe_text_strips_controls_and_bidi_but_keeps_joiners():
 def test_safe_text_multiline_keeps_layout_only():
     from openfoia.termsafe import safe_text
 
-    out = safe_text("line1\r\nline2\x1b[31m\tcol line3", multiline=True)
+    out = safe_text("line1\r\nline2\x1b[31m\tcol\u2028line3", multiline=True)
     assert out == "line1\nline2[31m\tcol\nline3"
 
 
@@ -89,7 +89,7 @@ def test_safe_markup_is_never_parsed_as_markup():
 def test_safe_json_escapes_controls_and_round_trips():
     from openfoia.termsafe import safe_json
 
-    value = {"name": HOSTILE + " محمد ‍"}
+    value = {"name": HOSTILE + " محمد \u200d"}
     text = safe_json(value)
     assert _no_controls(text)
     assert "محمد" in text  # readable non-ASCII is kept
@@ -454,3 +454,82 @@ def test_download_to_file_checks_dns_and_refuses_redirecting_clients(monkeypatch
             download_to_file(redirecting, "https://x.example/a", tmp_path / "a", 10, egress=DIRECT)
         )
     assert not (tmp_path / "a").exists()
+
+
+# ---------------------------------------------------------------------------
+# A14: SMTP
+# ---------------------------------------------------------------------------
+
+
+def test_smtp_ehlo_name_is_not_the_hostname(monkeypatch):
+    from openfoia.gateways import email as email_mod
+    from openfoia.gateways.base import DeliveryPayload
+
+    seen = {}
+
+    class SMTP:
+        def __init__(self, host, port, local_hostname=None):
+            seen["local_hostname"] = local_hostname
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def starttls(self, context=None):
+            pass
+
+        def login(self, u, p):
+            pass
+
+        def send_message(self, msg, to_addrs=None):
+            pass
+
+    monkeypatch.setattr(email_mod.smtplib, "SMTP", SMTP)
+    monkeypatch.setattr(socket, "getfqdn", lambda *a: "janes-macbook-pro.local")
+    gw = email_mod.EmailGateway(smtp_host="smtp.example.org", smtp_user="u", smtp_password="p")
+    asyncio.run(gw.send(DeliveryPayload("FOIA", "foia@agency.example", "subj", "body")))
+    assert seen["local_hostname"] == email_mod.EHLO_NAME
+    assert "janes" not in email_mod.EHLO_NAME
+
+
+@pytest.mark.parametrize("tor", [True, False])
+def test_request_send_warns_that_email_skips_tor(data_dir, monkeypatch, tor):
+    from openfoia.cli import app
+    from openfoia.gateways import email as email_mod
+    from openfoia.gateways.base import DeliveryResult, DeliveryStatus
+
+    sent = []
+
+    async def fake_send(self, payload):
+        sent.append(payload)
+        return DeliveryResult(success=False, status=DeliveryStatus.FAILED, error_message="x")
+
+    monkeypatch.setattr(email_mod.EmailGateway, "send", fake_send)
+    monkeypatch.setenv("OPENFOIA_SMTP_USER", "u")
+    monkeypatch.setenv("OPENFOIA_SMTP_PASSWORD", "p")
+    if tor:
+        monkeypatch.setenv("OPENFOIA_TOR", "1")
+    r = runner.invoke(
+        app,
+        [
+            "request",
+            "send",
+            "-a",
+            "FBI",
+            "-s",
+            "Records",
+            "-b",
+            "Please send records.",
+            "-n",
+            "Jane",
+            "-e",
+            "jane@example.org",
+            "--to",
+            "foia@agency.example",
+        ],
+    )
+    assert sent, r.output  # non-interactive: warned, then sent
+    out = " ".join(r.output.split())
+    assert ("not through Tor" in out) is tor

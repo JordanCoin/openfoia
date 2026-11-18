@@ -55,7 +55,7 @@ def captured_smtp(monkeypatch):
     captured = {}
 
     class _SMTP:
-        def __init__(self, host, port):
+        def __init__(self, host, port, local_hostname=None):
             pass
 
         def __enter__(self):
@@ -98,7 +98,7 @@ def test_send_accepts_a_single_plain_address(monkeypatch):
     sent = {}
 
     class _SMTP:
-        def __init__(self, host, port):
+        def __init__(self, host, port, local_hostname=None):
             pass
 
         def __enter__(self):
@@ -134,7 +134,7 @@ def test_send_passes_explicit_envelope_recipients(monkeypatch):
     captured = {}
 
     class _SMTP:
-        def __init__(self, host, port):
+        def __init__(self, host, port, local_hostname=None):
             pass
 
         def __enter__(self):

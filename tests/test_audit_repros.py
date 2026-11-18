@@ -484,7 +484,6 @@ def test_a13_download_url_rejects_internal_spellings(url):
 
 
 @pytest.mark.allow_network  # loopback only: a fake SMTP server in this process
-@audit("A14 SMTP EHLO sends the local hostname (often the owner's name)")
 def test_a14_smtp_ehlo_does_not_leak_hostname(monkeypatch):
     from openfoia.gateways.base import DeliveryPayload
     from openfoia.gateways.email import EmailGateway
