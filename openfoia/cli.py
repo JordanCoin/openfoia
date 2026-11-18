@@ -312,7 +312,7 @@ def install_extras(
     extra: str = typer.Argument(
         ...,
         help="Extra to install: ner, ocr, fax, mail, cloud-ai, tor, browser, encryption, "
-        "semantic, all",
+        "semantic, mcp, all",
     ),
 ):
     """Install optional features after the initial setup.
@@ -325,6 +325,7 @@ def install_extras(
         openfoia install-extras cloud-ai     # Anthropic + OpenAI
         openfoia install-extras encryption   # SQLCipher encrypted database
         openfoia install-extras semantic     # offline search by meaning (docs grep --semantic)
+        openfoia install-extras mcp          # MCP server for agent clients (openfoia mcp serve)
         openfoia install-extras all          # everything
     """
     import subprocess
@@ -341,6 +342,7 @@ def install_extras(
         "browser",
         "encryption",
         "semantic",
+        "mcp",
         "all",
     }
     if extra not in valid:
@@ -358,6 +360,7 @@ def install_extras(
         "browser": "~50MB (+ playwright install after)",
         "encryption": "~5MB (also needs system libsqlcipher-dev)",
         "semantic": "~90MB (model2vec, tokenizers, numpy, sqlite-vec; the model is a separate download)",
+        "mcp": "~15MB (the MCP Python SDK, for openfoia mcp serve)",
         "all": "~2.5GB total",
     }
 
@@ -8505,6 +8508,78 @@ def analyze_import(
         rprint(f"[dim]Tagged as: {_safe(tag)}[/dim]")
     rprint("[dim]Run 'openfoia crossref' to cross-reference imported entities.[/dim]")
     rprint("[dim]Run 'openfoia analyze graph --view' to visualize.[/dim]")
+
+
+# === MCP Server ===
+
+mcp_app = typer.Typer(help="Local MCP server for agent clients (stdio only, no network port)")
+app.add_typer(mcp_app, name="mcp")
+
+
+@mcp_app.command("serve")
+def mcp_serve(
+    allow_network: bool = typer.Option(
+        False,
+        "--allow-network",
+        help="Let the openfoia_search tool send queries to public-records sources (after the "
+        "user confirms each search). Off by default: every other tool is offline.",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        help="Detailed logs on stderr. These can include queries and document text, and MCP "
+        "clients keep a server's stderr in log files.",
+    ),
+):
+    """Serve OpenFOIA to an MCP client (Claude Desktop, Claude Code...) over stdin/stdout.
+
+    The client starts this command itself; you do not run it by hand. It never
+    listens on a network port. Tools: openfoia_search (network; off unless
+    --allow-network, and each search needs the user's confirmation) and
+    read-only local tools over your cases, stored documents, entities and
+    requests. No tool deletes, purges, sends requests, email, fax or mail, or
+    changes config. Everything a tool returns goes to the client's model
+    provider. See docs/GUIDE.md (MCP server) for client configuration.
+
+    Examples:
+        openfoia mcp tools
+        openfoia mcp serve
+        openfoia mcp serve --allow-network
+    """
+    from .mcp_server import MCPUnavailable, serve
+
+    if sys.stdin.isatty():
+        typer.echo(
+            "openfoia mcp serve speaks MCP on stdin/stdout; an MCP client starts it. "
+            "See 'openfoia mcp tools'. Ctrl-C to exit.",
+            err=True,
+        )
+    try:
+        serve(allow_network=allow_network, verbose=verbose)
+    except MCPUnavailable as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from None
+
+
+@mcp_app.command("tools")
+def mcp_tools(
+    allow_network: bool = typer.Option(
+        False, "--allow-network", help="Describe the tools as 'mcp serve --allow-network' would"
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Print the tools/list entries as JSON"),
+):
+    """List the tools 'openfoia mcp serve' offers an agent. Works without the mcp extra."""
+    from .mcp_server import ServerOptions, tool_list
+
+    tools = tool_list(ServerOptions(allow_network=allow_network))
+    if as_json:
+        typer.echo(json.dumps(tools, indent=2))
+        return
+    for t in tools:
+        kind = "network" if t["annotations"]["openWorldHint"] else "local, read-only"
+        typer.echo(f"{t['name']:<24} {kind}")
+    if not allow_network:
+        typer.echo("\nopenfoia_search sends nothing unless the server runs with --allow-network.")
 
 
 # === Main Entry Point ===
