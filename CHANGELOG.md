@@ -242,6 +242,8 @@ exhaustive lists.
 
 ### Security
 
+These come from an outside security audit (November 2026).
+
 - **Duress mode could leave the real investigation unencrypted.**
   `openfoia init --duress-password X` without `--password`/`--encrypt` printed
   "Duress mode configured" while the real database (`profile_0.db`) stayed a
@@ -383,10 +385,8 @@ exhaustive lists.
   decompressed (at most 128 MiB per part, 1 GiB in total, 10,000 parts, and no
   part over 1 MiB that expands more than 200 times), and members are cleaned
   one at a time. A file over a limit is stored as received and reported as
-  "metadata NOT stripped: too large to clean safely". Text extraction of such
-  a file is not limited yet.
-These come from an outside security audit (November 2026).
-
+  "metadata NOT stripped: too large to clean safely". Text extraction applies
+  the same check, so such a file is not opened for its text either.
 - **One unwritable file stopped `purge --secure`.** Ingest copied a read-only
   original's mode (0444) onto the stored copy, and the first file purge could
   not open for writing aborted the purge, leaving every file after it and the

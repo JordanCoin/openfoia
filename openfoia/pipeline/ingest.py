@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import mimetypes
 import shutil
 from dataclasses import dataclass
@@ -13,6 +14,8 @@ from uuid import uuid4
 
 from ..models import DocumentType
 from ..models import utcnow as _utcnow
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -407,6 +410,17 @@ class DocumentIngester:
 
     def _extract_text_docx(self, docx_path: Path) -> str | None:
         """Extract text from DOCX including tables."""
+        from .metadata import docx_archive_problem
+
+        # python-docx decompresses every part it loads: check the zip directory
+        # first, as metadata stripping does, so a zip bomb is refused unread.
+        try:
+            problem = docx_archive_problem(docx_path)
+        except Exception:
+            return None
+        if problem:
+            logger.warning("Not extracting text from %s: %s", docx_path.name, problem)
+            return None
         try:
             from docx import Document as DocxDocument
 

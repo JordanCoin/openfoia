@@ -1172,3 +1172,23 @@ def test_large_ordinary_docx_part_is_still_cleaned(tmp_path):
     _write_docx(path, members)
 
     assert strip_metadata(path)["status"] == "stripped"
+
+
+def test_docx_zip_bomb_is_not_opened_for_text_extraction(tmp_path, monkeypatch):
+    """Stripping refused it; text extraction must not decompress it either."""
+    import zipfile
+
+    from openfoia.pipeline.ingest import DocumentIngester
+
+    path = _docx_with_big_media(tmp_path / "bomb.docx", 64 * 2**20)
+    opened: list[str] = []
+
+    def record(self, name, *args, **kwargs):
+        # Recorded, not raised: the extractor catches every exception.
+        opened.append(getattr(name, "filename", name))
+        raise RuntimeError("a member was decompressed")
+
+    monkeypatch.setattr(zipfile.ZipFile, "open", record)
+
+    assert DocumentIngester._extract_text_docx(None, path) is None
+    assert opened == []
