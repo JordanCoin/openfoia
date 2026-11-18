@@ -355,15 +355,15 @@ def test_every_entity_reader_counts_a_reextracted_document_once(tmp_path, monkey
 
     # web UI API
     client = TestClient(create_app(token="t", data_dir=tmp_path), base_url="http://127.0.0.1")
-    auth = {"token": "t"}
-    assert client.get("/api/stats", params=auth).json()["entities"] == {
+    auth = {"Authorization": "Bearer t"}  # the token is never accepted in the query string
+    assert client.get("/api/stats", headers=auth).json()["entities"] == {
         "total": 2,
         "people": 2,
         "organizations": 0,
     }
-    listed = client.get("/api/entities", params=auth).json()
+    listed = client.get("/api/entities", headers=auth).json()
     assert {e["normalized_text"] for e in listed["entities"]} == {"Olu Sample", "Cy Current"}
-    graph = client.get("/api/graph", params=auth).json()
+    graph = client.get("/api/graph", headers=auth).json()
     assert {n["label"] for n in graph["nodes"]} == {"Olu Sample", "Cy Current"}
     assert len(graph["edges"]) == 1
 

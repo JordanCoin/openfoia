@@ -128,7 +128,6 @@ arrive at the destination either way.
    database the leftovers are encrypted too; without encryption they can be
    carved from the file. `openfoia docs embed --drop` zeroes the space it frees;
    other deletes do not. `purge --secure` shreds the whole file.
-
 7. **Other accounts on the same machine and the web UI.** `openfoia serve`
    opens the browser at a login link (`/login?nonce=...`). Any local account
    can read a browser's command line, so the link is single-use and expires
@@ -139,7 +138,7 @@ arrive at the destination either way.
    that happens the browser shows "Login link already used" and the terminal
    prints a warning: stop the server and start it again. An account that can
    read your memory or attach a debugger to your processes is out of scope.
-7. **What portable mode keeps off the host.** With a `.openfoia-portable`
+8. **What portable mode keeps off the host.** With a `.openfoia-portable`
    marker, the database, config, documents, and the caches of optional model
    libraries (Hugging Face, torch, matplotlib, and anything that honours
    `XDG_CACHE_HOME`) live in `openfoia-data/` on the stick, and the browser
