@@ -203,7 +203,7 @@ When a jurisdiction sets no clock the status says "no statutory deadline" and ne
 - The CIA reading room source is blocked by cia.gov's bot filter today. Do not try to automate a browser around it.
 - Documents stored before 4.3.0 have one page; re-fetch with `--refresh` for real page numbers.
 - `analyze extract --force` adds a run and keeps the earlier entities in the database; `analyze runs <doc-id> --prune` deletes them. Pick an earlier run with `analyze extract <doc-id> --prefer-run <run-id>`.
-- The database is not encrypted until `openfoia install-extras encryption` and `openfoia db encrypt --password <pw>`.
+- The database is not encrypted until `openfoia install-extras encryption` and `openfoia db encrypt`. That command prompts: ask the user to run it in their own terminal, and never put a passphrase in a command line (shell history, process list).
 - `openfoia purge` is an ordinary delete unless `--secure`; on SSDs even that may leave old blocks. Say so.
 
 ## Tone
@@ -224,7 +224,7 @@ openfoia docs ocr <file.pdf> -o out.txt
 openfoia ingest --url <url>           # web page as a document; network
 openfoia serve                         # local web UI, random port, token auth
 openfoia egress-status | browse <url> | portable | purge [--secure]
-openfoia init | guide | config --show | install-extras <name> | db upgrade | db encrypt --password <pw>
+openfoia init | guide | config --show | install-extras <name> | db upgrade | db encrypt
 ```
 
 ## Quick reference

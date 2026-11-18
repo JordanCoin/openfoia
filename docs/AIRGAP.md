@@ -76,7 +76,7 @@ pip install --no-index --find-links=/path/to/usb/openfoia-offline openfoia
 
 ```bash
 export OPENFOIA_DATA_DIR="/path/to/usb/data"
-openfoia init --password YOUR_SECRET
+openfoia init --encrypt          # prompts for the passphrase
 ```
 
 ### 4. Transfer Documents via Sneakernet
@@ -128,14 +128,37 @@ Even on an encrypted volume, enabling SQLCipher adds a second layer:
 
 ```bash
 pip install 'openfoia[encryption]'
-openfoia init --password YOUR_SECRET
+openfoia init --encrypt          # prompts for the passphrase
 ```
+
+Later commands read the passphrase from `OPENFOIA_DB_PASSWORD`. Set it
+with `read` so it is typed without echo and never appears on a command line:
+
+```bash
+read -rs OPENFOIA_DB_PASSWORD && export OPENFOIA_DB_PASSWORD   # bash, zsh
+read -s -x OPENFOIA_DB_PASSWORD                                # fish
+```
+
+The variable lasts until the terminal closes and is readable by programs
+running as your user.
+
+Never type a passphrase as a command-line argument (`--password VALUE`,
+`OPENFOIA_DB_PASSWORD=VALUE openfoia ...`): it is saved in your shell history
+and is visible in the process list while the command runs. If you already
+did, delete those lines from `~/.bash_history` / `~/.zsh_history` (fish:
+`history delete --contains openfoia`), and treat that passphrase as exposed.
+`openfoia purge --secure` also removes lines that mention `openfoia` or
+`run.sh`, but only when you purge.
 
 ### Duress Mode
 
 ```bash
-openfoia init --password YOUR_SECRET --duress-password INNOCENT_PASSWORD
+openfoia init --encrypt --duress   # prompts for the real and the duress passphrase
 ```
+
+Duress mode requires the real database to be encrypted; `init` refuses to set
+up a decoy next to a plaintext database. For an existing database run
+`openfoia db encrypt` first, then `openfoia init --duress`.
 
 If compelled to open OpenFOIA, use the duress password to reveal only a
 decoy database with bland FOIA requests about weather data and park
@@ -180,8 +203,9 @@ network access at all.
 - [ ] Air-gapped machine has no WiFi/Ethernet/Bluetooth enabled
 - [ ] USB drive is encrypted (LUKS, VeraCrypt, or hardware encryption)
 - [ ] `OPENFOIA_DATA_DIR` points to the encrypted volume
-- [ ] Database encryption enabled (`--password`)
-- [ ] Duress mode configured (`--duress-password`)
+- [ ] Database encryption enabled (`openfoia init --encrypt` or `openfoia db encrypt`)
+- [ ] Duress mode configured (`--duress`, which prompts)
+- [ ] No passphrase typed on a command line or left in shell history
 - [ ] Swap disabled or encrypted on the air-gapped machine
 - [ ] Ollama running locally for AI features (no cloud API keys)
 - [ ] Running v4.0.0 or later (earlier versions load CSS from a CDN on every

@@ -397,6 +397,69 @@ exhaustive lists.
   one at a time. A file over a limit is stored as received and reported as
   "metadata NOT stripped: too large to clean safely". Text extraction of such
   a file is not limited yet.
+These come from an outside security audit (November 2026).
+
+- **Duress mode could leave the real investigation unencrypted.**
+  `openfoia init --duress-password X` without `--password`/`--encrypt` printed
+  "Duress mode configured" while the real database (`profile_0.db`) stayed a
+  plaintext SQLite file next to an encrypted decoy, which pointed an examiner
+  straight at it. `init` now refuses and creates nothing, `init --duress` on
+  an existing database refuses unless that database is encrypted, and success
+  is only printed after both files are checked on disk. **If you set up duress
+  mode this way, check:** `head -c 15 profile_0.db` printing `SQLite format 3`
+  means the real database is plaintext. Run `openfoia db encrypt`, then set up
+  the decoy again with `openfoia init --duress`.
+- **One unwritable file stopped `purge --secure`.** Ingest copied a read-only
+  original's mode (0444) onto the stored copy, and the first file purge could
+  not open for writing aborted the purge, leaving every file after it and the
+  shell history untouched. Stored copies are now 0600; purge makes read-only
+  files writable before overwriting, carries on past any file it cannot
+  overwrite (deleting it without overwriting if it can), always scrubs shell
+  history, and ends by listing every file that was not overwritten or is
+  still on disk, with exit status 1.
+- **The setup guides put passphrases on the command line.** TAILS.md, USB.md,
+  AIRGAP.md, GUIDE.md and THREAT_MODEL.md showed
+  `openfoia init --password ... --duress-password ...`, which writes both
+  passphrases into shell history. They now use `init --encrypt --duress` and
+  `db encrypt`, which prompt, and `read -rs OPENFOIA_DB_PASSWORD` for later
+  commands. **If you followed the old instructions,** delete those lines from
+  your shell history and treat both passphrases as exposed.
+- **The decoy database was easy to tell from a real one.** It was 0644 where
+  the real file is 0600, had no migration record or full-text index, three
+  agencies instead of the full list, and the same fixed content on every
+  install. It is now built through the same migrations and agency seed as a
+  real database, made 0600, and filled with randomized requests, documents and
+  entities spread over past months. The generator is public source code, so
+  the decoy still does not survive someone who reads it; see
+  docs/THREAT_MODEL.md. Re-create an existing decoy with `openfoia init --duress`.
+- **Shell-history scrubbing missed fish, `$HISTFILE` and `./run.sh`.**
+  `purge --secure` now also cleans `~/.local/share/fish/fish_history` and the
+  file `$HISTFILE` names, and removes `run.sh` wrapper lines, `python -m
+  openfoia` lines and their backslash continuations. It overwrites the old
+  bytes instead of truncating. It also tells you that the shell you run it
+  from writes its in-memory history back when it exits, and how to stop that.
+- **Exports were written to the current directory, where purge never looked.**
+  `analyze graph` (`graph.json`), `analyze export` (`entities.ftm.json`),
+  `entities export` and `records download` (`./downloads`) now default to
+  `exports/` in the data directory. When you name an output path elsewhere
+  (`--output`, `--csv`), it is recorded in `exports_manifest.json` in the data
+  directory; purge lists those files in its prompt and removes them. **Files
+  exported by earlier versions are not recorded**: find and delete any
+  `graph.json`, `graph.html`, `entities.ftm.json` and `downloads/` you left
+  in working directories. The purge prompt now also says what it does not
+  remove, and that fast purge does not overwrite.
+- **`init --force` left the old database recoverable.** It plain-unlinked
+  `data.db` and left its `-wal`/`-shm` files and, with duress mode, both
+  profile files. It now overwrites and removes all of them and says that
+  other files in the data directory were not touched.
+- **OCR page images were deleted with an ordinary unlink.** The rasterized
+  pages of a PDF being OCR'd are now overwritten before they are removed.
+- **`openfoia db encrypt` failed on any database with stored pages** ("no such
+  table: document_pages_fts"), so a database could not be encrypted once
+  documents had been ingested. It now copies with SQLCipher's exporter (every
+  table, index, trigger and full-text index), checks the encrypted copy before
+  touching the original, and reads the plaintext read-only so its `-wal` file
+  is overwritten rather than deleted by SQLite.
 
 ## [4.7.0] - 2026-10-23
 
