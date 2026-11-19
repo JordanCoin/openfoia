@@ -92,6 +92,29 @@ def test_rebinding_resolver_cannot_redirect_the_download(monkeypatch, tmp_path, 
     assert not (tmp_path / "a.pdf").exists()
 
 
+@pytest.mark.parametrize("https_proxy", [None, "http://127.0.0.1:9"])
+def test_no_proxy_hosts_are_pinned_too(monkeypatch, tmp_path, backend, https_proxy):
+    """A NO_PROXY match connects directly, so it gets the same vetted connect path."""
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"):
+        monkeypatch.delenv(name, raising=False)
+        monkeypatch.delenv(name.lower(), raising=False)
+    monkeypatch.setenv("NO_PROXY", "files.example.org")
+    if https_proxy:
+        monkeypatch.setenv("HTTPS_PROXY", https_proxy)
+    answers = iter([PUBLIC, "127.0.0.1"])
+    monkeypatch.setattr(base, "_getaddrinfo", lambda h, *a, **k: _answer(next(answers)))
+
+    async def go():
+        async with egress_client(DIRECT, follow_redirects=False) as client:  # trust_env on
+            return await base.download_to_file(
+                client, URL, tmp_path / "a.pdf", max_bytes=1 << 20, egress=DIRECT
+            )
+
+    with pytest.raises(UnsafeAddressError):
+        asyncio.run(go())
+    assert backend.connects == []
+
+
 @pytest.mark.parametrize("internal", ["10.0.0.5", "169.254.169.254", "::1", "::ffff:127.0.0.1"])
 def test_connect_path_refuses_internal_answers(monkeypatch, tmp_path, backend, internal):
     answers = iter([PUBLIC, internal])
