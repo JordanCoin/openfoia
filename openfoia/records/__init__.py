@@ -9,8 +9,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from .aleph import AlephAdapter
 from .base import DataGovAdapter
 from .cia import CIAReadingRoomAdapter
+from .companies_house import CompaniesHouseAdapter
 from .courtlistener import CourtListenerAdapter
 from .documentcloud import DocumentCloudAdapter
 from .fec import FECAdapter
@@ -85,6 +87,8 @@ def _auto_register() -> None:
     register("nara", NARAAdapter)
     register("courtlistener", CourtListenerAdapter)
     register("opensanctions", OpenSanctionsAdapter)
+    register("aleph", AlephAdapter)
+    register("companieshouse", CompaniesHouseAdapter)
 
 
 _auto_register()
