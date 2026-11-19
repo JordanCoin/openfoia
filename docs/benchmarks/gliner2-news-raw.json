@@ -1,0 +1,12445 @@
+{
+ "note": "2026-11-19 follow-up: tests/benchmark_extraction.py --ner-model english|multilingual --repeat 11 --threads T --multilingual, one process each; interleave-*: --interleave. NEWS sentences are machine-written and not reviewed by native speakers.",
+ "runs": {
+  "english-t2": {
+   "doc_chars": 1780,
+   "doc_words": 266,
+   "runs": [
+    {
+     "backend": "regex",
+     "model": null,
+     "loadavg_before": [
+      2.45068359375,
+      1.85498046875,
+      1.03076171875
+     ],
+     "page_s": [
+      0.0019198490000462698,
+      0.0011148150000508394,
+      0.0010181390000525425,
+      0.0010454550000531526,
+      0.001013036999893302,
+      0.0010018250000030093,
+      0.0009798549999686657,
+      0.0010222759999578557,
+      0.0009903950000307304,
+      0.0009822079999821653,
+      0.0009763599999814687
+     ],
+     "page_cpu_s": [
+      0.0019176479999998275,
+      0.0011151289999999925,
+      0.0010183580000000525,
+      0.0010457790000000244,
+      0.0010132959999999969,
+      0.0010021410000000675,
+      0.0009800769999999126,
+      0.0010229090000000163,
+      0.0009908209999998085,
+      0.0009824569999998811,
+      0.0009765629999998193
+     ],
+     "types": {
+      "address": [
+       0,
+       0,
+       0,
+       1
+      ],
+      "date": [
+       5,
+       0,
+       5,
+       5
+      ],
+      "document_id": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "email": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "location": [
+       0,
+       0,
+       0,
+       2
+      ],
+      "money": [
+       2,
+       0,
+       2,
+       2
+      ],
+      "organization": [
+       0,
+       0,
+       0,
+       8
+      ],
+      "person": [
+       0,
+       0,
+       0,
+       7
+      ],
+      "phone": [
+       1,
+       0,
+       1,
+       1
+      ]
+     },
+     "types_strict": {
+      "address": [
+       0,
+       0,
+       0,
+       1
+      ],
+      "date": [
+       5,
+       0,
+       5,
+       5
+      ],
+      "document_id": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "email": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "location": [
+       0,
+       0,
+       0,
+       2
+      ],
+      "money": [
+       2,
+       0,
+       2,
+       2
+      ],
+      "organization": [
+       0,
+       0,
+       0,
+       8
+      ],
+      "person": [
+       0,
+       0,
+       0,
+       7
+      ],
+      "phone": [
+       1,
+       0,
+       1,
+       1
+      ]
+     },
+     "ner": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "counts": [
+       0,
+       0,
+       0,
+       17
+      ]
+     },
+     "ner_strict": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "counts": [
+       0,
+       0,
+       0,
+       17
+      ]
+     },
+     "relationships": [
+      0,
+      11
+     ],
+     "entities": [
+      "date:February 22, 2025",
+      "date:January 8, 2026",
+      "date:March 1, 2025",
+      "date:March 15, 2026",
+      "date:September 12, 2024",
+      "document_id:DOJ-2026-001234",
+      "email:michael.torres@usdoj.gov",
+      "money:$14,750,000",
+      "money:$3,200,000",
+      "phone:(202) 514-3642"
+     ],
+     "ner_model_ran": null,
+     "multilingual": {
+      "rows": [
+       {
+        "lang": "ru",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ru",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "uk",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "el",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "he",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "hi",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "bn",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "th",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ja",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ja",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ko",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ka",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "hy",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "am",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "tr",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "sw",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "pt",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       }
+      ],
+      "s": 0.0024189829999841095,
+      "by_lang": {
+       "ru": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "uk": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "el": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "ar": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "fa": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "he": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "hi": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "bn": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "th": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "zh": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "ja": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "ko": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "ka": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "hy": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "am": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "tr": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "sw": {
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       "pt": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       }
+      },
+      "loose": {
+       "precision": 0.0,
+       "recall": 0.0,
+       "f1": 0.0,
+       "counts": [
+        0,
+        0,
+        0,
+        27
+       ]
+      },
+      "strict": {
+       "precision": 0.0,
+       "recall": 0.0,
+       "f1": 0.0,
+       "counts": [
+        0,
+        0,
+        0,
+        27
+       ]
+      }
+     },
+     "news": {
+      "rows": [
+       {
+        "lang": "tr",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "tr",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "sw",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "sw",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "pt",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "pt",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "es",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "es",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "ru",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "ru",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "uk",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "uk",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "hi",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "hi",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "bn",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "bn",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "id",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "id",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "fr",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "fr",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       }
+      ],
+      "s": 0.003740041000014571,
+      "by_lang": {
+       "tr": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "sw": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "pt": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "es": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "ar": {
+        "loose": [
+         0,
+         0,
+         0,
+         6
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         6
+        ]
+       },
+       "fa": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "ru": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "uk": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "hi": {
+        "loose": [
+         0,
+         0,
+         0,
+         6
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         6
+        ]
+       },
+       "bn": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "zh": {
+        "loose": [
+         0,
+         0,
+         0,
+         6
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         6
+        ]
+       },
+       "id": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "fr": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       }
+      },
+      "loose": {
+       "precision": 0.0,
+       "recall": 0.0,
+       "f1": 0.0,
+       "counts": [
+        0,
+        0,
+        0,
+        68
+       ]
+      },
+      "strict": {
+       "precision": 0.0,
+       "recall": 0.0,
+       "f1": 0.0,
+       "counts": [
+        0,
+        0,
+        0,
+        68
+       ]
+      }
+     }
+    },
+    {
+     "backend": "gliner",
+     "model": "ner_model:english",
+     "load_s": 5.121455506999951,
+     "loadavg_before": [
+      2.33447265625,
+      1.84033203125,
+      1.0302734375
+     ],
+     "page_s": [
+      1.0338055909999184,
+      0.7606843099999878,
+      0.8296535480000102,
+      0.8693779300000415,
+      0.8719480850000991,
+      0.8314510259999679,
+      0.7082351660000086,
+      0.7163527830000476,
+      0.7074825679999321,
+      0.7482428770000524,
+      0.8468497730000308
+     ],
+     "page_cpu_s": [
+      2.0172259849999987,
+      1.5083770359999988,
+      1.640441848,
+      1.7205471329999984,
+      1.7127268329999996,
+      1.644798971000002,
+      1.4059163519999984,
+      1.420110059999999,
+      1.4041955769999994,
+      1.4771618249999996,
+      1.6689389759999997
+     ],
+     "types": {
+      "address": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "date": [
+       5,
+       0,
+       5,
+       5
+      ],
+      "document_id": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "email": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "location": [
+       1,
+       0,
+       1,
+       2
+      ],
+      "money": [
+       2,
+       0,
+       2,
+       2
+      ],
+      "organization": [
+       9,
+       0,
+       8,
+       8
+      ],
+      "person": [
+       7,
+       1,
+       7,
+       7
+      ],
+      "phone": [
+       1,
+       0,
+       1,
+       1
+      ]
+     },
+     "types_strict": {
+      "address": [
+       0,
+       1,
+       0,
+       1
+      ],
+      "date": [
+       5,
+       0,
+       5,
+       5
+      ],
+      "document_id": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "email": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "location": [
+       1,
+       0,
+       1,
+       2
+      ],
+      "money": [
+       2,
+       0,
+       2,
+       2
+      ],
+      "organization": [
+       9,
+       0,
+       8,
+       8
+      ],
+      "person": [
+       5,
+       3,
+       5,
+       7
+      ],
+      "phone": [
+       1,
+       0,
+       1,
+       1
+      ]
+     },
+     "ner": {
+      "precision": 0.9444444444444444,
+      "recall": 0.9411764705882353,
+      "f1": 0.9428076256499133,
+      "counts": [
+       17,
+       1,
+       16,
+       17
+      ]
+     },
+     "ner_strict": {
+      "precision": 0.8333333333333334,
+      "recall": 0.8235294117647058,
+      "f1": 0.8284023668639053,
+      "counts": [
+       15,
+       3,
+       14,
+       17
+      ]
+     },
+     "relationships": [
+      8,
+      11
+     ],
+     "entities": [
+      "address:441 G Street, NW",
+      "date:February 22, 2025",
+      "date:January 8, 2026",
+      "date:March 1, 2025",
+      "date:March 15, 2026",
+      "date:September 12, 2024",
+      "document_id:DOJ-2026-001234",
+      "email:michael.torres@usdoj.gov",
+      "location:Washington, DC",
+      "money:$14,750,000",
+      "money:$3,200,000",
+      "organization:Armed Services Committee",
+      "organization:Consolidated Federal\nServices LLC",
+      "organization:Defense Intelligence Agency",
+      "organization:Department of Defense",
+      "organization:Department of Justice",
+      "organization:First National Bank of Virginia",
+      "organization:Meridian Defense Systems",
+      "organization:Office of Information Policy",
+      "organization:Pentagon",
+      "person:Daniel Okoro",
+      "person:Director",
+      "person:James R. Whitfield",
+      "person:Lisa Park",
+      "person:Michael Torres",
+      "person:Ms. Sarah Chen",
+      "person:Robert Garrison",
+      "person:Senator Maria Gonzalez",
+      "phone:(202) 514-3642"
+     ],
+     "ner_model_ran": "urchade/gliner_medium-v2.1",
+     "multilingual": {
+      "rows": [
+       {
+        "lang": "ru",
+        "got": [
+         "organization:министерством",
+         "person:Газпром"
+        ],
+        "loose": [
+         0,
+         2,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         2,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ru",
+        "got": [
+         "person:Алексей Навальный"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "uk",
+        "got": [
+         "location:понеділок",
+         "person:Володимир Зеленський"
+        ],
+        "loose": [
+         1,
+         1,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         1,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "el",
+        "got": [
+         "person:Ο Κυριάκος Μητσοτάκης"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [
+         "organization:وزارة الداخلية"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "he",
+        "got": [
+         "person:בנימין נתניהו"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [
+         "location:تهران"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "hi",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "bn",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "th",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ja",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [
+         "person:王伟昨天签署了合同"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ja",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ko",
+        "got": [
+         "person:김정은은"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ka",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "hy",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "am",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "tr",
+        "got": [
+         "location:İstanbul Büyükşehir Belediyesi",
+         "person:Ahmet Yılmaz"
+        ],
+        "loose": [
+         2,
+         0,
+         1,
+         2
+        ],
+        "strict": [
+         1,
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "lang": "sw",
+        "got": [
+         "location:Nairobi",
+         "organization:Wizara ya Fedha ilimlipa",
+         "person:John Mwangi"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         2,
+         1,
+         2,
+         3
+        ]
+       },
+       {
+        "lang": "pt",
+        "got": [
+         "organization:A Prefeitura de São Paulo",
+         "organization:Construtora Horizonte Ltda"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         1,
+         1,
+         1,
+         2
+        ]
+       }
+      ],
+      "s": 3.6862805590000107,
+      "by_lang": {
+       "ru": {
+        "loose": [
+         1,
+         2,
+         1,
+         2
+        ],
+        "strict": [
+         1,
+         2,
+         1,
+         2
+        ]
+       },
+       "uk": {
+        "loose": [
+         1,
+         1,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         1,
+         1,
+         1
+        ]
+       },
+       "el": {
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         1
+        ]
+       },
+       "ar": {
+        "loose": [
+         1,
+         0,
+         1,
+         2
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         2
+        ]
+       },
+       "fa": {
+        "loose": [
+         1,
+         0,
+         1,
+         2
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         2
+        ]
+       },
+       "he": {
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       "hi": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "bn": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "th": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "zh": {
+        "loose": [
+         1,
+         0,
+         1,
+         2
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         2
+        ]
+       },
+       "ja": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "ko": {
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         1
+        ]
+       },
+       "ka": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "hy": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "am": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "tr": {
+        "loose": [
+         2,
+         0,
+         1,
+         2
+        ],
+        "strict": [
+         1,
+         1,
+         1,
+         2
+        ]
+       },
+       "sw": {
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         2,
+         1,
+         2,
+         3
+        ]
+       },
+       "pt": {
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         1,
+         1,
+         1,
+         2
+        ]
+       }
+      },
+      "loose": {
+       "precision": 0.8333333333333334,
+       "recall": 0.5185185185185185,
+       "f1": 0.639269406392694,
+       "counts": [
+        15,
+        3,
+        14,
+        27
+       ]
+      },
+      "strict": {
+       "precision": 0.5,
+       "recall": 0.3333333333333333,
+       "f1": 0.4,
+       "counts": [
+        9,
+        9,
+        9,
+        27
+       ]
+      }
+     },
+     "news": {
+      "rows": [
+       {
+        "lang": "tr",
+        "got": [
+         "person:Mehmet Demir"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         2
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         2
+        ]
+       },
+       {
+        "lang": "tr",
+        "got": [
+         "location:İzmir",
+         "person:Ayşe Kaya"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         3
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         3
+        ]
+       },
+       {
+        "lang": "sw",
+        "got": [
+         "location:Mombasa",
+         "person:Mkaguzi",
+         "person:Serikali",
+         "person:Wizara ya Afya"
+        ],
+        "loose": [
+         1,
+         3,
+         1,
+         2
+        ],
+        "strict": [
+         1,
+         3,
+         1,
+         2
+        ]
+       },
+       {
+        "lang": "sw",
+        "got": [
+         "location:Nairobi",
+         "location:msemaji wa Benki Kuu ya Kenya",
+         "person:Grace Wanjiku"
+        ],
+        "loose": [
+         3,
+         0,
+         2,
+         3
+        ],
+        "strict": [
+         2,
+         1,
+         2,
+         3
+        ]
+       },
+       {
+        "lang": "pt",
+        "got": [
+         "location:Brasília",
+         "organization:Tribunal de Contas da União",
+         "person:Carlos Almeida"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "pt",
+        "got": [
+         "organization:Alfa Engenharia S.A.",
+         "organization:Petrobras"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "es",
+        "got": [
+         "location:Bogotá",
+         "organization:La Contraloría General de la República",
+         "person:alcalde Jorge Ramírez"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         1,
+         2,
+         1,
+         3
+        ]
+       },
+       {
+        "lang": "es",
+        "got": [
+         "organization:Construcciones del Norte S.A.",
+         "organization:Ministerio de Obras Públicas"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [
+         "organization:شركة النور للمقاولات",
+         "person:دينار"
+        ],
+        "loose": [
+         1,
+         1,
+         1,
+         3
+        ],
+        "strict": [
+         1,
+         1,
+         1,
+         3
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [
+         "location:القاهرة",
+         "organization:ع وزير المالية",
+         "person:أحمد الخطيب الاتفاقية"
+        ],
+        "loose": [
+         3,
+         0,
+         2,
+         3
+        ],
+        "strict": [
+         1,
+         2,
+         1,
+         3
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [
+         "organization:شرکت پارس"
+        ],
+        "loose": [
+         1,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [
+         "person:علی رضایی",
+         "person:معاون وزیر نفت"
+        ],
+        "loose": [
+         1,
+         1,
+         1,
+         2
+        ],
+        "strict": [
+         1,
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "lang": "ru",
+        "got": [
+         "location:Счётная палата",
+         "organization:СтройИнвест",
+         "organization:мэрией Новосибирска"
+        ],
+        "loose": [
+         2,
+         1,
+         1,
+         2
+        ],
+        "strict": [
+         2,
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "lang": "ru",
+        "got": [
+         "location:Москве",
+         "organization:Газпромбанком",
+         "person:Ирина Смирнова"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "uk",
+        "got": [
+         "location:Харкові",
+         "organization:Національне антикорупційне бюро України",
+         "person:Олегу Коваленку"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "uk",
+        "got": [
+         "organization:Міністерство оборони",
+         "organization:Техноресурс"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "hi",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "hi",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "bn",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "bn",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [
+         "organization:华信建设公司在2023年获得了上海市政府的三个项目"
+        ],
+        "loose": [
+         1,
+         0,
+         2,
+         3
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "id",
+        "got": [
+         "location:Surabaya",
+         "organization:Komisi Pemberantasan Korupsi",
+         "person:Budi Santoso"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "id",
+        "got": [
+         "organization:Badan Pemeriksa Keuangan",
+         "organization:Kementerian Kesehatan",
+         "person:sebesar"
+        ],
+        "loose": [
+         2,
+         1,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         1,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "fr",
+        "got": [
+         "organization:La Cour des comptes",
+         "organization:Méditerranée Travaux"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         1,
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "lang": "fr",
+        "got": [
+         "location:Dakar",
+         "organization:Banque mondiale",
+         "person:Paul Lefèvre"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       }
+      ],
+      "s": 4.85072716500008,
+      "by_lang": {
+       "tr": {
+        "loose": [
+         3,
+         0,
+         3,
+         5
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         5
+        ]
+       },
+       "sw": {
+        "loose": [
+         4,
+         3,
+         3,
+         5
+        ],
+        "strict": [
+         3,
+         4,
+         3,
+         5
+        ]
+       },
+       "pt": {
+        "loose": [
+         5,
+         0,
+         5,
+         5
+        ],
+        "strict": [
+         5,
+         0,
+         5,
+         5
+        ]
+       },
+       "es": {
+        "loose": [
+         5,
+         0,
+         5,
+         5
+        ],
+        "strict": [
+         3,
+         2,
+         3,
+         5
+        ]
+       },
+       "ar": {
+        "loose": [
+         4,
+         1,
+         3,
+         6
+        ],
+        "strict": [
+         2,
+         3,
+         2,
+         6
+        ]
+       },
+       "fa": {
+        "loose": [
+         2,
+         1,
+         1,
+         5
+        ],
+        "strict": [
+         1,
+         2,
+         1,
+         5
+        ]
+       },
+       "ru": {
+        "loose": [
+         5,
+         1,
+         4,
+         5
+        ],
+        "strict": [
+         5,
+         1,
+         4,
+         5
+        ]
+       },
+       "uk": {
+        "loose": [
+         5,
+         0,
+         5,
+         5
+        ],
+        "strict": [
+         5,
+         0,
+         5,
+         5
+        ]
+       },
+       "hi": {
+        "loose": [
+         0,
+         0,
+         0,
+         6
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         6
+        ]
+       },
+       "bn": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "zh": {
+        "loose": [
+         1,
+         0,
+         2,
+         6
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         6
+        ]
+       },
+       "id": {
+        "loose": [
+         5,
+         1,
+         5,
+         5
+        ],
+        "strict": [
+         5,
+         1,
+         5,
+         5
+        ]
+       },
+       "fr": {
+        "loose": [
+         5,
+         0,
+         5,
+         5
+        ],
+        "strict": [
+         4,
+         1,
+         4,
+         5
+        ]
+       }
+      },
+      "loose": {
+       "precision": 0.8627450980392157,
+       "recall": 0.6029411764705882,
+       "f1": 0.709817037182766,
+       "counts": [
+        44,
+        7,
+        41,
+        68
+       ]
+      },
+      "strict": {
+       "precision": 0.7058823529411765,
+       "recall": 0.5147058823529411,
+       "f1": 0.5953224663359319,
+       "counts": [
+        36,
+        15,
+        35,
+        68
+       ]
+      }
+     },
+     "errors": 0
+    }
+   ],
+   "peak_rss_mib": 2006.984375
+  },
+  "english-t4": {
+   "doc_chars": 1780,
+   "doc_words": 266,
+   "runs": [
+    {
+     "backend": "regex",
+     "model": null,
+     "loadavg_before": [
+      1.6904296875,
+      1.60888671875,
+      0.90185546875
+     ],
+     "page_s": [
+      0.0017869960000780338,
+      0.0011173990000088452,
+      0.0009697530000494226,
+      0.0009679049999249401,
+      0.0010262859999556895,
+      0.0009519879999970726,
+      0.0009128220000320653,
+      0.0009420650000038222,
+      0.0009997979999525342,
+      0.0009703210000679974,
+      0.0009451979999539617
+     ],
+     "page_cpu_s": [
+      0.0017846269999999276,
+      0.001117866999999828,
+      0.0009700670000001299,
+      0.0009680949999999466,
+      0.0010265339999999679,
+      0.0009521980000000152,
+      0.0009130139999999898,
+      0.0009181789999999079,
+      0.0010001269999999618,
+      0.0009704599999997843,
+      0.0009453989999999024
+     ],
+     "types": {
+      "address": [
+       0,
+       0,
+       0,
+       1
+      ],
+      "date": [
+       5,
+       0,
+       5,
+       5
+      ],
+      "document_id": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "email": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "location": [
+       0,
+       0,
+       0,
+       2
+      ],
+      "money": [
+       2,
+       0,
+       2,
+       2
+      ],
+      "organization": [
+       0,
+       0,
+       0,
+       8
+      ],
+      "person": [
+       0,
+       0,
+       0,
+       7
+      ],
+      "phone": [
+       1,
+       0,
+       1,
+       1
+      ]
+     },
+     "types_strict": {
+      "address": [
+       0,
+       0,
+       0,
+       1
+      ],
+      "date": [
+       5,
+       0,
+       5,
+       5
+      ],
+      "document_id": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "email": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "location": [
+       0,
+       0,
+       0,
+       2
+      ],
+      "money": [
+       2,
+       0,
+       2,
+       2
+      ],
+      "organization": [
+       0,
+       0,
+       0,
+       8
+      ],
+      "person": [
+       0,
+       0,
+       0,
+       7
+      ],
+      "phone": [
+       1,
+       0,
+       1,
+       1
+      ]
+     },
+     "ner": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "counts": [
+       0,
+       0,
+       0,
+       17
+      ]
+     },
+     "ner_strict": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "counts": [
+       0,
+       0,
+       0,
+       17
+      ]
+     },
+     "relationships": [
+      0,
+      11
+     ],
+     "entities": [
+      "date:February 22, 2025",
+      "date:January 8, 2026",
+      "date:March 1, 2025",
+      "date:March 15, 2026",
+      "date:September 12, 2024",
+      "document_id:DOJ-2026-001234",
+      "email:michael.torres@usdoj.gov",
+      "money:$14,750,000",
+      "money:$3,200,000",
+      "phone:(202) 514-3642"
+     ],
+     "ner_model_ran": null,
+     "multilingual": {
+      "rows": [
+       {
+        "lang": "ru",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ru",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "uk",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "el",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "he",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "hi",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "bn",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "th",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ja",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ja",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ko",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ka",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "hy",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "am",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "tr",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "sw",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "pt",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       }
+      ],
+      "s": 0.0023928420000629558,
+      "by_lang": {
+       "ru": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "uk": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "el": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "ar": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "fa": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "he": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "hi": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "bn": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "th": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "zh": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "ja": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "ko": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "ka": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "hy": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "am": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "tr": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "sw": {
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       "pt": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       }
+      },
+      "loose": {
+       "precision": 0.0,
+       "recall": 0.0,
+       "f1": 0.0,
+       "counts": [
+        0,
+        0,
+        0,
+        27
+       ]
+      },
+      "strict": {
+       "precision": 0.0,
+       "recall": 0.0,
+       "f1": 0.0,
+       "counts": [
+        0,
+        0,
+        0,
+        27
+       ]
+      }
+     },
+     "news": {
+      "rows": [
+       {
+        "lang": "tr",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "tr",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "sw",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "sw",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "pt",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "pt",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "es",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "es",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "ru",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "ru",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "uk",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "uk",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "hi",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "hi",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "bn",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "bn",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "id",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "id",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "fr",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "fr",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       }
+      ],
+      "s": 0.0035027119999995193,
+      "by_lang": {
+       "tr": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "sw": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "pt": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "es": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "ar": {
+        "loose": [
+         0,
+         0,
+         0,
+         6
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         6
+        ]
+       },
+       "fa": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "ru": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "uk": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "hi": {
+        "loose": [
+         0,
+         0,
+         0,
+         6
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         6
+        ]
+       },
+       "bn": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "zh": {
+        "loose": [
+         0,
+         0,
+         0,
+         6
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         6
+        ]
+       },
+       "id": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "fr": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       }
+      },
+      "loose": {
+       "precision": 0.0,
+       "recall": 0.0,
+       "f1": 0.0,
+       "counts": [
+        0,
+        0,
+        0,
+        68
+       ]
+      },
+      "strict": {
+       "precision": 0.0,
+       "recall": 0.0,
+       "f1": 0.0,
+       "counts": [
+        0,
+        0,
+        0,
+        68
+       ]
+      }
+     }
+    },
+    {
+     "backend": "gliner",
+     "model": "ner_model:english",
+     "load_s": 4.713128082000026,
+     "loadavg_before": [
+      1.71533203125,
+      1.61572265625,
+      0.908203125
+     ],
+     "page_s": [
+      1.802617758999986,
+      3.3078372490000447,
+      1.9295722129999149,
+      0.5850627539999778,
+      0.6180681269999013,
+      0.5946212279999372,
+      0.6321284790000163,
+      0.5346655259999125,
+      0.5284395290000248,
+      0.6361037510000642,
+      0.8300031269999408
+     ],
+     "page_cpu_s": [
+      4.256435582,
+      8.439767105,
+      5.055709273999998,
+      1.6284475470000004,
+      1.7130504050000006,
+      1.6345642590000011,
+      1.6561173310000008,
+      1.534688126999999,
+      1.5418361680000032,
+      1.7687141979999979,
+      2.233428719999999
+     ],
+     "types": {
+      "address": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "date": [
+       5,
+       0,
+       5,
+       5
+      ],
+      "document_id": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "email": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "location": [
+       1,
+       0,
+       1,
+       2
+      ],
+      "money": [
+       2,
+       0,
+       2,
+       2
+      ],
+      "organization": [
+       9,
+       0,
+       8,
+       8
+      ],
+      "person": [
+       7,
+       1,
+       7,
+       7
+      ],
+      "phone": [
+       1,
+       0,
+       1,
+       1
+      ]
+     },
+     "types_strict": {
+      "address": [
+       0,
+       1,
+       0,
+       1
+      ],
+      "date": [
+       5,
+       0,
+       5,
+       5
+      ],
+      "document_id": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "email": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "location": [
+       1,
+       0,
+       1,
+       2
+      ],
+      "money": [
+       2,
+       0,
+       2,
+       2
+      ],
+      "organization": [
+       9,
+       0,
+       8,
+       8
+      ],
+      "person": [
+       5,
+       3,
+       5,
+       7
+      ],
+      "phone": [
+       1,
+       0,
+       1,
+       1
+      ]
+     },
+     "ner": {
+      "precision": 0.9444444444444444,
+      "recall": 0.9411764705882353,
+      "f1": 0.9428076256499133,
+      "counts": [
+       17,
+       1,
+       16,
+       17
+      ]
+     },
+     "ner_strict": {
+      "precision": 0.8333333333333334,
+      "recall": 0.8235294117647058,
+      "f1": 0.8284023668639053,
+      "counts": [
+       15,
+       3,
+       14,
+       17
+      ]
+     },
+     "relationships": [
+      8,
+      11
+     ],
+     "entities": [
+      "address:441 G Street, NW",
+      "date:February 22, 2025",
+      "date:January 8, 2026",
+      "date:March 1, 2025",
+      "date:March 15, 2026",
+      "date:September 12, 2024",
+      "document_id:DOJ-2026-001234",
+      "email:michael.torres@usdoj.gov",
+      "location:Washington, DC",
+      "money:$14,750,000",
+      "money:$3,200,000",
+      "organization:Armed Services Committee",
+      "organization:Consolidated Federal\nServices LLC",
+      "organization:Defense Intelligence Agency",
+      "organization:Department of Defense",
+      "organization:Department of Justice",
+      "organization:First National Bank of Virginia",
+      "organization:Meridian Defense Systems",
+      "organization:Office of Information Policy",
+      "organization:Pentagon",
+      "person:Daniel Okoro",
+      "person:Director",
+      "person:James R. Whitfield",
+      "person:Lisa Park",
+      "person:Michael Torres",
+      "person:Ms. Sarah Chen",
+      "person:Robert Garrison",
+      "person:Senator Maria Gonzalez",
+      "phone:(202) 514-3642"
+     ],
+     "ner_model_ran": "urchade/gliner_medium-v2.1",
+     "multilingual": {
+      "rows": [
+       {
+        "lang": "ru",
+        "got": [
+         "organization:министерством",
+         "person:Газпром"
+        ],
+        "loose": [
+         0,
+         2,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         2,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ru",
+        "got": [
+         "person:Алексей Навальный"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "uk",
+        "got": [
+         "location:понеділок",
+         "person:Володимир Зеленський"
+        ],
+        "loose": [
+         1,
+         1,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         1,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "el",
+        "got": [
+         "person:Ο Κυριάκος Μητσοτάκης"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [
+         "organization:وزارة الداخلية"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "he",
+        "got": [
+         "person:בנימין נתניהו"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [
+         "location:تهران"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "hi",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "bn",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "th",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ja",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [
+         "person:王伟昨天签署了合同"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ja",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ko",
+        "got": [
+         "person:김정은은"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ka",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "hy",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "am",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "tr",
+        "got": [
+         "location:İstanbul Büyükşehir Belediyesi",
+         "person:Ahmet Yılmaz"
+        ],
+        "loose": [
+         2,
+         0,
+         1,
+         2
+        ],
+        "strict": [
+         1,
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "lang": "sw",
+        "got": [
+         "location:Nairobi",
+         "organization:Wizara ya Fedha ilimlipa",
+         "person:John Mwangi"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         2,
+         1,
+         2,
+         3
+        ]
+       },
+       {
+        "lang": "pt",
+        "got": [
+         "organization:A Prefeitura de São Paulo",
+         "organization:Construtora Horizonte Ltda"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         1,
+         1,
+         1,
+         2
+        ]
+       }
+      ],
+      "s": 4.104392729999972,
+      "by_lang": {
+       "ru": {
+        "loose": [
+         1,
+         2,
+         1,
+         2
+        ],
+        "strict": [
+         1,
+         2,
+         1,
+         2
+        ]
+       },
+       "uk": {
+        "loose": [
+         1,
+         1,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         1,
+         1,
+         1
+        ]
+       },
+       "el": {
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         1
+        ]
+       },
+       "ar": {
+        "loose": [
+         1,
+         0,
+         1,
+         2
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         2
+        ]
+       },
+       "fa": {
+        "loose": [
+         1,
+         0,
+         1,
+         2
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         2
+        ]
+       },
+       "he": {
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       "hi": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "bn": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "th": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "zh": {
+        "loose": [
+         1,
+         0,
+         1,
+         2
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         2
+        ]
+       },
+       "ja": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "ko": {
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         1
+        ]
+       },
+       "ka": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "hy": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "am": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "tr": {
+        "loose": [
+         2,
+         0,
+         1,
+         2
+        ],
+        "strict": [
+         1,
+         1,
+         1,
+         2
+        ]
+       },
+       "sw": {
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         2,
+         1,
+         2,
+         3
+        ]
+       },
+       "pt": {
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         1,
+         1,
+         1,
+         2
+        ]
+       }
+      },
+      "loose": {
+       "precision": 0.8333333333333334,
+       "recall": 0.5185185185185185,
+       "f1": 0.639269406392694,
+       "counts": [
+        15,
+        3,
+        14,
+        27
+       ]
+      },
+      "strict": {
+       "precision": 0.5,
+       "recall": 0.3333333333333333,
+       "f1": 0.4,
+       "counts": [
+        9,
+        9,
+        9,
+        27
+       ]
+      }
+     },
+     "news": {
+      "rows": [
+       {
+        "lang": "tr",
+        "got": [
+         "person:Mehmet Demir"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         2
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         2
+        ]
+       },
+       {
+        "lang": "tr",
+        "got": [
+         "location:İzmir",
+         "person:Ayşe Kaya"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         3
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         3
+        ]
+       },
+       {
+        "lang": "sw",
+        "got": [
+         "location:Mombasa",
+         "person:Mkaguzi",
+         "person:Serikali",
+         "person:Wizara ya Afya"
+        ],
+        "loose": [
+         1,
+         3,
+         1,
+         2
+        ],
+        "strict": [
+         1,
+         3,
+         1,
+         2
+        ]
+       },
+       {
+        "lang": "sw",
+        "got": [
+         "location:Nairobi",
+         "location:msemaji wa Benki Kuu ya Kenya",
+         "person:Grace Wanjiku"
+        ],
+        "loose": [
+         3,
+         0,
+         2,
+         3
+        ],
+        "strict": [
+         2,
+         1,
+         2,
+         3
+        ]
+       },
+       {
+        "lang": "pt",
+        "got": [
+         "location:Brasília",
+         "organization:Tribunal de Contas da União",
+         "person:Carlos Almeida"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "pt",
+        "got": [
+         "organization:Alfa Engenharia S.A.",
+         "organization:Petrobras"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "es",
+        "got": [
+         "location:Bogotá",
+         "organization:La Contraloría General de la República",
+         "person:alcalde Jorge Ramírez"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         1,
+         2,
+         1,
+         3
+        ]
+       },
+       {
+        "lang": "es",
+        "got": [
+         "organization:Construcciones del Norte S.A.",
+         "organization:Ministerio de Obras Públicas"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [
+         "organization:شركة النور للمقاولات",
+         "person:دينار"
+        ],
+        "loose": [
+         1,
+         1,
+         1,
+         3
+        ],
+        "strict": [
+         1,
+         1,
+         1,
+         3
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [
+         "location:القاهرة",
+         "organization:ع وزير المالية",
+         "person:أحمد الخطيب الاتفاقية"
+        ],
+        "loose": [
+         3,
+         0,
+         2,
+         3
+        ],
+        "strict": [
+         1,
+         2,
+         1,
+         3
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [
+         "organization:شرکت پارس"
+        ],
+        "loose": [
+         1,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [
+         "person:علی رضایی",
+         "person:معاون وزیر نفت"
+        ],
+        "loose": [
+         1,
+         1,
+         1,
+         2
+        ],
+        "strict": [
+         1,
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "lang": "ru",
+        "got": [
+         "location:Счётная палата",
+         "organization:СтройИнвест",
+         "organization:мэрией Новосибирска"
+        ],
+        "loose": [
+         2,
+         1,
+         1,
+         2
+        ],
+        "strict": [
+         2,
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "lang": "ru",
+        "got": [
+         "location:Москве",
+         "organization:Газпромбанком",
+         "person:Ирина Смирнова"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "uk",
+        "got": [
+         "location:Харкові",
+         "organization:Національне антикорупційне бюро України",
+         "person:Олегу Коваленку"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "uk",
+        "got": [
+         "organization:Міністерство оборони",
+         "organization:Техноресурс"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "hi",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "hi",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "bn",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "bn",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [
+         "organization:华信建设公司在2023年获得了上海市政府的三个项目"
+        ],
+        "loose": [
+         1,
+         0,
+         2,
+         3
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "id",
+        "got": [
+         "location:Surabaya",
+         "organization:Komisi Pemberantasan Korupsi",
+         "person:Budi Santoso"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "id",
+        "got": [
+         "organization:Badan Pemeriksa Keuangan",
+         "organization:Kementerian Kesehatan",
+         "person:sebesar"
+        ],
+        "loose": [
+         2,
+         1,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         1,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "fr",
+        "got": [
+         "organization:La Cour des comptes",
+         "organization:Méditerranée Travaux"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         1,
+         1,
+         1,
+         2
+        ]
+       },
+       {
+        "lang": "fr",
+        "got": [
+         "location:Dakar",
+         "organization:Banque mondiale",
+         "person:Paul Lefèvre"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       }
+      ],
+      "s": 4.220348559999934,
+      "by_lang": {
+       "tr": {
+        "loose": [
+         3,
+         0,
+         3,
+         5
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         5
+        ]
+       },
+       "sw": {
+        "loose": [
+         4,
+         3,
+         3,
+         5
+        ],
+        "strict": [
+         3,
+         4,
+         3,
+         5
+        ]
+       },
+       "pt": {
+        "loose": [
+         5,
+         0,
+         5,
+         5
+        ],
+        "strict": [
+         5,
+         0,
+         5,
+         5
+        ]
+       },
+       "es": {
+        "loose": [
+         5,
+         0,
+         5,
+         5
+        ],
+        "strict": [
+         3,
+         2,
+         3,
+         5
+        ]
+       },
+       "ar": {
+        "loose": [
+         4,
+         1,
+         3,
+         6
+        ],
+        "strict": [
+         2,
+         3,
+         2,
+         6
+        ]
+       },
+       "fa": {
+        "loose": [
+         2,
+         1,
+         1,
+         5
+        ],
+        "strict": [
+         1,
+         2,
+         1,
+         5
+        ]
+       },
+       "ru": {
+        "loose": [
+         5,
+         1,
+         4,
+         5
+        ],
+        "strict": [
+         5,
+         1,
+         4,
+         5
+        ]
+       },
+       "uk": {
+        "loose": [
+         5,
+         0,
+         5,
+         5
+        ],
+        "strict": [
+         5,
+         0,
+         5,
+         5
+        ]
+       },
+       "hi": {
+        "loose": [
+         0,
+         0,
+         0,
+         6
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         6
+        ]
+       },
+       "bn": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "zh": {
+        "loose": [
+         1,
+         0,
+         2,
+         6
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         6
+        ]
+       },
+       "id": {
+        "loose": [
+         5,
+         1,
+         5,
+         5
+        ],
+        "strict": [
+         5,
+         1,
+         5,
+         5
+        ]
+       },
+       "fr": {
+        "loose": [
+         5,
+         0,
+         5,
+         5
+        ],
+        "strict": [
+         4,
+         1,
+         4,
+         5
+        ]
+       }
+      },
+      "loose": {
+       "precision": 0.8627450980392157,
+       "recall": 0.6029411764705882,
+       "f1": 0.709817037182766,
+       "counts": [
+        44,
+        7,
+        41,
+        68
+       ]
+      },
+      "strict": {
+       "precision": 0.7058823529411765,
+       "recall": 0.5147058823529411,
+       "f1": 0.5953224663359319,
+       "counts": [
+        36,
+        15,
+        35,
+        68
+       ]
+      }
+     },
+     "errors": 0
+    }
+   ],
+   "peak_rss_mib": 2007.26953125
+  },
+  "interleave-r21-t2": {
+   "interleaved_page_s": {
+    "urchade/gliner_medium-v2.1": [
+     0.8404302029998689,
+     0.7398584889999711,
+     0.6866929140001048,
+     0.7568143189998864,
+     0.7278473370001848,
+     0.749385792999874,
+     0.8410747499999616,
+     0.9555966939999507,
+     0.8262792819998594,
+     0.893977821000135,
+     0.7265747940000438,
+     0.7240245970001524,
+     0.8389130610000848,
+     0.7288480570000502,
+     0.9131643959999565,
+     0.9181027730001006,
+     0.767485041999862,
+     1.054233867999983,
+     0.9472855249998702,
+     1.0261474720000479,
+     0.885034282000106
+    ],
+    "fastino/gliner2-multi-v1": [
+     1.0090492150000046,
+     0.9857854379999935,
+     0.8950498290000724,
+     0.9463330609999048,
+     1.0256210889999693,
+     0.9552317879999919,
+     1.086403361000066,
+     1.2572509139999966,
+     1.3297476650000135,
+     1.0314789050000854,
+     1.1000557970000955,
+     1.0833837029999813,
+     0.9172782880000341,
+     0.94987755499983,
+     1.1290502169999854,
+     1.171103839000125,
+     1.2270357169998078,
+     1.119305660000009,
+     1.2144795029998932,
+     1.319532214999981,
+     1.305199870000024
+    ]
+   },
+   "loadavg_after": [
+    2.4599609375,
+    2.0791015625,
+    1.2412109375
+   ],
+   "peak_rss_mib": 3863.55859375
+  },
+  "interleave-r21-t4": {
+   "interleaved_page_s": {
+    "urchade/gliner_medium-v2.1": [
+     0.9975525800000469,
+     0.7979403679998995,
+     0.8951737780000713,
+     0.8558740230000694,
+     1.1955319440000949,
+     1.1528778889999103,
+     1.6110269350001545,
+     1.3270665749998898,
+     2.084741792999921,
+     1.2889707670001371,
+     1.6543045070000062,
+     1.3257993429999715,
+     1.2951650170000448,
+     1.5847185420000187,
+     0.7871511329999521,
+     0.7295399760000691,
+     0.6562902650000524,
+     0.6589360580001085,
+     0.6042533079998975,
+     0.6307167090001258,
+     0.5881222140001228
+    ],
+    "fastino/gliner2-multi-v1": [
+     0.8993043929999658,
+     1.2743758029998844,
+     1.030916932000082,
+     2.6645666239999173,
+     2.0906430730001375,
+     2.9395966419999695,
+     2.8887423380001565,
+     1.7278753209998285,
+     2.309092081000017,
+     1.8721395800000664,
+     3.760370223000109,
+     1.5203918009999597,
+     1.6274069349999536,
+     4.8615170350001335,
+     0.9507692610000049,
+     0.8080127480000101,
+     0.7021931130000212,
+     0.8043122920000769,
+     0.8871156679999785,
+     0.7830951229998391,
+     0.8297531059999983
+    ]
+   },
+   "loadavg_after": [
+    3.966796875,
+    2.58349609375,
+    1.48046875
+   ],
+   "peak_rss_mib": 3864.04296875
+  },
+  "interleave-t2": {
+   "interleaved_page_s": {
+    "urchade/gliner_medium-v2.1": [
+     0.9863894310001342,
+     0.8504307089999656,
+     0.9749346829999013,
+     0.9777199850000216,
+     0.7148020810000162,
+     0.8805976709998049,
+     0.7577497620000031,
+     0.8965629300000728,
+     0.9265701489998719,
+     0.9185982760000115,
+     0.7342664430000241
+    ],
+    "fastino/gliner2-multi-v1": [
+     1.0299725540000964,
+     1.3263456289998885,
+     1.0990926899999067,
+     1.0009725099998832,
+     1.1246216099998492,
+     1.0746110370000679,
+     1.009641080999927,
+     1.0970386989999952,
+     1.1121884849999333,
+     1.2681231670001125,
+     1.1659686650000367
+    ]
+   },
+   "loadavg_after": [
+    2.69384765625,
+    2.03759765625,
+    1.166015625
+   ],
+   "peak_rss_mib": 3862.875
+  },
+  "multilingual-t2": {
+   "doc_chars": 1780,
+   "doc_words": 266,
+   "runs": [
+    {
+     "backend": "regex",
+     "model": null,
+     "loadavg_before": [
+      2.23876953125,
+      1.85205078125,
+      1.0517578125
+     ],
+     "page_s": [
+      0.0015799159999687618,
+      0.0010845610000842498,
+      0.0009526309999046134,
+      0.001009142999919277,
+      0.0009483570000838881,
+      0.00094093999996403,
+      0.0009214140000040061,
+      0.0009123840000029304,
+      0.0009204899999986083,
+      0.0009687040000017078,
+      0.000932899000076759
+     ],
+     "page_cpu_s": [
+      0.001578257999999888,
+      0.0010850630000001082,
+      0.0009529809999999639,
+      0.0010096370000001187,
+      0.0009486720000000393,
+      0.0009411370000000918,
+      0.0009216400000000569,
+      0.0009125630000001994,
+      0.0009207929999999198,
+      0.0009689550000000491,
+      0.0009331550000000188
+     ],
+     "types": {
+      "address": [
+       0,
+       0,
+       0,
+       1
+      ],
+      "date": [
+       5,
+       0,
+       5,
+       5
+      ],
+      "document_id": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "email": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "location": [
+       0,
+       0,
+       0,
+       2
+      ],
+      "money": [
+       2,
+       0,
+       2,
+       2
+      ],
+      "organization": [
+       0,
+       0,
+       0,
+       8
+      ],
+      "person": [
+       0,
+       0,
+       0,
+       7
+      ],
+      "phone": [
+       1,
+       0,
+       1,
+       1
+      ]
+     },
+     "types_strict": {
+      "address": [
+       0,
+       0,
+       0,
+       1
+      ],
+      "date": [
+       5,
+       0,
+       5,
+       5
+      ],
+      "document_id": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "email": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "location": [
+       0,
+       0,
+       0,
+       2
+      ],
+      "money": [
+       2,
+       0,
+       2,
+       2
+      ],
+      "organization": [
+       0,
+       0,
+       0,
+       8
+      ],
+      "person": [
+       0,
+       0,
+       0,
+       7
+      ],
+      "phone": [
+       1,
+       0,
+       1,
+       1
+      ]
+     },
+     "ner": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "counts": [
+       0,
+       0,
+       0,
+       17
+      ]
+     },
+     "ner_strict": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "counts": [
+       0,
+       0,
+       0,
+       17
+      ]
+     },
+     "relationships": [
+      0,
+      11
+     ],
+     "entities": [
+      "date:February 22, 2025",
+      "date:January 8, 2026",
+      "date:March 1, 2025",
+      "date:March 15, 2026",
+      "date:September 12, 2024",
+      "document_id:DOJ-2026-001234",
+      "email:michael.torres@usdoj.gov",
+      "money:$14,750,000",
+      "money:$3,200,000",
+      "phone:(202) 514-3642"
+     ],
+     "ner_model_ran": null,
+     "multilingual": {
+      "rows": [
+       {
+        "lang": "ru",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ru",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "uk",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "el",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "he",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "hi",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "bn",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "th",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ja",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ja",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ko",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ka",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "hy",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "am",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "tr",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "sw",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "pt",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       }
+      ],
+      "s": 0.0022576039999648856,
+      "by_lang": {
+       "ru": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "uk": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "el": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "ar": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "fa": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "he": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "hi": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "bn": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "th": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "zh": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "ja": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "ko": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "ka": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "hy": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "am": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "tr": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "sw": {
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       "pt": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       }
+      },
+      "loose": {
+       "precision": 0.0,
+       "recall": 0.0,
+       "f1": 0.0,
+       "counts": [
+        0,
+        0,
+        0,
+        27
+       ]
+      },
+      "strict": {
+       "precision": 0.0,
+       "recall": 0.0,
+       "f1": 0.0,
+       "counts": [
+        0,
+        0,
+        0,
+        27
+       ]
+      }
+     },
+     "news": {
+      "rows": [
+       {
+        "lang": "tr",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "tr",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "sw",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "sw",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "pt",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "pt",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "es",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "es",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "ru",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "ru",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "uk",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "uk",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "hi",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "hi",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "bn",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "bn",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "id",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "id",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "fr",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "fr",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       }
+      ],
+      "s": 0.003288185999963389,
+      "by_lang": {
+       "tr": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "sw": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "pt": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "es": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "ar": {
+        "loose": [
+         0,
+         0,
+         0,
+         6
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         6
+        ]
+       },
+       "fa": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "ru": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "uk": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "hi": {
+        "loose": [
+         0,
+         0,
+         0,
+         6
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         6
+        ]
+       },
+       "bn": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "zh": {
+        "loose": [
+         0,
+         0,
+         0,
+         6
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         6
+        ]
+       },
+       "id": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "fr": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       }
+      },
+      "loose": {
+       "precision": 0.0,
+       "recall": 0.0,
+       "f1": 0.0,
+       "counts": [
+        0,
+        0,
+        0,
+        68
+       ]
+      },
+      "strict": {
+       "precision": 0.0,
+       "recall": 0.0,
+       "f1": 0.0,
+       "counts": [
+        0,
+        0,
+        0,
+        68
+       ]
+      }
+     }
+    },
+    {
+     "backend": "gliner",
+     "model": "ner_model:multilingual",
+     "load_s": 6.080319740999926,
+     "loadavg_before": [
+      2.13916015625,
+      1.837890625,
+      1.05126953125
+     ],
+     "page_s": [
+      1.1451960709999867,
+      0.9534186079999927,
+      1.0128435880000097,
+      0.8805666580000207,
+      0.9710712149999381,
+      0.9827644450000435,
+      0.905061972999988,
+      1.286399053000082,
+      1.1037482640000462,
+      1.2501040980000653,
+      1.0541918330000044
+     ],
+     "page_cpu_s": [
+      2.228307396,
+      1.885120220000001,
+      2.008045866,
+      1.7520930109999995,
+      1.9288970429999992,
+      1.9470517580000006,
+      1.8039824530000033,
+      2.5154476730000006,
+      2.186727585,
+      2.352243485999999,
+      2.0811999609999994
+     ],
+     "types": {
+      "address": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "date": [
+       6,
+       0,
+       5,
+       5
+      ],
+      "document_id": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "email": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "location": [
+       1,
+       0,
+       1,
+       2
+      ],
+      "money": [
+       2,
+       0,
+       2,
+       2
+      ],
+      "organization": [
+       9,
+       1,
+       8,
+       8
+      ],
+      "person": [
+       7,
+       0,
+       7,
+       7
+      ],
+      "phone": [
+       1,
+       0,
+       1,
+       1
+      ]
+     },
+     "types_strict": {
+      "address": [
+       0,
+       1,
+       0,
+       1
+      ],
+      "date": [
+       6,
+       0,
+       5,
+       5
+      ],
+      "document_id": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "email": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "location": [
+       1,
+       0,
+       1,
+       2
+      ],
+      "money": [
+       2,
+       0,
+       2,
+       2
+      ],
+      "organization": [
+       9,
+       1,
+       8,
+       8
+      ],
+      "person": [
+       7,
+       0,
+       7,
+       7
+      ],
+      "phone": [
+       1,
+       0,
+       1,
+       1
+      ]
+     },
+     "ner": {
+      "precision": 0.9444444444444444,
+      "recall": 0.9411764705882353,
+      "f1": 0.9428076256499133,
+      "counts": [
+       17,
+       1,
+       16,
+       17
+      ]
+     },
+     "ner_strict": {
+      "precision": 0.9444444444444444,
+      "recall": 0.9411764705882353,
+      "f1": 0.9428076256499133,
+      "counts": [
+       17,
+       1,
+       16,
+       17
+      ]
+     },
+     "relationships": [
+      8,
+      11
+     ],
+     "entities": [
+      "address:441 G Street, NW, 6th Floor",
+      "date:2021",
+      "date:February 22, 2025",
+      "date:January 8, 2026",
+      "date:March 1, 2025",
+      "date:March 15, 2026",
+      "date:September 12, 2024",
+      "document_id:DOJ-2026-001234",
+      "email:michael.torres@usdoj.gov",
+      "location:Washington, DC",
+      "money:$14,750,000",
+      "money:$3,200,000",
+      "organization:Armed Services Committee",
+      "organization:Consolidated Federal\nServices LLC",
+      "organization:Defense Intelligence Agency",
+      "organization:Department of Defense",
+      "organization:Department of Justice",
+      "organization:FOIA",
+      "organization:First National Bank of Virginia",
+      "organization:Meridian Defense Systems",
+      "organization:Office of Information Policy",
+      "organization:Pentagon",
+      "person:Daniel Okoro",
+      "person:James R. Whitfield",
+      "person:Lisa Park",
+      "person:Maria Gonzalez",
+      "person:Michael Torres",
+      "person:Robert Garrison",
+      "person:Sarah Chen",
+      "phone:(202) 514-3642"
+     ],
+     "ner_model_ran": "fastino/gliner2-multi-v1",
+     "multilingual": {
+      "rows": [
+       {
+        "lang": "ru",
+        "got": [
+         "organization:Газпром"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "ru",
+        "got": [
+         "person:Алексей Навальный"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "uk",
+        "got": [
+         "person:Володимир Зеленський"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "el",
+        "got": [
+         "person:Κυριάκος Μητσοτάκης"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [
+         "organization:وزارة الداخلية"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [
+         "person:مُحَمَّد"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [
+         "person:آقای بنیامین‌پور"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "he",
+        "got": [
+         "person:בנימין נתניהו"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [
+         "location:تهران"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "hi",
+        "got": [
+         "person:नरेन्द्र मोदी"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "bn",
+        "got": [
+         "location:ঢাকা"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "th",
+        "got": [
+         "person:ประยุทธ์ จันทร์โอชา"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ja",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [
+         "person:王伟昨天签署了合同"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ja",
+        "got": [
+         "organization:トヨタ自動車は昨日契約に署名した"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ko",
+        "got": [
+         "person:김정은은"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ka",
+        "got": [
+         "location:თბილისი"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "hy",
+        "got": [
+         "person:Երևան"
+        ],
+        "loose": [
+         0,
+         1,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "am",
+        "got": [
+         "location:አዲስ አበባ"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "tr",
+        "got": [
+         "organization:İstanbul Büyükşehir Belediyesi",
+         "person:Ahmet Yılmaz"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "sw",
+        "got": [
+         "location:Nairobi",
+         "organization:Wizara ya Fedha",
+         "person:John Mwangi"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "pt",
+        "got": [
+         "location:São Paulo",
+         "organization:Horizonte Ltda",
+         "organization:Prefeitura de São Paulo"
+        ],
+        "loose": [
+         3,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         1,
+         1,
+         2
+        ]
+       }
+      ],
+      "s": 3.8447414859999753,
+      "by_lang": {
+       "ru": {
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       "uk": {
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       "el": {
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       "ar": {
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       "fa": {
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         1,
+         1,
+         1,
+         2
+        ]
+       },
+       "he": {
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       "hi": {
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       "bn": {
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       "th": {
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       "zh": {
+        "loose": [
+         1,
+         0,
+         1,
+         2
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         2
+        ]
+       },
+       "ja": {
+        "loose": [
+         1,
+         0,
+         1,
+         2
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         2
+        ]
+       },
+       "ko": {
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         1
+        ]
+       },
+       "ka": {
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       "hy": {
+        "loose": [
+         0,
+         1,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         1
+        ]
+       },
+       "am": {
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       "tr": {
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       "sw": {
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       "pt": {
+        "loose": [
+         3,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         1,
+         1,
+         2
+        ]
+       }
+      },
+      "loose": {
+       "precision": 0.9615384615384616,
+       "recall": 0.8888888888888888,
+       "f1": 0.9237875288683602,
+       "counts": [
+        25,
+        1,
+        24,
+        27
+       ]
+      },
+      "strict": {
+       "precision": 0.7692307692307693,
+       "recall": 0.7037037037037037,
+       "f1": 0.735009671179884,
+       "counts": [
+        20,
+        6,
+        19,
+        27
+       ]
+      }
+     },
+     "news": {
+      "rows": [
+       {
+        "lang": "tr",
+        "got": [
+         "location:Ankara",
+         "organization:Ankara Büyükşehir Belediyesi",
+         "person:Mehmet Demir"
+        ],
+        "loose": [
+         3,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         3,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "tr",
+        "got": [
+         "location:İzmir",
+         "person:Ayşe Kaya"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         3
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         3
+        ]
+       },
+       {
+        "lang": "sw",
+        "got": [
+         "location:Mombasa",
+         "organization:Wizara ya Afya"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "sw",
+        "got": [
+         "location:Nairobi",
+         "organization:Benki Kuu ya Kenya",
+         "person:Grace Wanjiku"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "pt",
+        "got": [
+         "location:Brasília",
+         "organization:União",
+         "person:Carlos Almeida"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         2,
+         1,
+         2,
+         3
+        ]
+       },
+       {
+        "lang": "pt",
+        "got": [
+         "organization:Alfa Engenharia S.A.",
+         "organization:Petrobras"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "es",
+        "got": [
+         "location:Bogotá",
+         "organization:Contraloría General de la República",
+         "person:Jorge Ramírez"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "es",
+        "got": [
+         "organization:Construcciones del Norte S.A.",
+         "organization:Ministerio de Obras Públicas"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [
+         "location:عمّان",
+         "organization:ديوان المحاسبة",
+         "organization:شركة النور للمقاولات"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [
+         "location:القاهرة",
+         "organization:البنك الدولي",
+         "person:أحمد الخطيب"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [
+         "location:تهران",
+         "organization:شرکت پارس‌سازه"
+        ],
+        "loose": [
+         2,
+         0,
+         1,
+         3
+        ],
+        "strict": [
+         2,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [
+         "location:اصفهان",
+         "person:علی رضایی"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "ru",
+        "got": [
+         "location:Новосибирска",
+         "organization:СтройИнвест",
+         "organization:мэрией Новосибирска"
+        ],
+        "loose": [
+         3,
+         0,
+         1,
+         2
+        ],
+        "strict": [
+         3,
+         0,
+         1,
+         2
+        ]
+       },
+       {
+        "lang": "ru",
+        "got": [
+         "location:Москве",
+         "organization:Газпромбанком",
+         "person:Ирина Смирнова"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "uk",
+        "got": [
+         "location:Харкові",
+         "organization:Національне антикорупційне бюро України",
+         "person:Олегу Коваленку"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "uk",
+        "got": [
+         "organization:Міністерство оборони",
+         "organization:Техноресурс"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "hi",
+        "got": [
+         "location:दिल्ली",
+         "organization:दिल्ली नगर निगम",
+         "person:राजेश कुमार"
+        ],
+        "loose": [
+         3,
+         0,
+         2,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         2,
+         3
+        ]
+       },
+       {
+        "lang": "hi",
+        "got": [
+         "location:मुंबई",
+         "organization:भारतीय रिज़र्व बैंक",
+         "person:सुनीता शर्मा"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "bn",
+        "got": [
+         "organization:চট্টগ্রাম বন্দরের",
+         "organization:দুর্নীতি দমন কমিশন",
+         "person:রহিম উদ্দিন"
+        ],
+        "loose": [
+         3,
+         0,
+         2,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         2,
+         3
+        ]
+       },
+       {
+        "lang": "bn",
+        "got": [
+         "location:ঢাকায়",
+         "organization:বাংলাদেশ ব্যাংক"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [
+         "organization:华信建设公司在2023年获得了上海市政府的三个项目",
+         "organization:审计署发现"
+        ],
+        "loose": [
+         2,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         0,
+         2,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "id",
+        "got": [
+         "location:Surabaya",
+         "organization:Komisi Pemberantasan Korupsi",
+         "person:Budi Santoso"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "id",
+        "got": [
+         "organization:Badan Pemeriksa Keuangan",
+         "organization:Kementerian Kesehatan"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "fr",
+        "got": [
+         "location:Marseille",
+         "organization:Cour des comptes",
+         "organization:Méditerranée Travaux",
+         "organization:mairie de Marseille"
+        ],
+        "loose": [
+         4,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         4,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "fr",
+        "got": [
+         "location:Dakar",
+         "organization:Banque mondiale",
+         "organization:Le Monde",
+         "person:Paul Lefèvre"
+        ],
+        "loose": [
+         4,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         4,
+         0,
+         3,
+         3
+        ]
+       }
+      ],
+      "s": 5.463052840000046,
+      "by_lang": {
+       "tr": {
+        "loose": [
+         5,
+         0,
+         4,
+         5
+        ],
+        "strict": [
+         5,
+         0,
+         4,
+         5
+        ]
+       },
+       "sw": {
+        "loose": [
+         5,
+         0,
+         5,
+         5
+        ],
+        "strict": [
+         5,
+         0,
+         5,
+         5
+        ]
+       },
+       "pt": {
+        "loose": [
+         5,
+         0,
+         5,
+         5
+        ],
+        "strict": [
+         4,
+         1,
+         4,
+         5
+        ]
+       },
+       "es": {
+        "loose": [
+         5,
+         0,
+         5,
+         5
+        ],
+        "strict": [
+         5,
+         0,
+         5,
+         5
+        ]
+       },
+       "ar": {
+        "loose": [
+         6,
+         0,
+         6,
+         6
+        ],
+        "strict": [
+         6,
+         0,
+         6,
+         6
+        ]
+       },
+       "fa": {
+        "loose": [
+         4,
+         0,
+         3,
+         5
+        ],
+        "strict": [
+         4,
+         0,
+         2,
+         5
+        ]
+       },
+       "ru": {
+        "loose": [
+         6,
+         0,
+         4,
+         5
+        ],
+        "strict": [
+         6,
+         0,
+         4,
+         5
+        ]
+       },
+       "uk": {
+        "loose": [
+         5,
+         0,
+         5,
+         5
+        ],
+        "strict": [
+         5,
+         0,
+         5,
+         5
+        ]
+       },
+       "hi": {
+        "loose": [
+         6,
+         0,
+         5,
+         6
+        ],
+        "strict": [
+         6,
+         0,
+         5,
+         6
+        ]
+       },
+       "bn": {
+        "loose": [
+         5,
+         0,
+         4,
+         5
+        ],
+        "strict": [
+         5,
+         0,
+         4,
+         5
+        ]
+       },
+       "zh": {
+        "loose": [
+         2,
+         0,
+         3,
+         6
+        ],
+        "strict": [
+         0,
+         2,
+         0,
+         6
+        ]
+       },
+       "id": {
+        "loose": [
+         5,
+         0,
+         5,
+         5
+        ],
+        "strict": [
+         5,
+         0,
+         5,
+         5
+        ]
+       },
+       "fr": {
+        "loose": [
+         8,
+         0,
+         5,
+         5
+        ],
+        "strict": [
+         8,
+         0,
+         5,
+         5
+        ]
+       }
+      },
+      "loose": {
+       "precision": 1.0,
+       "recall": 0.8676470588235294,
+       "f1": 0.9291338582677166,
+       "counts": [
+        67,
+        0,
+        59,
+        68
+       ]
+      },
+      "strict": {
+       "precision": 0.9552238805970149,
+       "recall": 0.7941176470588235,
+       "f1": 0.8672521957340025,
+       "counts": [
+        64,
+        3,
+        54,
+        68
+       ]
+      }
+     },
+     "errors": 0
+    }
+   ],
+   "peak_rss_mib": 2976.61328125
+  },
+  "multilingual-t4": {
+   "doc_chars": 1780,
+   "doc_words": 266,
+   "runs": [
+    {
+     "backend": "regex",
+     "model": null,
+     "loadavg_before": [
+      2.54052734375,
+      1.818359375,
+      0.9912109375
+     ],
+     "page_s": [
+      0.00207147400010399,
+      0.001251849000027505,
+      0.0013691199999357195,
+      0.0020030039999028304,
+      0.0010768219999590656,
+      0.001024927999992542,
+      0.001089979999960633,
+      0.0012960420000354134,
+      0.001053210999998555,
+      0.0010465649999105153,
+      0.0011240320000069914
+     ],
+     "page_cpu_s": [
+      0.0020701000000000747,
+      0.0012522369999998784,
+      0.001254529999999976,
+      0.0013953229999998928,
+      0.0010773630000000534,
+      0.0010254459999998744,
+      0.0010916389999999776,
+      0.0012976280000001061,
+      0.0010543329999999074,
+      0.0010475100000000293,
+      0.0011249529999999286
+     ],
+     "types": {
+      "address": [
+       0,
+       0,
+       0,
+       1
+      ],
+      "date": [
+       5,
+       0,
+       5,
+       5
+      ],
+      "document_id": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "email": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "location": [
+       0,
+       0,
+       0,
+       2
+      ],
+      "money": [
+       2,
+       0,
+       2,
+       2
+      ],
+      "organization": [
+       0,
+       0,
+       0,
+       8
+      ],
+      "person": [
+       0,
+       0,
+       0,
+       7
+      ],
+      "phone": [
+       1,
+       0,
+       1,
+       1
+      ]
+     },
+     "types_strict": {
+      "address": [
+       0,
+       0,
+       0,
+       1
+      ],
+      "date": [
+       5,
+       0,
+       5,
+       5
+      ],
+      "document_id": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "email": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "location": [
+       0,
+       0,
+       0,
+       2
+      ],
+      "money": [
+       2,
+       0,
+       2,
+       2
+      ],
+      "organization": [
+       0,
+       0,
+       0,
+       8
+      ],
+      "person": [
+       0,
+       0,
+       0,
+       7
+      ],
+      "phone": [
+       1,
+       0,
+       1,
+       1
+      ]
+     },
+     "ner": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "counts": [
+       0,
+       0,
+       0,
+       17
+      ]
+     },
+     "ner_strict": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "counts": [
+       0,
+       0,
+       0,
+       17
+      ]
+     },
+     "relationships": [
+      0,
+      11
+     ],
+     "entities": [
+      "date:February 22, 2025",
+      "date:January 8, 2026",
+      "date:March 1, 2025",
+      "date:March 15, 2026",
+      "date:September 12, 2024",
+      "document_id:DOJ-2026-001234",
+      "email:michael.torres@usdoj.gov",
+      "money:$14,750,000",
+      "money:$3,200,000",
+      "phone:(202) 514-3642"
+     ],
+     "ner_model_ran": null,
+     "multilingual": {
+      "rows": [
+       {
+        "lang": "ru",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ru",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "uk",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "el",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "he",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "hi",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "bn",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "th",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ja",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ja",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ko",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ka",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "hy",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "am",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "tr",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "sw",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "pt",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       }
+      ],
+      "s": 0.0023775339999474454,
+      "by_lang": {
+       "ru": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "uk": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "el": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "ar": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "fa": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "he": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "hi": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "bn": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "th": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "zh": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "ja": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "ko": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "ka": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "hy": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "am": {
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       "tr": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       "sw": {
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       "pt": {
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       }
+      },
+      "loose": {
+       "precision": 0.0,
+       "recall": 0.0,
+       "f1": 0.0,
+       "counts": [
+        0,
+        0,
+        0,
+        27
+       ]
+      },
+      "strict": {
+       "precision": 0.0,
+       "recall": 0.0,
+       "f1": 0.0,
+       "counts": [
+        0,
+        0,
+        0,
+        27
+       ]
+      }
+     },
+     "news": {
+      "rows": [
+       {
+        "lang": "tr",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "tr",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "sw",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "sw",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "pt",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "pt",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "es",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "es",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "ru",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "ru",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "uk",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "uk",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "hi",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "hi",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "bn",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "bn",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "id",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "id",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "fr",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         2
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         2
+        ]
+       },
+       {
+        "lang": "fr",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       }
+      ],
+      "s": 0.003837362000012945,
+      "by_lang": {
+       "tr": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "sw": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "pt": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "es": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "ar": {
+        "loose": [
+         0,
+         0,
+         0,
+         6
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         6
+        ]
+       },
+       "fa": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "ru": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "uk": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "hi": {
+        "loose": [
+         0,
+         0,
+         0,
+         6
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         6
+        ]
+       },
+       "bn": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "zh": {
+        "loose": [
+         0,
+         0,
+         0,
+         6
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         6
+        ]
+       },
+       "id": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       },
+       "fr": {
+        "loose": [
+         0,
+         0,
+         0,
+         5
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         5
+        ]
+       }
+      },
+      "loose": {
+       "precision": 0.0,
+       "recall": 0.0,
+       "f1": 0.0,
+       "counts": [
+        0,
+        0,
+        0,
+        68
+       ]
+      },
+      "strict": {
+       "precision": 0.0,
+       "recall": 0.0,
+       "f1": 0.0,
+       "counts": [
+        0,
+        0,
+        0,
+        68
+       ]
+      }
+     }
+    },
+    {
+     "backend": "gliner",
+     "model": "ner_model:multilingual",
+     "load_s": 6.718160498999964,
+     "loadavg_before": [
+      2.30322265625,
+      1.791015625,
+      0.9921875
+     ],
+     "page_s": [
+      1.0372836260000895,
+      1.051859358999991,
+      1.0451578309999832,
+      0.9644155729999966,
+      1.0194945129999269,
+      0.9438225689999626,
+      1.090531808000037,
+      0.906457717999956,
+      0.9442901610000263,
+      0.9385982130000912,
+      0.8868106899999475
+     ],
+     "page_cpu_s": [
+      2.912658674000001,
+      2.8398554120000004,
+      2.905082063,
+      2.8061275549999998,
+      2.890090938,
+      2.5768171329999987,
+      3.123760302000001,
+      2.6847541339999985,
+      2.6695976509999966,
+      2.6306660159999993,
+      2.5412779469999975
+     ],
+     "types": {
+      "address": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "date": [
+       6,
+       0,
+       5,
+       5
+      ],
+      "document_id": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "email": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "location": [
+       1,
+       0,
+       1,
+       2
+      ],
+      "money": [
+       2,
+       0,
+       2,
+       2
+      ],
+      "organization": [
+       9,
+       1,
+       8,
+       8
+      ],
+      "person": [
+       7,
+       0,
+       7,
+       7
+      ],
+      "phone": [
+       1,
+       0,
+       1,
+       1
+      ]
+     },
+     "types_strict": {
+      "address": [
+       0,
+       1,
+       0,
+       1
+      ],
+      "date": [
+       6,
+       0,
+       5,
+       5
+      ],
+      "document_id": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "email": [
+       1,
+       0,
+       1,
+       1
+      ],
+      "location": [
+       1,
+       0,
+       1,
+       2
+      ],
+      "money": [
+       2,
+       0,
+       2,
+       2
+      ],
+      "organization": [
+       9,
+       1,
+       8,
+       8
+      ],
+      "person": [
+       7,
+       0,
+       7,
+       7
+      ],
+      "phone": [
+       1,
+       0,
+       1,
+       1
+      ]
+     },
+     "ner": {
+      "precision": 0.9444444444444444,
+      "recall": 0.9411764705882353,
+      "f1": 0.9428076256499133,
+      "counts": [
+       17,
+       1,
+       16,
+       17
+      ]
+     },
+     "ner_strict": {
+      "precision": 0.9444444444444444,
+      "recall": 0.9411764705882353,
+      "f1": 0.9428076256499133,
+      "counts": [
+       17,
+       1,
+       16,
+       17
+      ]
+     },
+     "relationships": [
+      8,
+      11
+     ],
+     "entities": [
+      "address:441 G Street, NW, 6th Floor",
+      "date:2021",
+      "date:February 22, 2025",
+      "date:January 8, 2026",
+      "date:March 1, 2025",
+      "date:March 15, 2026",
+      "date:September 12, 2024",
+      "document_id:DOJ-2026-001234",
+      "email:michael.torres@usdoj.gov",
+      "location:Washington, DC",
+      "money:$14,750,000",
+      "money:$3,200,000",
+      "organization:Armed Services Committee",
+      "organization:Consolidated Federal\nServices LLC",
+      "organization:Defense Intelligence Agency",
+      "organization:Department of Defense",
+      "organization:Department of Justice",
+      "organization:FOIA",
+      "organization:First National Bank of Virginia",
+      "organization:Meridian Defense Systems",
+      "organization:Office of Information Policy",
+      "organization:Pentagon",
+      "person:Daniel Okoro",
+      "person:James R. Whitfield",
+      "person:Lisa Park",
+      "person:Maria Gonzalez",
+      "person:Michael Torres",
+      "person:Robert Garrison",
+      "person:Sarah Chen",
+      "phone:(202) 514-3642"
+     ],
+     "ner_model_ran": "fastino/gliner2-multi-v1",
+     "multilingual": {
+      "rows": [
+       {
+        "lang": "ru",
+        "got": [
+         "organization:Газпром"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "ru",
+        "got": [
+         "person:Алексей Навальный"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "uk",
+        "got": [
+         "person:Володимир Зеленський"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "el",
+        "got": [
+         "person:Κυριάκος Μητσοτάκης"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [
+         "organization:وزارة الداخلية"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [
+         "person:مُحَمَّد"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [
+         "person:آقای بنیامین‌پور"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "he",
+        "got": [
+         "person:בנימין נתניהו"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [
+         "location:تهران"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "hi",
+        "got": [
+         "person:नरेन्द्र मोदी"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "bn",
+        "got": [
+         "location:ঢাকা"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "th",
+        "got": [
+         "person:ประยุทธ์ จันทร์โอชา"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ja",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [
+         "person:王伟昨天签署了合同"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ja",
+        "got": [
+         "organization:トヨタ自動車は昨日契約に署名した"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ko",
+        "got": [
+         "person:김정은은"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "ka",
+        "got": [
+         "location:თბილისი"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "hy",
+        "got": [
+         "person:Երևան"
+        ],
+        "loose": [
+         0,
+         1,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         1
+        ]
+       },
+       {
+        "lang": "am",
+        "got": [
+         "location:አዲስ አበባ"
+        ],
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       {
+        "lang": "tr",
+        "got": [
+         "organization:İstanbul Büyükşehir Belediyesi",
+         "person:Ahmet Yılmaz"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "sw",
+        "got": [
+         "location:Nairobi",
+         "organization:Wizara ya Fedha",
+         "person:John Mwangi"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "pt",
+        "got": [
+         "location:São Paulo",
+         "organization:Horizonte Ltda",
+         "organization:Prefeitura de São Paulo"
+        ],
+        "loose": [
+         3,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         1,
+         1,
+         2
+        ]
+       }
+      ],
+      "s": 4.110331139999971,
+      "by_lang": {
+       "ru": {
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       "uk": {
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       "el": {
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       "ar": {
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       "fa": {
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         1,
+         1,
+         1,
+         2
+        ]
+       },
+       "he": {
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       "hi": {
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       "bn": {
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       "th": {
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       "zh": {
+        "loose": [
+         1,
+         0,
+         1,
+         2
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         2
+        ]
+       },
+       "ja": {
+        "loose": [
+         1,
+         0,
+         1,
+         2
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         2
+        ]
+       },
+       "ko": {
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         1
+        ]
+       },
+       "ka": {
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       "hy": {
+        "loose": [
+         0,
+         1,
+         0,
+         1
+        ],
+        "strict": [
+         0,
+         1,
+         0,
+         1
+        ]
+       },
+       "am": {
+        "loose": [
+         1,
+         0,
+         1,
+         1
+        ],
+        "strict": [
+         1,
+         0,
+         1,
+         1
+        ]
+       },
+       "tr": {
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       "sw": {
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       "pt": {
+        "loose": [
+         3,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         1,
+         1,
+         2
+        ]
+       }
+      },
+      "loose": {
+       "precision": 0.9615384615384616,
+       "recall": 0.8888888888888888,
+       "f1": 0.9237875288683602,
+       "counts": [
+        25,
+        1,
+        24,
+        27
+       ]
+      },
+      "strict": {
+       "precision": 0.7692307692307693,
+       "recall": 0.7037037037037037,
+       "f1": 0.735009671179884,
+       "counts": [
+        20,
+        6,
+        19,
+        27
+       ]
+      }
+     },
+     "news": {
+      "rows": [
+       {
+        "lang": "tr",
+        "got": [
+         "location:Ankara",
+         "organization:Ankara Büyükşehir Belediyesi",
+         "person:Mehmet Demir"
+        ],
+        "loose": [
+         3,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         3,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "tr",
+        "got": [
+         "location:İzmir",
+         "person:Ayşe Kaya"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         3
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         3
+        ]
+       },
+       {
+        "lang": "sw",
+        "got": [
+         "location:Mombasa",
+         "organization:Wizara ya Afya"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "sw",
+        "got": [
+         "location:Nairobi",
+         "organization:Benki Kuu ya Kenya",
+         "person:Grace Wanjiku"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "pt",
+        "got": [
+         "location:Brasília",
+         "organization:União",
+         "person:Carlos Almeida"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         2,
+         1,
+         2,
+         3
+        ]
+       },
+       {
+        "lang": "pt",
+        "got": [
+         "organization:Alfa Engenharia S.A.",
+         "organization:Petrobras"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "es",
+        "got": [
+         "location:Bogotá",
+         "organization:Contraloría General de la República",
+         "person:Jorge Ramírez"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "es",
+        "got": [
+         "organization:Construcciones del Norte S.A.",
+         "organization:Ministerio de Obras Públicas"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [
+         "location:عمّان",
+         "organization:ديوان المحاسبة",
+         "organization:شركة النور للمقاولات"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "ar",
+        "got": [
+         "location:القاهرة",
+         "organization:البنك الدولي",
+         "person:أحمد الخطيب"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [
+         "location:تهران",
+         "organization:شرکت پارس‌سازه"
+        ],
+        "loose": [
+         2,
+         0,
+         1,
+         3
+        ],
+        "strict": [
+         2,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "fa",
+        "got": [
+         "location:اصفهان",
+         "person:علی رضایی"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "ru",
+        "got": [
+         "location:Новосибирска",
+         "organization:СтройИнвест",
+         "organization:мэрией Новосибирска"
+        ],
+        "loose": [
+         3,
+         0,
+         1,
+         2
+        ],
+        "strict": [
+         3,
+         0,
+         1,
+         2
+        ]
+       },
+       {
+        "lang": "ru",
+        "got": [
+         "location:Москве",
+         "organization:Газпромбанком",
+         "person:Ирина Смирнова"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "uk",
+        "got": [
+         "location:Харкові",
+         "organization:Національне антикорупційне бюро України",
+         "person:Олегу Коваленку"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "uk",
+        "got": [
+         "organization:Міністерство оборони",
+         "organization:Техноресурс"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "hi",
+        "got": [
+         "location:दिल्ली",
+         "organization:दिल्ली नगर निगम",
+         "person:राजेश कुमार"
+        ],
+        "loose": [
+         3,
+         0,
+         2,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         2,
+         3
+        ]
+       },
+       {
+        "lang": "hi",
+        "got": [
+         "location:मुंबई",
+         "organization:भारतीय रिज़र्व बैंक",
+         "person:सुनीता शर्मा"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "bn",
+        "got": [
+         "organization:চট্টগ্রাম বন্দরের",
+         "organization:দুর্নীতি দমন কমিশন",
+         "person:রহিম উদ্দিন"
+        ],
+        "loose": [
+         3,
+         0,
+         2,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         2,
+         3
+        ]
+       },
+       {
+        "lang": "bn",
+        "got": [
+         "location:ঢাকায়",
+         "organization:বাংলাদেশ ব্যাংক"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [
+         "organization:华信建设公司在2023年获得了上海市政府的三个项目",
+         "organization:审计署发现"
+        ],
+        "loose": [
+         2,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         0,
+         2,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "zh",
+        "got": [],
+        "loose": [
+         0,
+         0,
+         0,
+         3
+        ],
+        "strict": [
+         0,
+         0,
+         0,
+         3
+        ]
+       },
+       {
+        "lang": "id",
+        "got": [
+         "location:Surabaya",
+         "organization:Komisi Pemberantasan Korupsi",
+         "person:Budi Santoso"
+        ],
+        "loose": [
+         3,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         3,
+         0,
+         3,
+         3
+        ]
+       },
+       {
+        "lang": "id",
+        "got": [
+         "organization:Badan Pemeriksa Keuangan",
+         "organization:Kementerian Kesehatan"
+        ],
+        "loose": [
+         2,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         2,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "fr",
+        "got": [
+         "location:Marseille",
+         "organization:Cour des comptes",
+         "organization:Méditerranée Travaux",
+         "organization:mairie de Marseille"
+        ],
+        "loose": [
+         4,
+         0,
+         2,
+         2
+        ],
+        "strict": [
+         4,
+         0,
+         2,
+         2
+        ]
+       },
+       {
+        "lang": "fr",
+        "got": [
+         "location:Dakar",
+         "organization:Banque mondiale",
+         "organization:Le Monde",
+         "person:Paul Lefèvre"
+        ],
+        "loose": [
+         4,
+         0,
+         3,
+         3
+        ],
+        "strict": [
+         4,
+         0,
+         3,
+         3
+        ]
+       }
+      ],
+      "s": 4.828244716999961,
+      "by_lang": {
+       "tr": {
+        "loose": [
+         5,
+         0,
+         4,
+         5
+        ],
+        "strict": [
+         5,
+         0,
+         4,
+         5
+        ]
+       },
+       "sw": {
+        "loose": [
+         5,
+         0,
+         5,
+         5
+        ],
+        "strict": [
+         5,
+         0,
+         5,
+         5
+        ]
+       },
+       "pt": {
+        "loose": [
+         5,
+         0,
+         5,
+         5
+        ],
+        "strict": [
+         4,
+         1,
+         4,
+         5
+        ]
+       },
+       "es": {
+        "loose": [
+         5,
+         0,
+         5,
+         5
+        ],
+        "strict": [
+         5,
+         0,
+         5,
+         5
+        ]
+       },
+       "ar": {
+        "loose": [
+         6,
+         0,
+         6,
+         6
+        ],
+        "strict": [
+         6,
+         0,
+         6,
+         6
+        ]
+       },
+       "fa": {
+        "loose": [
+         4,
+         0,
+         3,
+         5
+        ],
+        "strict": [
+         4,
+         0,
+         2,
+         5
+        ]
+       },
+       "ru": {
+        "loose": [
+         6,
+         0,
+         4,
+         5
+        ],
+        "strict": [
+         6,
+         0,
+         4,
+         5
+        ]
+       },
+       "uk": {
+        "loose": [
+         5,
+         0,
+         5,
+         5
+        ],
+        "strict": [
+         5,
+         0,
+         5,
+         5
+        ]
+       },
+       "hi": {
+        "loose": [
+         6,
+         0,
+         5,
+         6
+        ],
+        "strict": [
+         6,
+         0,
+         5,
+         6
+        ]
+       },
+       "bn": {
+        "loose": [
+         5,
+         0,
+         4,
+         5
+        ],
+        "strict": [
+         5,
+         0,
+         4,
+         5
+        ]
+       },
+       "zh": {
+        "loose": [
+         2,
+         0,
+         3,
+         6
+        ],
+        "strict": [
+         0,
+         2,
+         0,
+         6
+        ]
+       },
+       "id": {
+        "loose": [
+         5,
+         0,
+         5,
+         5
+        ],
+        "strict": [
+         5,
+         0,
+         5,
+         5
+        ]
+       },
+       "fr": {
+        "loose": [
+         8,
+         0,
+         5,
+         5
+        ],
+        "strict": [
+         8,
+         0,
+         5,
+         5
+        ]
+       }
+      },
+      "loose": {
+       "precision": 1.0,
+       "recall": 0.8676470588235294,
+       "f1": 0.9291338582677166,
+       "counts": [
+        67,
+        0,
+        59,
+        68
+       ]
+      },
+      "strict": {
+       "precision": 0.9552238805970149,
+       "recall": 0.7941176470588235,
+       "f1": 0.8672521957340025,
+       "counts": [
+        64,
+        3,
+        54,
+        68
+       ]
+      }
+     },
+     "errors": 0
+    }
+   ],
+   "peak_rss_mib": 2976.8125
+  }
+ }
+}
