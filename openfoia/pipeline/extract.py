@@ -575,6 +575,20 @@ def _hf_cache_dir() -> str | None:
     return os.environ.get("HF_HUB_CACHE") or os.path.join(os.environ["HF_HOME"], "hub")
 
 
+class ModelDownloadRefused(RuntimeError):
+    """A tier-2 model is not cached and Tor mode forbids downloading it directly."""
+
+
+def _tor_refusal(spec: NerModelSpec) -> str:
+    return (
+        f"{spec.model_id} is not cached, and Tor mode is on: OpenFOIA will not download "
+        f"it ({spec.download}) straight from huggingface.co, which would show your real IP. "
+        "Download it once with network.tor off (or on another machine and copy the "
+        "Hugging Face cache into the data directory), then extract again. This run "
+        "continues without that model."
+    )
+
+
 def _download_notice(spec: NerModelSpec) -> str:
     return (
         f"{spec.model_id} is not cached; downloading {spec.download} from huggingface.co "
@@ -582,12 +596,13 @@ def _download_notice(spec: NerModelSpec) -> str:
     )
 
 
-def _get_gliner():
+def _get_gliner(*, tor: bool = False):
     """Lazily load the English GLiNER model (downloads about 1.6 GB on first use).
 
     Loads from the local Hugging Face cache first so a cached model never
     contacts huggingface.co (principle 1). Only if the cache is missing do we
-    warn and download.
+    warn and download, and never in Tor mode (*tor*): that download would go
+    direct, so ModelDownloadRefused is raised instead.
     """
     global _GLINER_MODEL
     if _GLINER_MODEL is None:
@@ -605,6 +620,8 @@ def _get_gliner():
         except Exception:
             if was_offline:
                 raise
+            if tor:
+                raise ModelDownloadRefused(_tor_refusal(spec)) from None
             logger.warning(_download_notice(spec))
             hf_constants.HF_HUB_OFFLINE = False
             _GLINER_MODEL = GLiNER.from_pretrained(spec.model_id)
@@ -647,7 +664,7 @@ class Gliner2Adapter:
         ]
 
 
-def _get_gliner2() -> Gliner2Adapter:
+def _get_gliner2(*, tor: bool = False) -> Gliner2Adapter:
     """Lazily load the multilingual GLiNER2 model (about 1.25 GB on first use).
 
     Same contract as _get_gliner: the local cache first, and a download only
@@ -672,6 +689,8 @@ def _get_gliner2() -> Gliner2Adapter:
         except Exception:
             if was_offline:
                 raise
+            if tor:
+                raise ModelDownloadRefused(_tor_refusal(spec)) from None
             logger.warning(_download_notice(spec))
             hf_constants.HF_HUB_OFFLINE = False
             model = AutoExtractor.from_pretrained(spec.model_id, **kwargs)
@@ -706,9 +725,9 @@ def _ner_model_available(key: str) -> bool:
     return _gliner2_available() if key == "multilingual" else _gliner_available()
 
 
-def _get_ner_model(key: str) -> Any:
-    """The loaded tier-2 model for *key* (see NER_MODELS)."""
-    return _get_gliner2() if key == "multilingual" else _get_gliner()
+def _get_ner_model(key: str, *, tor: bool = False) -> Any:
+    """The loaded tier-2 model for *key* (see NER_MODELS); never downloads in Tor mode."""
+    return _get_gliner2(tor=tor) if key == "multilingual" else _get_gliner(tor=tor)
 
 
 # ---------------------------------------------------------------------------
@@ -1524,6 +1543,7 @@ class EntityExtractor:
         if self.ner_model not in NER_MODELS:
             self.ner_model = DEFAULT_NER_MODEL
         self._ner_fallback_shown = False
+        self._tor_refusal_shown = False
         self._tier2_ran = False
         self.provider = provider or cfg.ai.provider
         self.model = model or cfg.ai.model
@@ -1974,7 +1994,7 @@ class EntityExtractor:
         text: str,
         page_numbers: list[int] | None,
     ) -> ExtractionResult:
-        model = _get_gliner()
+        model = _get_gliner(tor=self.tor)
 
         # Define entity labels — including custom types from config
         labels = [
@@ -2299,7 +2319,13 @@ class EntityExtractor:
 
     def _mentions_from_gliner(self, text: str, page_numbers: list[int] | None) -> list[Mention]:
         """Extract mentions with the configured tier-2 model (GLiNER or GLiNER2)."""
-        model = _get_ner_model(self.ner_model)
+        try:
+            model = _get_ner_model(self.ner_model, tor=self.tor)
+        except ModelDownloadRefused as refused:
+            if not self._tor_refusal_shown:  # once per extractor, like the fallback notice
+                self._tor_refusal_shown = True
+                print(refused, file=sys.stderr)
+            return []
         if model is None:
             return []
         self._tier2_ran = True

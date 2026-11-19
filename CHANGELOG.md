@@ -36,6 +36,10 @@ exhaustive lists.
 
 ### Fixed
 
+- In Tor mode, entity extraction no longer downloads an uncached GLiNER model
+  (English or multilingual) straight from huggingface.co, which would show your
+  real IP. It says so once and continues with the other tiers; download the
+  model once with Tor off, then extract again.
 - Tier-2 model downloads stay on the stick in portable mode for every entry
   point (agent, MCP and web server too), not only the CLI. The download
   notice names the model and its measured size.

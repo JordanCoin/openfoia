@@ -104,8 +104,8 @@ def _use_fake_multilingual(monkeypatch, names=(("Ирина Смирнова", "
     loaded = []
     monkeypatch.setattr(ex, "_gliner2_available", lambda: True)
     monkeypatch.setattr(ex, "_spacy_available", lambda: False)
-    monkeypatch.setattr(ex, "_get_gliner2", lambda: loaded.append("multilingual") or fake)
-    monkeypatch.setattr(ex, "_get_gliner", lambda: loaded.append("english") or fake)
+    monkeypatch.setattr(ex, "_get_gliner2", lambda **kw: loaded.append("multilingual") or fake)
+    monkeypatch.setattr(ex, "_get_gliner", lambda **kw: loaded.append("english") or fake)
     return loaded
 
 
@@ -471,3 +471,41 @@ def test_adapter_turns_v2_output_into_predictions():
     model = SimpleNamespace(extract_entities=lambda *a, **k: out)
     preds = ex.Gliner2Adapter(model).predict_entities("x", ["person"], threshold=0.4)
     assert preds == [{"text": "Ayşe Kaya", "start": 4, "end": 13, "label": "person", "score": 0.8}]
+
+
+def test_tor_mode_never_downloads_an_uncached_model(monkeypatch, capsys):
+    """A first-use download would go straight to huggingface.co and show the real IP."""
+    import sys
+    import types
+
+    from openfoia.pipeline import extract as ex
+
+    calls = []
+
+    class FakeGLiNER:
+        @staticmethod
+        def from_pretrained(model_id, local_files_only=False):
+            calls.append(local_files_only)
+            if local_files_only:
+                raise OSError("not cached")
+            return object()
+
+    monkeypatch.setitem(sys.modules, "gliner", types.SimpleNamespace(GLiNER=FakeGLiNER))
+    hub = types.SimpleNamespace(constants=types.SimpleNamespace(HF_HUB_OFFLINE=False))
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
+    monkeypatch.setitem(sys.modules, "huggingface_hub.constants", hub.constants)
+    monkeypatch.setattr(ex, "_GLINER_MODEL", None)
+    monkeypatch.setattr(ex, "_hf_cache_dir", lambda: None)
+
+    with pytest.raises(ex.ModelDownloadRefused, match="Tor mode is on"):
+        ex._get_gliner(tor=True)
+    assert calls == [True]  # tried the cache only; never attempted the download
+
+    extractor = ex.EntityExtractor()
+    extractor.tor = True
+    extractor.ner_model = "english"
+    assert extractor._mentions_from_gliner("Jane Roe met Acme Corp.", None) == []
+    assert extractor._mentions_from_gliner("Again.", None) == []
+    err = capsys.readouterr().err
+    assert err.count("Tor mode is on") == 1
+    assert calls == [True, True, True]

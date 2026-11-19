@@ -420,7 +420,10 @@ by hand.
 
 The first extraction with a model downloads it. OpenFOIA warns first, and the
 download goes straight to huggingface.co, not through Tor: Hugging Face sees
-your IP address and which model you fetch, nothing from your documents. In
+your IP address and which model you fetch, nothing from your documents. With
+`network.tor` on, OpenFOIA refuses that download and extracts without the
+model; download it once with Tor off (or copy the Hugging Face cache from
+another machine into the data directory) and extract again. In
 portable mode the model is stored on the stick (`openfoia-data/cache/`), not in
 the host's home directory. After that, extraction runs offline. To make sure
 nothing is ever downloaded, set `HF_HUB_OFFLINE=1`; an uncached model then
