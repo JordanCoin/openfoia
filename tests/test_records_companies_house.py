@@ -173,6 +173,12 @@ def test_api_error_is_not_empty_results(monkeypatch):
     empty = asyncio.run(CompaniesHouseAdapter(api_key="k").search("x"))
     assert empty.error is None and empty.total_results == 0 and empty.entities == []
 
+    serve(monkeypatch, lambda r: httpx.Response(200, json={"total_results": 0}))
+    assert asyncio.run(CompaniesHouseAdapter(api_key="k").search("x")).error is None
+    for body in ({"total_results": 5}, {"items": "x"}, {}):
+        serve(monkeypatch, lambda r, body=body: httpx.Response(200, json=body))
+        assert "no result list" in asyncio.run(CompaniesHouseAdapter(api_key="k").search("x")).error
+
     serve(monkeypatch, lambda r: httpx.Response(401, json=fx("unauthenticated_401")))
     rejected = asyncio.run(CompaniesHouseAdapter(api_key="k").search("x"))
     assert "rejected the API key (HTTP 401)" in rejected.error and ch.KEY_ENV in rejected.error

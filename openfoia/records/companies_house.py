@@ -380,7 +380,9 @@ class CompaniesHouseAdapter(RecordAdapter):
             return self._failed(query, str(exc), page=page, per_page=per_page)
         if data is None:
             return self._failed(query, "Companies House search endpoint not found (HTTP 404).")
-        items = data.get("items", [])
+        # An empty search may leave "items" out; a non-zero total without a list is a failure.
+        reported = data.get("total_results")
+        items = data.get("items", [] if reported == 0 else None)
         if not isinstance(items, list):
             return self._failed(query, "Companies House search returned no result list.")
         build = _company_hit if stype == "company" else _officer_hit
