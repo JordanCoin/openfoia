@@ -42,7 +42,9 @@ exhaustive lists.
   `openfoia search` lists OpenSanctions as searched on this machine, not as
   contacted, and asks for no confirmation; `crossref` uses the file without
   `--opensanctions-data`. `openfoia records opensanctions-data` alone shows
-  what is on disk.
+  what is on disk. Offline matching is on whole names and aliases only, so an
+  offline search with no match says that it is not proof the name is not
+  listed.
 - `records search -s aleph` and `records fetch -s aleph`: OCCRP Aleph (Aleph
   Pro), company registries, leaks, court records and other datasets as
   FollowTheMoney entities. `--type` filters by kind (person, company,
@@ -115,6 +117,10 @@ exhaustive lists.
   on the request still identify you to it.
 - Twilio and Lob are now called over their REST APIs instead of their Python
   SDKs, which made their own connections outside OpenFOIA's network settings.
+  A fax or letter that was sent but got no answer (a timeout, more likely over
+  Tor) is reported as possibly accepted, with a warning to check the Twilio or
+  Lob dashboard before sending again; a failure to connect says nothing was
+  sent.
   The `fax` extra no longer installs `twilio`, and the `mail` extra installs
   nothing.
 - Deleted database content is now overwritten. Every database connection
@@ -123,7 +129,9 @@ exhaustive lists.
   write deletes, is kept as a file (`journal_mode=PERSIST`) and overwritten
   with zeros after every session, instead of being deleted by SQLite with that
   copy still on disk. After page text is deleted or replaced, the full-text
-  index is merged so the old words go too. Temporary tables and sorts stay in
+  index is merged so the old words go too; the deleting transaction records
+  that the merge is owed, so a merge that is interrupted or blocked by another
+  process is done by the next session. Temporary tables and sorts stay in
   memory. Overwriting cannot reach SSD wear-levelling or copy-on-write
   filesystem copies, and content deleted by earlier versions is not
   retroactively zeroed; see docs/THREAT_MODEL.md (Known Limitations 2 and 6).
@@ -136,9 +144,9 @@ exhaustive lists.
   The name is now resolved once, in the connection itself, every address must
   be public, and the socket goes to that address, with TLS still verified
   against the host name. This covers MuckRock, NARA, CourtListener, Federal
-  Register and CIA downloads and DocumentCloud's text files. Not covered: an
-  `HTTPS_PROXY` from the environment (the proxy resolves the name) and Tor
-  mode (the exit resolves it).
+  Register and CIA downloads and DocumentCloud's text files, including hosts
+  listed in `NO_PROXY`. Not covered: an `HTTPS_PROXY` from the environment
+  (the proxy resolves the name) and Tor mode (the exit resolves it).
 
 ## [5.0.0] - 2026-11-18
 
