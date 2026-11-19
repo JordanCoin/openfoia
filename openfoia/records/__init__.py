@@ -19,6 +19,7 @@ from .govinfo import GovInfoAdapter
 from .muckrock import MuckRockAdapter
 from .nara import NARAAdapter
 from .opencorporates import OpenCorporatesAdapter
+from .opensanctions import OpenSanctionsAdapter
 from .propublica_nonprofit import ProPublicaNonprofitAdapter
 from .regulations import RegulationsGovAdapter
 from .sec_edgar import SECEdgarAdapter
@@ -83,6 +84,7 @@ def _auto_register() -> None:
     register("cia", CIAReadingRoomAdapter)
     register("nara", NARAAdapter)
     register("courtlistener", CourtListenerAdapter)
+    register("opensanctions", OpenSanctionsAdapter)
 
 
 _auto_register()

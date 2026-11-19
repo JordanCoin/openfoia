@@ -5764,11 +5764,15 @@ def _records_search_all(
         # Error text can quote the upstream response, so it is cleaned too.
         _echo(msg, err=json_lines)
 
+    local = [s for s in sources if getattr(adapters[s], "offline", False) is True]
+    remote = [s for s in sources if s not in local]
     say(
-        f"Sending '{query}' to {len(sources)} services "
+        f"Sending '{query}' to {len(remote)} services "
         f"({_route_note(policy, *adapters.values())}): "
-        f"{', '.join(sources)}"
+        f"{', '.join(remote)}"
     )
+    if local:
+        say(f"Searched on this machine only, nothing sent: {', '.join(local)}")
     if "nara" in sources and getattr(adapters["nara"], "has_key", False):
         from .records.nara import ATTRIBUTION  # lazy: startup time
 
@@ -5789,6 +5793,10 @@ def _records_search_all(
                 if getattr(adapter, "credentials_withheld", False):
                     return source, None, "skipped (personal key not sent over Tor)"
                 return source, None, f"skipped (no {_KEYED_SOURCES[source]})"
+            check = getattr(adapter, "unavailable_reason", None)
+            reason = check() if callable(check) else None
+            if reason:
+                return source, None, f"skipped ({reason})"
             result = await _search_one(adapter, source, query, limit, kwargs)
         except Exception as e:
             return source, None, f"error: {e}"
@@ -5847,7 +5855,8 @@ def records_search(
         "-s",
         help=(
             "Data source (opencorporates, sec, muckrock, documentcloud, usaspending, "
-            "nonprofits, govinfo, fec, regulations, federalregister, cia, nara, courtlistener)"
+            "nonprofits, govinfo, fec, regulations, federalregister, cia, nara, courtlistener, "
+            "opensanctions)"
         ),
     ),
     jurisdiction: str | None = typer.Option(
@@ -5928,6 +5937,9 @@ def records_search(
       fec             - Campaign finance (shared demo key, rate-limited)
       regulations     - Rulemaking dockets (shared demo key, rate-limited)
       federalregister - Federal rules, proposed rules, notices, presidential documents
+      opensanctions   - Sanctions lists, PEPs, crime and debarment lists. Offline from
+                        the bulk file when downloaded ('records opensanctions-data
+                        --download'), else the API (key: OPENFOIA_OPENSANCTIONS_API_KEY)
 
     Examples:
         openfoia records search "Acme Corp" --source opencorporates
@@ -5943,9 +5955,10 @@ def records_search(
         openfoia records search "Acme Corp" -s sec --csv results.csv
         openfoia records search "facial recognition" -s federalregister --agency DHS -t rule
         openfoia records search -s federalregister --docket EPA-HQ-OAR-2021-0317
+        openfoia records search "Ivar Testerov" -s opensanctions
     """
     from .config import load_config  # lazy: startup time
-    from .records import get_adapter, list_sources  # lazy: startup time
+    from .records import list_sources  # lazy: startup time
 
     if (ancestor or all_pages) and source != "nara":
         rprint("[red]--ancestor and --all are only supported with --source nara.[/red]")
@@ -5989,16 +6002,23 @@ def records_search(
         rprint(f"[red]Unknown source '{_safe(source)}'. Available: {', '.join(available)}[/red]")
         raise typer.Exit(1)
 
-    policy = _records_policy_or_exit()
-    adapter = get_adapter(
-        source, egress=policy, api_data_gov_key=load_config().records.api_data_gov_key
+    policy, adapter = _records_adapter_or_exit(
+        source, api_data_gov_key=load_config().records.api_data_gov_key
     )
+    offline = getattr(adapter, "offline", False) is True
     # Pipe-safe modes: stdout carries only JSON, so no spinner or Rich markup.
     quiet = raw or json_lines
 
     if source == "courtlistener":
         _courtlistener_key_or_exit(adapter)  # before "Sending": without a key nothing is sent
-    if source == "federalregister":
+    if source == "opensanctions":
+        _opensanctions_usable_or_exit(adapter)  # before "Sending": nothing is sent without
+    if offline:
+        _echo(
+            f"Searching {source} on this machine ({adapter.local_notice}); nothing is sent.",
+            err=True,
+        )
+    elif source == "federalregister":
         # The filters are sent too, and a docket id says as much as a query.
         sent = ([repr(query)] if query else []) + [
             f"{'type' if k == 'filing_type' else k}={v}" for k, v in kwargs.items()
@@ -6036,6 +6056,8 @@ def records_search(
             )
     elif source == "courtlistener":
         typer.echo(f"Note: sending {query!r} to {_courtlistener_note()}", err=True)
+    elif source == "opensanctions" and not offline:
+        typer.echo(f"Note: OpenSanctions {adapter.search_notice}", err=True)
 
     try:
         if quiet:
@@ -6381,6 +6403,43 @@ def _print_search_result(
             )
         _emit_table(table, csv_path)
 
+    elif source == "opensanctions":
+        table = Table()
+        table.add_column("ID", style="dim", no_wrap=True)
+        table.add_column("Name", style="cyan", max_width=30, overflow="fold")
+        table.add_column("Type", max_width=12)
+        table.add_column("Score", width=5, justify="right")
+        table.add_column("Topics", max_width=20, overflow="fold")
+        table.add_column("Lists", max_width=40, overflow="fold")
+        table.add_column("Countries", max_width=12)
+
+        for e in entities:
+            x = e.extra_data
+            score = x.get("match_score")
+            topics = ", ".join(x.get("topics") or []) or "-"
+            if x.get("topics_inferred") and topics != "-":
+                topics += " (inferred)"
+            _row(
+                table,
+                e.identifiers.get("opensanctions_id", "-"),
+                e.name,
+                x.get("schema", "-"),
+                f"{score:.2f}" if isinstance(score, float) else "-",
+                topics,
+                "; ".join(x.get("datasets") or []) or "-",
+                ", ".join(x.get("countries") or []) or "-",
+            )
+        _emit_table(table, csv_path)
+        if entities and entities[0].extra_data.get("mode") == "local":
+            rprint(
+                "[dim]Offline: whole-name (score 1.00) and alias (0.80) matches only; "
+                "topics inferred from list titles.[/dim]"
+            )
+        rprint(
+            "[dim]Store one in the active case: openfoia records fetch <ID> -s opensanctions. "
+            "OpenSanctions data is CC BY-NC 4.0.[/dim]"
+        )
+
     else:
         # Generic table for any future adapter
         table = Table()
@@ -6518,6 +6577,94 @@ def _ids_from_results(path: Path, source: str) -> list[str]:
     return list(dict.fromkeys(ids))
 
 
+@records_app.command("opensanctions-data")
+def records_opensanctions_data(
+    download: bool = typer.Option(
+        False, "--download", help="Download or update the bulk file (asks first; ~480 MB)"
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the download confirmation"),
+):
+    """Show, or explicitly download, the OpenSanctions bulk file for offline screening.
+
+    Without --download this only reads the disk: where the file is, its size,
+    and the version and SHA-1 it was downloaded with. Nothing is sent.
+
+    With --download it asks first, then reads the current index from
+    data.opensanctions.org (which lists the file's size and SHA-1), downloads
+    targets.simple.csv into <data dir>/opensanctions/, checks the size and the
+    SHA-1 against the index, and only then replaces the old file. No name and
+    no API key is sent; the server sees your IP (or a Tor exit, with network.tor)
+    and that you downloaded the list. The data is CC BY-NC 4.0: free for
+    journalists and other non-commercial use.
+
+    Once the file is there, 'openfoia search', 'records search -s opensanctions',
+    'records fetch -s opensanctions' and 'crossref' screen against it offline.
+
+    Examples:
+        openfoia records opensanctions-data
+        openfoia records opensanctions-data --download
+    """
+    from .records import opensanctions as osx  # lazy: startup time
+
+    status = osx.local_status()
+    meta = status.get("meta") or {}
+    if status["present"]:
+        rprint(f"OpenSanctions bulk file: {_safe(status['path'])}")
+        rprint(f"  Size: {status['size']:,} bytes")
+        if meta:
+            rprint(
+                f"  Version {_safe(meta.get('version') or '?')}, downloaded "
+                f"{_safe(meta.get('downloaded_at') or '?')}, SHA-1 {_safe(meta.get('checksum') or '?')}"
+            )
+    else:
+        rprint(f"No OpenSanctions bulk file at {_safe(status['path'])}.")
+    if not download:
+        if not status["present"]:
+            rprint(
+                "[dim]Download it (asks first): openfoia records opensanctions-data --download[/dim]"
+            )
+        return
+
+    policy = _records_policy_or_exit()
+    rprint(
+        f"\n[yellow]WARNING: this contacts {osx.DATA_HOST} ({_route_note(policy)}): one small "
+        f"index request, then the file, {osx.APPROX_SIZE}; the exact size is read from the "
+        "index and printed before the download starts.[/yellow]"
+    )
+    rprint(
+        "[yellow]  No names and no API key are sent. The server sees your IP (or a Tor exit) "
+        "and that you downloaded the sanctions list.[/yellow]"
+    )
+    rprint(f"[dim]  {osx.LICENSE}.[/dim]")
+    if not yes and not typer.confirm("Download the OpenSanctions bulk file?"):
+        rprint("[green]Aborted. Nothing left your machine.[/green]")
+        raise typer.Exit(0)
+
+    try:
+        entry = asyncio.run(osx.read_index(policy))
+    except Exception as e:
+        rprint(f"[red]Could not read the OpenSanctions index: {_safe(e)}[/red]")
+        raise typer.Exit(1) from None
+    if meta.get("checksum") == entry["checksum"] and status["present"]:
+        rprint(f"Already up to date (version {_safe(entry['version'] or '?')}).")
+        return
+    rprint(
+        f"Downloading version {_safe(entry['version'] or '?')}: {entry['size']:,} bytes "
+        f"({entry['size'] / 1_000_000:.0f} MB), SHA-1 {entry['checksum']}"
+    )
+    try:
+        with Progress(
+            SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console
+        ) as progress:
+            progress.add_task("Downloading targets.simple.csv...", total=None)
+            dest = asyncio.run(osx.download_bulk(entry, policy))
+    except Exception as e:
+        rprint(f"[red]Download failed: {_safe(e)}[/red]")
+        raise typer.Exit(1) from None
+    rprint(f"[green]Saved and verified (size and SHA-1): {_safe(dest)}[/green]")
+    rprint("[dim]Searches of opensanctions now run offline against this file.[/dim]")
+
+
 @records_app.command("fetch")
 def records_fetch(
     doc_ids: list[str] | None = typer.Argument(None, help="Document IDs to fetch"),
@@ -6557,6 +6704,7 @@ def records_fetch(
         openfoia records fetch 7283224 -s nara --objects
         openfoia records fetch 2026-21024 -s federalregister
         openfoia records fetch 4214664 rd:2974081 -s courtlistener
+        openfoia records fetch NK-a1b2c3 -s opensanctions
     """
     if (list_objects or objects) and source != "nara":
         rprint("[red]--list-objects and --objects are only supported with --source nara.[/red]")
@@ -6603,7 +6751,15 @@ def records_fetch(
         "nara": "NARA-",
         "federalregister": "FR-",
         "courtlistener": "CL-",
+        "opensanctions": "OS-",
     }
+    if source == "opensanctions":
+        from .records.opensanctions import valid_id  # lazy: startup time
+
+        bad = [i for i in ids if not valid_id(i)]
+        if bad:
+            rprint(f"[red]Not an OpenSanctions id: {_safe(bad[0])!r}[/red]")
+            raise typer.Exit(2)
     if source not in prefixes:
         rprint(
             f"[yellow]Fetch not yet supported for '{_safe(source)}'. "
@@ -6614,13 +6770,26 @@ def records_fetch(
 
     from .cases import active_case_id_in_db  # lazy: startup time
     from .db import get_db_path, get_session  # lazy: startup time
-    from .records import get_adapter  # lazy: startup time
 
-    policy = _records_policy_or_exit()
-    adapter = get_adapter(source, egress=policy)
+    policy, adapter = _records_adapter_or_exit(source)
+    offline = getattr(adapter, "offline", False) is True
     if source == "courtlistener":
         _courtlistener_key_or_exit(adapter)
-    typer.echo(f"Fetching from {source} ({_route_note(policy, adapter)}).", err=True)
+    if source == "opensanctions":
+        _opensanctions_usable_or_exit(adapter)
+    if offline:
+        typer.echo(
+            f"Reading {source} from this machine ({adapter.local_notice}); nothing is sent.",
+            err=True,
+        )
+    else:
+        typer.echo(f"Fetching from {source} ({_route_note(policy, adapter)}).", err=True)
+    if source == "opensanctions" and not offline:
+        typer.echo(
+            "Note: each id goes to api.opensanctions.org with your API key (entity "
+            "lookups use no credits).",
+            err=True,
+        )
     if source == "federalregister":
         typer.echo(
             "Note: each document's details come from www.federalregister.gov and its PDF "
@@ -6857,6 +7026,15 @@ def _courtlistener_key_or_exit(adapter) -> None:
         raise typer.Exit(1)
 
 
+def _opensanctions_usable_or_exit(adapter) -> None:
+    """Exit with how to fix it when OpenSanctions has neither the local file nor a usable key."""
+    from .records.opensanctions import NO_KEY_MESSAGE, TOR_KEY_MESSAGE  # lazy: startup time
+
+    if adapter.unavailable_reason():
+        rprint(f"[red]{TOR_KEY_MESSAGE if adapter.credentials_withheld else NO_KEY_MESSAGE}[/red]")
+        raise typer.Exit(1)
+
+
 def _nara_key_or_exit(adapter) -> None:
     from .records.nara import NO_KEY_MESSAGE, TOR_KEY_MESSAGE  # lazy: startup time
 
@@ -6872,6 +7050,25 @@ def _records_policy_or_exit() -> EgressPolicy:
     policy = _egress_policy_from(load_config())
     _check_tor_or_exit(policy)
     return policy
+
+
+def _records_adapter_or_exit(source: str, **kwargs: Any) -> tuple[EgressPolicy, Any]:
+    """The egress policy and *source*'s adapter, failing closed on a configured Tor that is down.
+
+    OpenSanctions with its bulk file on disk sends nothing, so the Tor check is
+    skipped for it: an offline search must work with Tor (and the network) off.
+    """
+    from .config import load_config  # lazy: startup time
+    from .records import get_adapter  # lazy: startup time
+
+    if source != "opensanctions":
+        policy = _records_policy_or_exit()
+        return policy, get_adapter(source, egress=policy, **kwargs)
+    policy = _egress_policy_from(load_config())
+    adapter = get_adapter(source, egress=policy, **kwargs)
+    if not adapter.offline:
+        _check_tor_or_exit(policy)
+    return policy, adapter
 
 
 def _route_note(policy: EgressPolicy, *adapters: Any) -> str:
@@ -7946,7 +8143,8 @@ def crossref(
         "--opensanctions-data",
         help="Directory holding targets.simple.csv from "
         "opensanctions.org/datasets/default (offline screening; data is CC BY-NC 4.0, "
-        "free for journalists and non-commercial use)",
+        "free for journalists and non-commercial use). Default: the file downloaded by "
+        "'openfoia records opensanctions-data --download', when present",
     ),
     output: Path | None = typer.Option(None, "--output", "-o", help="Save report to file"),
     ftm: Path | None = typer.Option(
@@ -7985,12 +8183,16 @@ def crossref(
     from .db import get_db_path, get_session  # lazy: startup time
     from .extraction_runs import current_entities  # lazy: startup time
     from .net import TorUnavailableError, describe_egress  # lazy: startup time
+    from .records.opensanctions import OpenSanctionsAdapter, local_status  # lazy: startup time
 
     source_list = sources.split(",") if sources else None
 
     if opensanctions_data and opensanctions_data.is_file():
         rprint("[red]--opensanctions-data: pass the directory containing targets.simple.csv.[/red]")
         raise typer.Exit(1)
+    if opensanctions_data is None and local_status()["present"]:
+        # Downloaded with `records opensanctions-data --download`: screen offline too.
+        opensanctions_data = Path(local_status()["path"]).parent
 
     # A requested offline source with no data would silently drop out of the
     # run and read as "screened, clean".
@@ -8002,6 +8204,10 @@ def crossref(
             rprint(
                 f"[red]--sources {offline_src} needs {flag} pointing at the downloaded data.[/red]"
             )
+            if offline_src == "opensanctions-local":
+                rprint(
+                    "[dim]Download it with: openfoia records opensanctions-data --download[/dim]"
+                )
             raise typer.Exit(1)
 
     db_path = get_db_path()
@@ -8070,6 +8276,17 @@ def crossref(
     ]
     cfg = load_config()
     policy = _egress_policy_from(cfg, tor=tor)
+    not_contacted: dict[str, str] = {}
+    if "opensanctions" in network_sources:
+        # No usable key (or it is withheld over Tor): the adapter sends nothing,
+        # so do not list it as receiving the names.
+        reason = OpenSanctionsAdapter(egress=policy, mode="api").unavailable_reason()
+        if reason:
+            network_sources.remove("opensanctions")
+            not_contacted["opensanctions"] = reason
+
+    for name, reason in not_contacted.items():
+        rprint(f"[dim]  {name}: not contacted ({_safe(reason)}); reported as errored.[/dim]")
 
     if network_sources:
         # Fail closed before asking the user to confirm anything — no point
@@ -8103,7 +8320,8 @@ def crossref(
         )
         rprint(
             "[dim]  Use --sources icij,opensanctions-local for offline-only "
-            "(requires --icij-data / --opensanctions-data downloads)[/dim]"
+            "(requires --icij-data / --opensanctions-data downloads; get the OpenSanctions "
+            "file with 'openfoia records opensanctions-data --download')[/dim]"
         )
         rprint(
             "[dim]  Use --tor to hide your IP from these endpoints (requires Tor running).[/dim]"

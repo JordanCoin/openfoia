@@ -20,8 +20,8 @@ These tests pin:
 2. `pipeline/web.py` no longer sends the identifying UA, and a fetched
    request actually carries the generic `DEFAULT_USER_AGENT` on the wire.
 3. `crossref_entities(..., egress=...)` threads that policy down to both an
-   adapter-based source (MuckRock) and the module's own-client source
-   (OpenSanctions).
+   adapter-based source (MuckRock) and OpenSanctions (once the module's own
+   client, now the records adapter, which sends nothing over Tor).
 4. The per-source rate-limit sleep is jittered but never sleeps less than
    the documented base delay.
 """
@@ -265,20 +265,27 @@ def test_crossref_entities_threads_tor_policy_to_adapter_source(monkeypatch):
     assert captured["muckrock_egress"].mode is EgressMode.TOR
 
 
-def test_crossref_entities_threads_tor_policy_to_own_client_source(monkeypatch):
-    """OpenSanctions builds its own client via egress_client() — cover it too."""
+def test_crossref_entities_threads_tor_policy_to_opensanctions(monkeypatch):
+    """OpenSanctions goes through its records adapter: the Tor policy must reach it."""
+    from openfoia.records import opensanctions as os_mod
+
     captured: dict = {}
+    real = os_mod.OpenSanctionsAdapter
 
-    def fake_egress_client(policy=None, *, timeout=15.0, isolation_token=None, headers=None, **kw):
-        captured["policy"] = policy
-        return _FakeAsyncClient(get_responses=[_FakeResponse({"results": []})])
+    def spy(*args, **kwargs):
+        captured["policy"] = kwargs.get("egress")
+        return real(*args, **kwargs)
 
-    monkeypatch.setattr(crossref_mod, "egress_client", fake_egress_client)
+    monkeypatch.setattr(os_mod, "OpenSanctionsAdapter", spy)
+    monkeypatch.setattr(
+        os_mod, "egress_client", lambda *a, **k: pytest.fail("nothing may be sent over Tor")
+    )
+    monkeypatch.setenv(os_mod.KEY_ENV, "os-key-for-test")
 
     tor_policy = EgressPolicy(mode=EgressMode.TOR)
     entities = [_FakeEntity("Acme Corp", EntityType.ORGANIZATION)]
 
-    asyncio.run(
+    report = asyncio.run(
         crossref_entities(
             entities,
             sources=["opensanctions"],
@@ -289,17 +296,26 @@ def test_crossref_entities_threads_tor_policy_to_own_client_source(monkeypatch):
 
     assert captured["policy"] is tor_policy
     assert captured["policy"].mode is EgressMode.TOR
+    # Over Tor the personal key is withheld and the API refuses keyless calls,
+    # so the adapter sends nothing at all.
+    assert "withheld over Tor" in report.source_errors["opensanctions"]
 
 
 def test_crossref_entities_defaults_to_direct_when_egress_unspecified(monkeypatch):
     """No behavior change for existing callers: default is a plain DIRECT policy."""
+    from openfoia.records import opensanctions as os_mod
+
     captured: dict = {}
 
-    def fake_egress_client(policy=None, *, timeout=15.0, isolation_token=None, headers=None, **kw):
+    def fake_egress_client(policy=None, **kw):
         captured["policy"] = policy
-        return _FakeAsyncClient(get_responses=[_FakeResponse({"results": []})])
+        kw.pop("transport", None)
+        empty = {"responses": {"q": {"results": [], "total": {"value": 0}, "query": {}}}}
+        transport = httpx.MockTransport(lambda request: httpx.Response(200, json=empty))
+        return httpx.AsyncClient(transport=transport, **kw)
 
-    monkeypatch.setattr(crossref_mod, "egress_client", fake_egress_client)
+    monkeypatch.setattr(os_mod, "egress_client", fake_egress_client)
+    monkeypatch.setenv(os_mod.KEY_ENV, "os-key-for-test")
 
     entities = [_FakeEntity("Acme Corp", EntityType.ORGANIZATION)]
 
@@ -311,7 +327,7 @@ def test_crossref_entities_defaults_to_direct_when_egress_unspecified(monkeypatc
         )
     )
 
-    assert captured["policy"] is None  # egress_client(None, ...) == DIRECT
+    assert not captured["policy"].is_tor  # the adapter's default EgressPolicy() is DIRECT
 
 
 def test_crossref_entities_allow_network_gate_unaffected_by_egress():
@@ -348,10 +364,9 @@ def test_crossref_rate_limit_jitter_never_sleeps_below_base_delay(monkeypatch):
     # reaches the real call site.
     monkeypatch.setattr(asyncio, "sleep", fake_sleep)
 
-    def fake_egress_client(policy=None, *, timeout=15.0, isolation_token=None, headers=None, **kw):
-        return _FakeAsyncClient(get_responses=[_FakeResponse({"results": []})])
-
-    monkeypatch.setattr(crossref_mod, "egress_client", fake_egress_client)
+    # No key: the OpenSanctions adapter sends nothing, and the per-source
+    # sleep still follows the check.
+    monkeypatch.delenv("OPENFOIA_OPENSANCTIONS_API_KEY", raising=False)
 
     entities = [_FakeEntity("Acme Corp", EntityType.ORGANIZATION)]
     base_delay = _SOURCE_DELAYS["opensanctions"]

@@ -10,6 +10,16 @@ There is no network code here. Each source is searched by its own
 ``openfoia.net.egress_client()``. Sources come from the records registry, so a
 newly registered adapter is searched without any change to this module.
 
+Two optional adapter hooks, read with ``getattr`` so other adapters need nothing:
+
+* ``offline`` (bool): True when the adapter answers from data on this machine
+  (OpenSanctions with its bulk file). It goes in ``SearchPlan.local``, not
+  ``adapters``: it is not listed as contacted, needs no consent or Tor route,
+  and its rows carry ``egress: "local"``.
+* ``match_confidence(entity)``: a real match score in 0..1 for a row. Only
+  then does the row get a ``confidence`` key; no other source has one, so no
+  other row gets it.
+
 Results are untrusted third-party text. :func:`clean` (an alias of
 :func:`openfoia.termsafe.safe_text`) makes a value safe to print to a
 terminal; JSON callers should dump with :func:`openfoia.termsafe.safe_json`.
@@ -112,6 +122,7 @@ class SearchPlan:
     adapters: dict[str, Any]  # sources that will be sent the query
     skipped: dict[str, str]  # source -> why it will not be
     withheld_skipped: set[str] = field(default_factory=set)  # skipped for a withheld key
+    local: dict[str, Any] = field(default_factory=dict)  # answered on this machine, nothing sent
 
     @property
     def egress(self) -> str:
@@ -128,7 +139,9 @@ class SearchPlan:
 
     def warning_lines(self) -> list[str]:
         """The pre-flight warning, shared by the CLI prompt and the agent tool."""
-        if not self.adapters:
+        if not self.adapters and self.local:
+            lines = ["Nothing will be sent over the network."]
+        elif not self.adapters:
             lines = ["Nothing will be sent: every selected source is skipped."]
         else:
             lines = [
@@ -157,6 +170,12 @@ class SearchPlan:
                 notice = getattr(adapter, "search_notice", None)
                 if isinstance(notice, str) and notice:
                     lines.append(f"  {source}: {notice}")
+        if self.local:
+            described = []
+            for source, adapter in self.local.items():
+                note = getattr(adapter, "local_notice", None)
+                described.append(f"{source} ({note})" if isinstance(note, str) and note else source)
+            lines.append("  Searched on this machine only, nothing sent: " + "; ".join(described))
         if self.skipped:
             lines.append(
                 "  Not contacted: "
@@ -171,6 +190,7 @@ class SearchPlan:
             "egress": self.egress,
             "would_contact": self.contacted,
             "credentials_withheld": self.withheld,
+            "searched_locally": list(self.local),
             "skipped": dict(self.skipped),
             "warning": self.warning_lines(),
         }
@@ -231,7 +251,8 @@ def plan_search(
     *sources* None means every registered source. An unknown name raises
     ValueError. A source whose adapter reports ``unavailable_reason()`` (a
     required key missing, or a personal key withheld over Tor) is skipped
-    with that reason rather than sent the query.
+    with that reason rather than sent the query. A source whose adapter is
+    ``offline`` goes in ``SearchPlan.local``: it is searched, but sent nothing.
     """
     from .records import get_adapter, list_sources  # lazy: monkeypatched in tests
 
@@ -250,6 +271,7 @@ def plan_search(
         wanted = available
 
     adapters: dict[str, Any] = {}
+    local: dict[str, Any] = {}
     skipped: dict[str, str] = {}
     withheld_skipped: set[str] = set()
     for source in wanted:
@@ -260,9 +282,11 @@ def plan_search(
             skipped[source] = _short(reason)
             if getattr(adapter, "credentials_withheld", False):
                 withheld_skipped.add(source)
+        elif getattr(adapter, "offline", False) is True:
+            local[source] = adapter
         else:
             adapters[source] = adapter
-    return SearchPlan(query, policy, wanted, adapters, skipped, withheld_skipped)
+    return SearchPlan(query, policy, wanted, adapters, skipped, withheld_skipped, local)
 
 
 async def ensure_route(policy: EgressPolicy) -> None:
@@ -284,11 +308,13 @@ async def ensure_route(policy: EgressPolicy) -> None:
         )
 
 
-def _row(entity: Any, source: str, egress: str, retrieved_at: str) -> dict[str, Any]:
+def _row(
+    entity: Any, source: str, egress: str, retrieved_at: str, adapter: Any = None
+) -> dict[str, Any]:
     from .cli import _compact_result  # lazy: circular import
 
     c = _compact_result(entity)
-    return {
+    row = {
         "source": source,
         "title": "" if c["title"] is None else str(c["title"]),
         "url": _opt_str(c["url"]),
@@ -299,6 +325,11 @@ def _row(entity: Any, source: str, egress: str, retrieved_at: str) -> dict[str, 
         "date": _opt_str(c["created"]),
         "type": _opt_str(getattr(entity, "entity_type", None)),
     }
+    score = getattr(adapter, "match_confidence", None)
+    value = score(entity) if callable(score) else None
+    if isinstance(value, int | float) and not isinstance(value, bool) and 0 <= value <= 1:
+        row["confidence"] = float(value)
+    return row
 
 
 async def run_search(
@@ -344,7 +375,8 @@ async def run_search(
                 return source, None, str(exc) or type(exc).__name__, utc_now()
             return source, result, None, utc_now()
 
-    outcomes = await asyncio.gather(*(one(s, a) for s, a in plan.adapters.items()))
+    searched = {**plan.adapters, **plan.local}
+    outcomes = await asyncio.gather(*(one(s, a) for s, a in searched.items()))
     by_source = {o[0]: o for o in outcomes}
 
     statuses: list[SourceStatus] = []
@@ -365,7 +397,7 @@ async def run_search(
             source,
             ERROR,
             retrieved_at=retrieved_at,
-            credentials_withheld=bool(getattr(plan.adapters[source], "credentials_withheld", 0)),
+            credentials_withheld=bool(getattr(searched[source], "credentials_withheld", 0)),
         )
         statuses.append(status)
         if result is None:
@@ -373,7 +405,8 @@ async def run_search(
             continue
         kept = []
         for entity in list(result.entities)[:limit]:
-            row = _row(entity, source, plan.egress, retrieved_at)
+            egress = "local" if source in plan.local else plan.egress
+            row = _row(entity, source, egress, retrieved_at, searched[source])
             row_date = _row_date(row["date"])
             if since_date and row_date and row_date < since_date:
                 status.older_than_since += 1
@@ -390,7 +423,7 @@ async def run_search(
             status.reason = f"{status.older_than_since} result(s) older than --since"
 
     report = SearchReport(plan.query, plan.egress, since, limit, statuses, rows)
-    if log_to_case and plan.adapters:
+    if log_to_case and searched:
         _log(report)
     return report
 

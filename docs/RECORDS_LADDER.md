@@ -275,6 +275,27 @@ https://www.archives.gov/isoo/policy-documents/eo-13526).
   beyond what the API returned). A notice tells you a proceeding exists; the
   comments and the records behind it are at Regulations.gov or need FOIA
   (rung 4).
+- **Sanctions lists and politically exposed persons.** Not a records request
+  at all, and not only American: OpenSanctions merges sanctions lists, PEP
+  registers, criminal, debarment and regulatory-action lists from 480+
+  sources into one database. The bulk data downloads without an account and
+  is free for non-commercial use (CC BY-NC 4.0); its index lists each file's
+  size and SHA-1, and `targets.simple.csv` was 478,559,967 bytes (fetched
+  2026-11-19: https://www.opensanctions.org/docs/bulk/ ,
+  https://data.opensanctions.org/datasets/latest/default/index.json ,
+  https://www.opensanctions.org/docs/bulk/csv/). That CSV has no topics
+  column, so offline sanction and PEP flags are inferred from list titles.
+  The hosted API needs a key for every call (`/match` and `/entities`
+  answered HTTP 401 without one, tried 2026-11-19). Free keys are a grant to
+  journalists, public-interest nonprofits and academic researchers, verified
+  by OpenSanctions; everyone else buys credits, one per `/match` query,
+  with `/entities` free (fetched 2026-11-19:
+  https://www.opensanctions.org/docs/commercial/exemption/ ,
+  https://www.opensanctions.org/docs/api/faq/). `/match` returns a match
+  score; `/search` scores are deliberately not exposed, and GET URLs (so a
+  `/search` query) are kept in request logs for 90 days while `/match`
+  bodies are not logged (same FAQ). A sanctions hit is a lead about a name,
+  not proof it is the same person: check birth dates, nationality and ids.
 - **Mirrors and finders.** DocumentCloud (search and per-page text; the
   project uses its page-text endpoint daily), MuckRock's request archive,
   the Internet Archive, the Black Vault, HathiTrust for government
@@ -319,7 +340,7 @@ colour the district question either way.
 | 2 | Nothing. One federal deadline rule; templates cite federal FOIA. | A jurisdictions data package (statute, clock, fees, residency, appeal path per state, each entry marked verified or not), per-state templates, and clocks computed from the state rule. |
 | 3 | Nothing beyond rung 2. | Same jurisdictions work; state archives stay a research request. |
 | 4 | Federal agency table, federal templates, request tracking, deadlines from a fixed federal rule, records search on MuckRock and others, case workbench, per-page text search, cited notes and export. | Per-request clocks for extensions, tolling and the appeal window. |
-| 5 | DocumentCloud search and per-page fetch (the CREST mirror). A CIA reading-room source that honestly reports "blocked". govinfo search. Federal Register search by agency, type, date and docket, and PDF fetch from GovInfo (`-s federalregister`, unreleased). CourtListener search and docket, filing and opinion fetch (federal courts). | A NARA Catalog adapter with key and monthly quota handling. |
+| 5 | DocumentCloud search and per-page fetch (the CREST mirror). A CIA reading-room source that honestly reports "blocked". govinfo search. Federal Register search by agency, type, date and docket, and PDF fetch from GovInfo (`-s federalregister`, unreleased). CourtListener search and docket, filing and opinion fetch (federal courts). OpenSanctions screening (`-s opensanctions`, unreleased): offline from the bulk file, or the `/match` API with a key. | A NARA Catalog adapter with key and monthly quota handling. |
 
 Nothing in the "in progress" column is shipped. Check the changelog for what
 a given version actually carries.
@@ -399,6 +420,13 @@ Rung 5
 - fetched: https://www.govinfo.gov/api-signup
 - fetched: https://api.govinfo.gov/docs
 - fetched (API responses, 2026-11-17): https://www.federalregister.gov/api/v1/documents.json
+- fetched (2026-11-19): https://api.opensanctions.org/openapi.json
+- fetched (2026-11-19): https://www.opensanctions.org/docs/api/authentication/
+- fetched (2026-11-19): https://www.opensanctions.org/docs/api/faq/
+- fetched (2026-11-19): https://www.opensanctions.org/docs/commercial/exemption/
+- fetched (2026-11-19): https://www.opensanctions.org/docs/bulk/
+- fetched (2026-11-19): https://www.opensanctions.org/docs/bulk/csv/
+- fetched (2026-11-19): https://data.opensanctions.org/datasets/latest/default/index.json
 - not read (CAPTCHA for scripted clients, 2026-11-17): https://www.federalregister.gov/developers/documentation/api/v1
 - unverified: https://www.govinfo.gov
 - unverified: https://www.congress.gov

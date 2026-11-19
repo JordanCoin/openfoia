@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import shutil
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from typer.testing import CliRunner
 
@@ -22,6 +24,8 @@ from openfoia.crossref import (
     crossref_entities,
 )
 from openfoia.models import EntityType
+from openfoia.net import egress_client
+from openfoia.records import opensanctions as os_mod
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "opensanctions"
 FAKE_KEY = "os-test-key-0123456789abcdef"
@@ -169,48 +173,46 @@ def test_cli_data_flag_pointing_at_the_csv_asks_for_the_directory(monkeypatch, t
     assert "pass the directory containing targets.simple.csv" in result.output
 
 
-class _Resp:
-    def __init__(self, status_code, data=None):
-        self.status_code = status_code
-        self._data = data or {}
-
-    def json(self):
-        return self._data
+MATCH_PATH = "/match/default"
 
 
-class _Client:
-    def __init__(self, resp, seen):
-        self._resp = resp
-        self._seen = seen
+def _patch_client(monkeypatch, status, data=None):
+    """Serve every OpenSanctions adapter request from a mock; returns the requests sent.
 
-    async def __aenter__(self):
-        return self
+    The API code lives in openfoia.records.opensanctions now (crossref goes
+    through the adapter), so that is where the client is replaced.
+    """
+    seen: list[httpx.Request] = []
 
-    async def __aexit__(self, *exc):
-        return False
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(status, json=data if data is not None else {"detail": "x"})
 
-    async def get(self, url, params=None, headers=None):
-        self._seen.append(headers)
-        return self._resp
+    def fake_egress_client(policy=None, **kw):
+        kw.pop("transport", None)
+        return egress_client(None, transport=httpx.MockTransport(handler), **kw)
 
-
-def _patch_client(monkeypatch, resp):
-    seen: list[dict] = []
-    monkeypatch.setattr(crossref_mod, "egress_client", lambda *a, **k: _Client(resp, seen))
+    monkeypatch.setattr(os_mod, "egress_client", fake_egress_client)
     return seen
 
 
+EMPTY = {"responses": {"q": {"results": [], "total": {"value": 0}, "query": {}}}, "limit": 5}
+
+
 def test_api_key_header_sent_only_when_env_set(monkeypatch, caplog, capsys):
-    seen = _patch_client(monkeypatch, _Resp(200, {"results": []}))
+    seen = _patch_client(monkeypatch, 200, EMPTY)
 
     monkeypatch.delenv(OPENSANCTIONS_KEY_ENV, raising=False)
-    asyncio.run(_check_opensanctions("Ana Fixture", EntityType.PERSON))
-    assert "Authorization" not in seen[-1]
+    with pytest.raises(_SourceCheckError):
+        asyncio.run(_check_opensanctions("Ana Fixture", EntityType.PERSON))
+    assert seen == []  # no key: the name is not sent to a server that would refuse it
 
     monkeypatch.setenv(OPENSANCTIONS_KEY_ENV, FAKE_KEY)
     with caplog.at_level(logging.DEBUG):
         asyncio.run(_check_opensanctions("Ana Fixture", EntityType.PERSON))
-    assert seen[-1]["Authorization"] == f"ApiKey {FAKE_KEY}"
+    assert seen[-1].headers["Authorization"] == f"ApiKey {FAKE_KEY}"
+    assert seen[-1].method == "POST" and seen[-1].url.path == MATCH_PATH
+    assert "Ana Fixture" not in str(seen[-1].url)  # the name is in the body, not the URL
     out = capsys.readouterr()
     assert FAKE_KEY not in caplog.text + out.out + out.err
 
@@ -218,7 +220,7 @@ def test_api_key_header_sent_only_when_env_set(monkeypatch, caplog, capsys):
 @pytest.mark.parametrize("status", [401, 403])
 def test_unauthorized_reports_key_required_and_names_env_var(monkeypatch, status):
     monkeypatch.setenv(OPENSANCTIONS_KEY_ENV, FAKE_KEY)
-    _patch_client(monkeypatch, _Resp(status))
+    _patch_client(monkeypatch, status)
 
     with pytest.raises(_SourceCheckError) as exc:
         asyncio.run(_check_opensanctions("Ana Fixture", EntityType.PERSON))
@@ -229,10 +231,10 @@ def test_unauthorized_reports_key_required_and_names_env_var(monkeypatch, status
     assert FAKE_KEY not in message
 
 
-def test_keyless_401_stops_sending_names_for_the_rest_of_the_run(monkeypatch):
+def test_keyless_run_sends_no_names_and_stops_for_the_rest_of_the_run(monkeypatch):
     monkeypatch.delenv(OPENSANCTIONS_KEY_ENV, raising=False)
     monkeypatch.setitem(crossref_mod._SOURCE_DELAYS, "opensanctions", 0.0)
-    seen = _patch_client(monkeypatch, _Resp(401))
+    seen = _patch_client(monkeypatch, 401)
     entities = [
         SimpleNamespace(entity_type=EntityType.PERSON, normalized_text=n, confidence=0.95)
         for n in ("Ana Fixture", "Olu Sample")
@@ -240,7 +242,7 @@ def test_keyless_401_stops_sending_names_for_the_rest_of_the_run(monkeypatch):
 
     report = asyncio.run(crossref_entities(entities, sources=["opensanctions"], allow_network=True))
 
-    assert len(seen) == 1
+    assert seen == []  # was one doomed request before the adapter checked the key first
     assert report.source_errors == {
         "opensanctions": f"API key required: set {OPENSANCTIONS_KEY_ENV}"
     }
@@ -253,12 +255,71 @@ def test_api_key_is_withheld_over_tor(monkeypatch):
     monkeypatch.setenv(OPENSANCTIONS_KEY_ENV, FAKE_KEY)
     tor = EgressPolicy(mode=EgressMode.TOR)
 
-    seen = _patch_client(monkeypatch, _Resp(200, {"results": []}))
-    asyncio.run(_check_opensanctions("Ana Fixture", EntityType.PERSON, tor))
-    assert "Authorization" not in seen[-1]
-
-    _patch_client(monkeypatch, _Resp(401))
+    seen = _patch_client(monkeypatch, 200, EMPTY)
     with pytest.raises(crossref_mod._SourceCheckError) as exc:
         asyncio.run(_check_opensanctions("Ana Fixture", EntityType.PERSON, tor))
+    assert seen == []  # neither the key nor the name goes out over Tor
     assert "withheld over Tor" in exc.value.error_type
     assert FAKE_KEY not in str(exc.value)
+
+
+def test_api_hits_carry_score_topics_and_entity_url(monkeypatch):
+    monkeypatch.setenv(OPENSANCTIONS_KEY_ENV, FAKE_KEY)
+    data = {
+        "responses": {
+            "q": {
+                "results": [
+                    {
+                        "id": "NK-api001",
+                        "caption": "Ivar Testerov",
+                        "schema": "Person",
+                        "properties": {"topics": ["sanction"], "country": ["ru"]},
+                        "datasets": ["us_ofac_sdn"],
+                        "score": 0.93,
+                        "match": True,
+                        "explanations": {},
+                    },
+                    {
+                        "id": "NK-api002",
+                        "caption": "Ivar Testerova",
+                        "schema": "Person",
+                        "properties": {"topics": ["role.pep"]},
+                        "datasets": ["wd_peps"],
+                        "score": 0.62,
+                        "match": False,
+                        "explanations": {},
+                    },
+                ],
+                "total": {"value": 2},
+                "query": {},
+            }
+        },
+        "limit": 5,
+    }
+    seen = _patch_client(monkeypatch, 200, data)
+
+    hits = asyncio.run(_check_opensanctions("Ivar Testerov", EntityType.PERSON))
+
+    body = json.loads(seen[0].content)
+    assert body["queries"]["q"] == {"schema": "Person", "properties": {"name": ["Ivar Testerov"]}}
+    assert [h.match_type for h in hits] == ["exact", "fuzzy"]
+    assert hits[0].extra["score"] == 0.93 and hits[0].extra["is_sanctioned"] is True
+    assert hits[1].extra["is_pep"] is True and hits[1].extra["topics"] == ["role.pep"]
+    assert hits[0].url == "https://www.opensanctions.org/entities/NK-api001/"
+    assert "SANCTIONED" in hits[0].details
+
+
+def test_api_rate_limit_stops_the_source_for_the_run(monkeypatch):
+    monkeypatch.setenv(OPENSANCTIONS_KEY_ENV, FAKE_KEY)
+    monkeypatch.setitem(crossref_mod._SOURCE_DELAYS, "opensanctions", 0.0)
+    seen = _patch_client(monkeypatch, 429)
+    entities = [
+        SimpleNamespace(entity_type=EntityType.PERSON, normalized_text=n, confidence=0.95)
+        for n in ("Ana Fixture", "Olu Sample")
+    ]
+
+    report = asyncio.run(crossref_entities(entities, sources=["opensanctions"], allow_network=True))
+
+    assert len(seen) == 1  # POST is never retried by the transport, and the run stops
+    assert report.source_errors == {"opensanctions": "RateLimited"}
+    assert report.results[1].source_statuses["opensanctions"] == "skipped(rate-limited)"
