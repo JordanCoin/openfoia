@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -100,96 +101,102 @@ def parse_ftm_file(file_path: Path | str) -> tuple[list[dict], list[dict]]:
     Returns:
         (entities, relationships) where each is a list of dicts
     """
-    file_path = Path(file_path)
+    with open(Path(file_path), encoding="utf-8") as f:
+        return parse_ftm_lines(f)
+
+
+def parse_ftm_lines(lines: Iterable[str]) -> tuple[list[dict], list[dict]]:
+    """Parse FtM JSON lines (from a file or memory) into entities and relationships."""
     entities: list[dict[str, Any]] = []
     relationships: list[dict[str, Any]] = []
 
-    with open(file_path, encoding="utf-8") as f:
-        for line_num, line in enumerate(f, 1):
-            line = line.strip()
-            if not line:
-                continue
+    for line_num, line in enumerate(lines, 1):
+        line = line.strip()
+        if not line:
+            continue
 
-            try:
-                data = json.loads(line)
-            except json.JSONDecodeError:
-                logger.warning("Skipped invalid JSON on line %d", line_num)
-                continue
+        try:
+            data = json.loads(line)
+        except json.JSONDecodeError:
+            logger.warning("Skipped invalid JSON on line %d", line_num)
+            continue
 
-            schema = data.get("schema", "")
-            properties = data.get("properties", {})
-            ftm_id = data.get("id", "")
+        schema = data.get("schema", "")
+        properties = data.get("properties", {})
+        ftm_id = data.get("id", "")
 
-            if schema in _FTM_RELATIONSHIP_SCHEMAS:
-                # This is a relationship entity — extract source/target refs
-                source_ref = None
-                target_ref = None
+        if schema in _FTM_RELATIONSHIP_SCHEMAS:
+            # This is a relationship entity — extract source/target refs
+            source_ref = None
+            target_ref = None
 
-                # Different schemas use different property names for endpoints
-                for src_prop in [
-                    "member",
-                    "director",
-                    "owner",
-                    "payer",
-                    "subject",
-                    "authority",
-                    "emitters",
-                ]:
-                    vals = properties.get(src_prop, [])
-                    if vals:
-                        source_ref = vals[0]
-                        break
+            # Different schemas use different property names for endpoints
+            for src_prop in [
+                "member",
+                "director",
+                "owner",
+                "payer",
+                "subject",
+                "authority",
+                "emitters",
+            ]:
+                vals = properties.get(src_prop, [])
+                if vals:
+                    source_ref = vals[0]
+                    break
 
-                for tgt_prop in [
-                    "organization",
-                    "asset",
-                    "beneficiary",
-                    "object",
-                    "contractor",
-                    "recipients",
-                ]:
-                    vals = properties.get(tgt_prop, [])
-                    if vals:
-                        target_ref = vals[0]
-                        break
+            for tgt_prop in [
+                "organization",
+                "asset",
+                "beneficiary",
+                "object",
+                "contractor",
+                "recipients",
+            ]:
+                vals = properties.get(tgt_prop, [])
+                if vals:
+                    target_ref = vals[0]
+                    break
 
-                if source_ref and target_ref:
-                    relationships.append(
-                        {
-                            "ftm_id": ftm_id,
-                            "schema": schema,
-                            "source_ref": source_ref,
-                            "target_ref": target_ref,
-                            "properties": properties,
-                        }
-                    )
-            else:
-                entity_type = _FTM_SCHEMA_TO_ENTITY_TYPE.get(schema)
-                if entity_type is None:
-                    # Unknown schema — default to organization for legal entities
-                    entity_type = EntityType.ORGANIZATION
-
-                name = _extract_name(properties)
-                context = _extract_context(properties)
-
-                entities.append(
+            if source_ref and target_ref:
+                relationships.append(
                     {
                         "ftm_id": ftm_id,
                         "schema": schema,
-                        "entity_type": entity_type,
-                        "name": name,
-                        "context": context,
+                        "source_ref": source_ref,
+                        "target_ref": target_ref,
                         "properties": properties,
                     }
                 )
+        else:
+            entity_type = _FTM_SCHEMA_TO_ENTITY_TYPE.get(schema)
+            if entity_type is None:
+                # Unknown schema — default to organization for legal entities
+                entity_type = EntityType.ORGANIZATION
+
+            name = _extract_name(properties)
+            context = _extract_context(properties)
+
+            entities.append(
+                {
+                    "ftm_id": ftm_id,
+                    "schema": schema,
+                    "entity_type": entity_type,
+                    "name": name,
+                    "context": context,
+                    "properties": properties,
+                }
+            )
 
     return entities, relationships
 
 
 def import_ftm_to_db(
-    file_path: Path | str,
+    file_path: Path | str | None,
     document_id: str | None = None,
     tag: str | None = None,
+    *,
+    lines: Iterable[str] | None = None,
 ) -> tuple[int, int]:
     """Import FtM entities into the OpenFOIA database.
 
@@ -197,9 +204,10 @@ def import_ftm_to_db(
     a document. Deduplicates against existing entities by name + type.
 
     Args:
-        file_path: Path to .ftm.json file
+        file_path: Path to .ftm.json file (None when *lines* is given)
         document_id: Optional document ID to associate entities with
         tag: Optional tag for tracking import batches
+        lines: FtM JSON lines held in memory, imported without writing a file
 
     Returns:
         (entities_imported, relationships_imported)
@@ -210,7 +218,12 @@ def import_ftm_to_db(
     if not db_path.exists():
         init_db()
 
-    parsed_entities, parsed_relationships = parse_ftm_file(file_path)
+    if lines is not None:
+        parsed_entities, parsed_relationships = parse_ftm_lines(lines)
+    elif file_path is not None:
+        parsed_entities, parsed_relationships = parse_ftm_file(file_path)
+    else:
+        raise ValueError("import_ftm_to_db needs a file_path or lines")
 
     entities_added = 0
     rels_added = 0

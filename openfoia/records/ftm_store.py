@@ -8,8 +8,9 @@ entity graph like any other import, attached to the fetched record's document.
 
 Every value is upstream data: schemas, ids and property values are checked and
 cleaned here before anything is written, so the stored entities carry no
-terminal escapes or bidi overrides. The JSON-lines file is kept under the data
-directory (``downloads/ftm/``), where ``purge`` removes it.
+terminal escapes or bidi overrides. Nothing is written outside the database:
+the entities are imported from memory, so with an encrypted database no
+plaintext copy of the fetched people and companies is left on disk.
 """
 
 from __future__ import annotations
@@ -18,12 +19,10 @@ import json
 import re
 from typing import Any
 
-from ..db import get_data_dir
 from .keyed_api import clean_line
 
 _SCHEMA = re.compile(r"^[A-Z][A-Za-z]{1,40}$")
 _PROP = re.compile(r"^[a-z][A-Za-z]{0,60}$")
-_FILE_SAFE = re.compile(r"[^A-Za-z0-9_-]+")
 MAX_ENTITIES = 1000
 MAX_VALUES = 20
 MAX_VALUE = 1000
@@ -60,7 +59,9 @@ def clean_ftm(entity: Any) -> dict[str, Any] | None:
 def import_ftm_entities(
     entities: list[dict[str, Any]], *, name: str, document_id: str | None, tag: str
 ) -> tuple[int, int]:
-    """Clean *entities*, write them to ``downloads/ftm/<name>.ftm.json`` and import them.
+    """Clean *entities* and import them into the entity graph (no file is written).
+
+    *name* identifies the fetched record (kept for callers' logs and messages).
 
     Returns ``(entities_imported, relationships_imported)`` as
     :func:`import_ftm_to_db` counts them (entities already in the database by
@@ -75,10 +76,5 @@ def import_ftm_entities(
             cleaned[c["id"]] = c
     if not cleaned:
         return 0, 0
-    out_dir = get_data_dir() / "downloads" / "ftm"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"{_FILE_SAFE.sub('_', name)[:120] or 'record'}.ftm.json"
-    with open(path, "w", encoding="utf-8") as f:
-        for c in cleaned.values():
-            f.write(json.dumps(c, ensure_ascii=False) + "\n")
-    return import_ftm_to_db(path, document_id=document_id, tag=tag)
+    lines = [json.dumps(c, ensure_ascii=False) for c in cleaned.values()]
+    return import_ftm_to_db(None, document_id=document_id, tag=tag, lines=lines)
