@@ -189,7 +189,7 @@ class LobMailGateway(DeliveryGateway):
             return DeliveryResult(
                 status=DeliveryStatus.FAILED,
                 reference_id="",
-                error_message=str(e),
+                error_message=str(e) or type(e).__name__,
             )
 
     async def check_status(self, reference_id: str) -> DeliveryResult:
@@ -246,7 +246,7 @@ class LobMailGateway(DeliveryGateway):
             return DeliveryResult(
                 status=DeliveryStatus.FAILED,
                 reference_id=reference_id,
-                error_message=str(e),
+                error_message=str(e) or type(e).__name__,
             )
 
     async def cancel(self, reference_id: str) -> bool:

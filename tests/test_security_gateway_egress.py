@@ -435,6 +435,45 @@ def test_fax_api_error_is_reported_and_post_not_retried(api, data_dir):
     assert len(seen) == 1  # a fax is never sent twice by a retry
 
 
+@pytest.fixture
+def raising_api(monkeypatch):
+    """Gateway API calls raise the given httpx error instead of answering."""
+    seen: list[httpx.Request] = []
+    errors: list[type[httpx.TransportError]] = []
+
+    def handler(request):
+        seen.append(request)
+        raise errors.pop(0)("", request=request)  # e.g. ReadTimeout stringifies to ''
+
+    real = http_mod.egress_client
+    monkeypatch.setattr(
+        http_mod,
+        "egress_client",
+        lambda policy=None, **kw: real(policy, transport=httpx.MockTransport(handler), **kw),
+    )
+    return seen, errors
+
+
+def test_no_answer_after_sending_warns_it_may_have_gone_through(raising_api):
+    seen, errors = raising_api
+    errors.append(httpx.ReadTimeout)
+    result = asyncio.run(mail_mod.LobMailGateway("k", RETURN_ADDRESS).send(_mail_payload()))
+    assert result.status is DeliveryStatus.FAILED
+    assert "no answer from Lob after the request was sent (ReadTimeout)" in result.error_message
+    assert "check your Lob dashboard before sending again" in result.error_message
+    assert len(seen) == 1  # and never retried
+
+
+def test_no_connection_says_nothing_was_sent(raising_api):
+    seen, errors = raising_api
+    errors.append(httpx.ConnectTimeout)
+    gw = fax_mod.TwilioFaxGateway("AC1", "tok", "+15550000000", media_base_url="https://m.example/")
+    result = asyncio.run(gw.send(_payload("+12025550100")))
+    assert result.status is DeliveryStatus.FAILED
+    assert result.error_message == "could not connect to Twilio (ConnectTimeout). Nothing was sent"
+    assert len(seen) == 1
+
+
 def test_mail_send_calls_the_letters_api(api):
     seen, replies = api
     replies.append(
