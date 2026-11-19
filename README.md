@@ -227,6 +227,8 @@ Everything runs on `127.0.0.1`. Token-authenticated: `openfoia serve` opens the 
 
 **For sensitive investigations:** `openfoia serve --tor`
 
+**Sending requests in Tor mode:** `request send` sends email, fax and mail through Tor, or stops; it never falls back to a direct connection. `--direct` sends one request without Tor when your mail provider blocks Tor. Tor hides your IP address from the provider, not your account or the name on the request ([Guide](docs/GUIDE.md#delivery-methods)).
+
 **Portable mode:** `openfoia portable` keeps data, config and caches on the USB and creates nothing in the host's home directory (the OS can still log activity; see [USB Install](docs/USB.md)).
 
 **When you're done:** `openfoia purge --secure --yes`

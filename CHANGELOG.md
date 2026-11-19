@@ -98,6 +98,48 @@ exhaustive lists.
   point (agent, MCP and web server too), not only the CLI. The download
   notice names the model and its measured size.
 
+### Security
+
+- In Tor mode, `request send` used to warn that email, fax and physical mail
+  go directly, not through Tor, and then send anyway (without asking, when not
+  run in a terminal). Now all three go through Tor or are not sent. Email goes
+  over SMTP through the Tor SOCKS proxy, with the mail server's name resolved
+  at the exit and STARTTLS still checking its certificate. Fax and mail call
+  the Twilio and Lob APIs through Tor (this needs `openfoia install-extras
+  tor`; without it they refuse). `request send` checks that Tor is running
+  before sending, and a send that Tor or the provider refuses fails instead of
+  being retried directly. Many mail providers refuse Tor: the new `--direct`
+  flag sends one request without Tor, from your real IP address, and says so
+  (`--tor` forces Tor for one run). SendGrid is not used in Tor mode. Tor
+  hides your IP address from the provider; your login or API key and the name
+  on the request still identify you to it.
+- Twilio and Lob are now called over their REST APIs instead of their Python
+  SDKs, which made their own connections outside OpenFOIA's network settings.
+  The `fax` extra no longer installs `twilio`, and the `mail` extra installs
+  nothing.
+- Deleted database content is now overwritten. Every database connection
+  turns on SQLite's `secure_delete`, so deleted rows are zeroed instead of left
+  in free pages. SQLite's rollback journal, which receives a copy of what a
+  write deletes, is kept as a file (`journal_mode=PERSIST`) and overwritten
+  with zeros after every session, instead of being deleted by SQLite with that
+  copy still on disk. After page text is deleted or replaced, the full-text
+  index is merged so the old words go too. Temporary tables and sorts stay in
+  memory. Overwriting cannot reach SSD wear-levelling or copy-on-write
+  filesystem copies, and content deleted by earlier versions is not
+  retroactively zeroed; see docs/THREAT_MODEL.md (Known Limitations 2 and 6).
+  Ingest is about 15% slower; deleting or replacing a document's pages takes
+  longer on large databases (0.3 s at 10,000 pages on the test machine).
+- Records downloads in direct mode are now pinned to the address that was
+  checked. The download's host name used to be checked for public addresses
+  and then resolved again for the connection, so a DNS server could answer a
+  public address to the check and 127.0.0.1 to the download (DNS rebinding).
+  The name is now resolved once, in the connection itself, every address must
+  be public, and the socket goes to that address, with TLS still verified
+  against the host name. This covers MuckRock, NARA, CourtListener, Federal
+  Register and CIA downloads and DocumentCloud's text files. Not covered: an
+  `HTTPS_PROXY` from the environment (the proxy resolves the name) and Tor
+  mode (the exit resolves it).
+
 ## [5.0.0] - 2026-11-18
 
 This release fixes 18 security problems found by an outside audit, one of them

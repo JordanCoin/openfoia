@@ -711,6 +711,25 @@ Send FOIA requests via three channels:
 | Fax | Twilio | $0.07/page | Set `OPENFOIA_TWILIO_ACCOUNT_SID` |
 | Mail | Lob | ~$1/letter | Set `OPENFOIA_LOB_API_KEY` |
 
+**With Tor mode on** (`network.tor`, or `--tor` for one run), all three are
+sent through Tor: email over SMTP through the Tor SOCKS proxy, fax and mail
+to the Twilio and Lob APIs through it (this needs `openfoia install-extras
+tor`). If Tor is not running, `request send` stops before sending; if Tor or
+the provider refuses the connection, the send fails. It never falls back to a
+direct connection. Many mail providers refuse logins from Tor exit addresses,
+and Tor exits often block SMTP ports. If yours does, `--direct` sends that one
+request without Tor, from your real IP address, and says so.
+
+Tor hides your IP address from the mail server, Twilio or Lob. It does not
+make you anonymous to them: your SMTP login or API key, the billing account
+behind it, and the name, email and return address in the request identify
+you to the provider and to the agency.
+
+```bash
+openfoia request send -a FBI -s "Records" -t standard -n "Jane" -e j@x.com           # Tor if configured
+openfoia request send -a FBI -s "Records" -t standard -n "Jane" -e j@x.com --direct  # this one without Tor
+```
+
 ---
 
 ## Quick reference
