@@ -384,8 +384,8 @@ def install_extras(
         "ner-multilingual": "~900MB (PyTorch + GLiNER2; the model, ~1.25GB, downloads on first use)",
         "ner-spacy": "~100MB (+ download a model after)",
         "ocr": "~5MB (also needs system tesseract-ocr + poppler-utils)",
-        "fax": "~20MB",
-        "mail": "~5MB",
+        "fax": "~5MB (reportlab, for the fax PDF; with Tor mode also: install-extras tor)",
+        "mail": "nothing extra: Lob is called with the core httpx (with Tor mode: install-extras tor)",
         "cloud-ai": "~30MB",
         "tor": "~1MB",
         "browser": "~50MB (+ playwright install after)",
@@ -1388,6 +1388,12 @@ def request_send(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show what would be sent without sending"
     ),
+    tor: bool | None = typer.Option(
+        None,
+        "--tor/--direct",
+        help="Send through Tor, or --direct to send this one request without Tor "
+        "(default: network.tor in config, see 'openfoia egress-status')",
+    ),
 ):
     """Send a FOIA request to an agency.
 
@@ -1395,6 +1401,10 @@ def request_send(
     - email (default): Send via SMTP. Requires SMTP configuration.
     - fax: Send via Twilio fax. Requires Twilio credentials.
     - mail: Send physical letter via Lob. Requires Lob API key.
+
+    In Tor mode (network.tor, or --tor) all three go through Tor and fail
+    closed: if Tor is not running, or the provider refuses Tor, nothing is
+    sent. --direct sends one request without Tor, from your real IP address.
 
     Examples:
         # Send via email (default)
@@ -1411,6 +1421,9 @@ def request_send(
 
         # Dry run (preview without sending)
         openfoia request send -a FBI -s "Test" -t standard -n "Test User" -e test@example.com --dry-run
+
+        # Tor is configured but your mail provider blocks Tor: send this one directly
+        openfoia request send -a FBI -s "Records" -t standard -n "Jane" -e j@x.com --direct
     """
     from .db import get_db_path, get_session  # lazy: startup time
     from .gateways.base import DeliveryPayload  # lazy: startup time
@@ -1530,6 +1543,12 @@ def request_send(
         rprint(preview)
         return
 
+    # Egress: Tor when configured (or --tor), unless --direct for this run.
+    from .config import load_config  # lazy: startup time
+
+    tor_configured = load_config().network.tor
+    policy = _egress_policy_from(load_config(), tor=tor)
+
     # Load config
     from .db import get_data_dir  # lazy: startup time
 
@@ -1563,6 +1582,7 @@ def request_send(
             smtp_password=smtp_password,
             from_email=email,
             from_name=name,
+            egress=policy,
         )
 
     elif method == "fax":
@@ -1594,6 +1614,7 @@ def request_send(
             auth_token=auth_token,
             from_number=from_number,
             media_base_url=os.environ.get("OPENFOIA_MEDIA_BASE_URL"),
+            egress=policy,
         )
 
     elif method == "mail":
@@ -1624,27 +1645,24 @@ def request_send(
         gateway = LobMailGateway(
             api_key=lob_api_key,
             return_address=return_addr,
+            egress=policy,
         )
 
-    # No delivery gateway is routed through Tor. Say so before anything is sent.
-    from .config import load_config  # lazy: startup time
-
-    if load_config().network.tor:
-        from .gateways.email import TOR_SMTP_WARNING  # lazy: startup time
-
-        tor_warning = (
-            TOR_SMTP_WARNING
-            if method == "email"
-            else (
-                f"Tor mode is on, but {method_labels[method]} is sent through "
-                f"{'Twilio' if method == 'fax' else 'Lob'} directly, not through Tor: "
-                "that service sees your real IP address."
-            )
+    # Say how it is routed, and what each route does not hide.
+    provider = {"email": "your mail server", "fax": "Twilio", "mail": "Lob"}[method]
+    if policy.is_tor:
+        _check_tor_or_exit(policy)  # fail closed before anything is sent
+        rprint(
+            f"\n[cyan]Sending through Tor: {provider} sees a Tor exit address, not yours. "
+            "Your account login or API key, your name and contact details in the request, "
+            "and the request itself still identify you to it and to the agency.[/cyan]"
         )
-        rprint(f"\n[yellow]WARNING: {_safe(tor_warning)}[/yellow]")
-        if sys.stdin.isatty() and not typer.confirm("Send anyway?", default=False):
-            rprint("[dim]Not sent.[/dim]")
-            raise typer.Exit(1)
+    elif tor_configured:
+        rprint(
+            f"\n[yellow]WARNING: --direct: Tor mode is on, but this request is sent "
+            f"without Tor. {provider[0].upper() + provider[1:]} sees your real IP "
+            "address.[/yellow]"
+        )
 
     rprint(f"\n[cyan]Sending via {method_labels[method]}...[/cyan]")
     result = asyncio.run(gateway.send(payload))

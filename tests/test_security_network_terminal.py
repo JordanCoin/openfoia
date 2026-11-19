@@ -520,7 +520,10 @@ def test_smtp_ehlo_name_is_not_the_hostname(monkeypatch):
 
 
 @pytest.mark.parametrize("tor", [True, False])
-def test_request_send_warns_that_email_skips_tor(data_dir, monkeypatch, tor):
+def test_request_send_never_goes_direct_silently_in_tor_mode(data_dir, monkeypatch, tor):
+    """It used to warn and then send direct in a non-interactive run. Now Tor mode
+    sends through Tor or not at all (here Tor is down, so nothing is sent)."""
+    from openfoia import net
     from openfoia.cli import app
     from openfoia.gateways import email as email_mod
     from openfoia.gateways.base import DeliveryResult, DeliveryStatus
@@ -529,9 +532,13 @@ def test_request_send_warns_that_email_skips_tor(data_dir, monkeypatch, tor):
 
     async def fake_send(self, payload):
         sent.append(payload)
-        return DeliveryResult(success=False, status=DeliveryStatus.FAILED, error_message="x")
+        return DeliveryResult(status=DeliveryStatus.FAILED, reference_id="", error_message="x")
+
+    async def tor_down(policy, timeout=5.0):
+        return False
 
     monkeypatch.setattr(email_mod.EmailGateway, "send", fake_send)
+    monkeypatch.setattr(net, "check_tor", tor_down)
     monkeypatch.setenv("OPENFOIA_SMTP_USER", "u")
     monkeypatch.setenv("OPENFOIA_SMTP_PASSWORD", "p")
     if tor:
@@ -555,6 +562,5 @@ def test_request_send_warns_that_email_skips_tor(data_dir, monkeypatch, tor):
             "foia@agency.example",
         ],
     )
-    assert sent, r.output  # non-interactive: warned, then sent
-    out = " ".join(r.output.split())
-    assert ("not through Tor" in out) is tor
+    assert bool(sent) is not tor, r.output
+    assert ("not reachable" in r.output) is tor

@@ -13,6 +13,7 @@ from email.mime.text import MIMEText
 from email.utils import getaddresses
 
 from ..models import utcnow as _utcnow
+from ..net import EgressPolicy, TorUnavailableError, open_tor_stream
 from .base import DeliveryGateway, DeliveryPayload, DeliveryResult, DeliveryStatus
 
 #: The name sent in EHLO. smtplib's default is socket.getfqdn(): the machine's
@@ -21,12 +22,33 @@ from .base import DeliveryGateway, DeliveryPayload, DeliveryResult, DeliveryStat
 #: valid EHLO syntax (RFC 5321) and is what many mail clients send.
 EHLO_NAME = "[127.0.0.1]"
 
-#: Shown by `request send` in Tor mode: SMTP is not routed through Tor.
-TOR_SMTP_WARNING = (
-    "Tor mode is on, but email is sent over SMTP directly, not through Tor: your "
-    "mail server sees your real IP address (and may copy it into the message "
-    "headers the agency receives)."
+#: Seconds for each SMTP socket operation over Tor (circuits are slow to build).
+TOR_SMTP_TIMEOUT = 90.0
+
+#: Added to a failed SMTP send over Tor: the usual reasons, and the way out.
+TOR_SMTP_HINT = (
+    "Sent through Tor, so this may be your mail provider refusing Tor exit "
+    "addresses (many do), or the Tor exit refusing the port. Nothing was sent "
+    "directly. To send this one request without Tor, run again with --direct "
+    "(your mail server then sees your real IP address)."
 )
+
+
+class _TorSMTP(smtplib.SMTP):
+    """smtplib.SMTP whose socket is a stream through the Tor SOCKS proxy.
+
+    The SMTP host name is resolved at the exit relay (open_tor_stream sends it
+    as a SOCKS5 DOMAINNAME). STARTTLS still verifies the server certificate
+    against that host name: smtplib wraps the socket with server_hostname set
+    to the host passed here.
+    """
+
+    def __init__(self, host: str, port: int, *, policy: EgressPolicy, **kwargs):
+        self._policy = policy  # before super().__init__, which connects
+        super().__init__(host, port, **kwargs)
+
+    def _get_socket(self, host, port, timeout):
+        return open_tor_stream(self._policy, host, port, timeout=timeout)
 
 
 def validate_single_recipient(address: str) -> str:
@@ -71,8 +93,11 @@ class EmailGateway(DeliveryGateway):
     - Easy attachment handling
     - Paper trail via sent folder
 
-    SMTP goes direct, never through Tor (see TOR_SMTP_WARNING); the EHLO
-    greeting does not carry this machine's hostname (EHLO_NAME).
+    With a Tor *egress* policy, SMTP goes through the Tor SOCKS proxy (see
+    _TorSMTP) and fails closed: if Tor is not reachable or refuses the
+    connection the send fails, it is never retried directly. SendGrid is not
+    routed through Tor and is refused in Tor mode. The EHLO greeting does not
+    carry this machine's hostname (EHLO_NAME).
     """
 
     def __init__(
@@ -86,6 +111,7 @@ class EmailGateway(DeliveryGateway):
         use_tls: bool = True,
         # Alternative: SendGrid
         sendgrid_api_key: str | None = None,
+        egress: EgressPolicy | None = None,
     ):
         self.smtp_host = smtp_host
         self.smtp_port = smtp_port
@@ -95,6 +121,7 @@ class EmailGateway(DeliveryGateway):
         self.from_name = from_name
         self.use_tls = use_tls
         self.sendgrid_api_key = sendgrid_api_key
+        self.egress = egress if egress is not None else EgressPolicy()
 
     async def send(self, payload: DeliveryPayload) -> DeliveryResult:
         """Send FOIA request via email."""
@@ -108,6 +135,15 @@ class EmailGateway(DeliveryGateway):
             )
 
         if self.sendgrid_api_key:
+            if self.egress.is_tor:
+                return DeliveryResult(
+                    status=DeliveryStatus.FAILED,
+                    reference_id="",
+                    error_message=(
+                        "SendGrid is not routed through Tor, so it is not used in Tor "
+                        "mode. Nothing was sent. Use SMTP, or run again with --direct."
+                    ),
+                )
             return await self._send_sendgrid(payload)
         else:
             return await self._send_smtp(payload)
@@ -139,11 +175,20 @@ class EmailGateway(DeliveryGateway):
                     msg.attach(part)
 
             # Send
+            def _connect() -> smtplib.SMTP:
+                if self.egress.is_tor:
+                    return _TorSMTP(
+                        self.smtp_host,
+                        self.smtp_port,
+                        policy=self.egress,
+                        local_hostname=EHLO_NAME,
+                        timeout=TOR_SMTP_TIMEOUT,
+                    )
+                return smtplib.SMTP(self.smtp_host, self.smtp_port, local_hostname=EHLO_NAME)
+
             def _send():
                 context = ssl.create_default_context()
-                with smtplib.SMTP(
-                    self.smtp_host, self.smtp_port, local_hostname=EHLO_NAME
-                ) as server:
+                with _connect() as server:
                     if self.use_tls:
                         server.starttls(context=context)
                     if self.smtp_user and self.smtp_password:
@@ -169,14 +214,24 @@ class EmailGateway(DeliveryGateway):
                     "from": self.from_email,
                     "subject": msg["Subject"],
                     "method": "smtp",
+                    "egress": "tor" if self.egress.is_tor else "direct",
                 },
             )
 
-        except Exception as e:
+        except TorUnavailableError as e:
             return DeliveryResult(
                 status=DeliveryStatus.FAILED,
                 reference_id="",
-                error_message=str(e),
+                error_message=f"{e}. Nothing was sent; start Tor or run again with --direct.",
+            )
+        except Exception as e:
+            message = str(e)
+            if self.egress.is_tor:
+                message = f"{message} ({TOR_SMTP_HINT})"
+            return DeliveryResult(
+                status=DeliveryStatus.FAILED,
+                reference_id="",
+                error_message=message,
             )
 
     async def _send_sendgrid(self, payload: DeliveryPayload) -> DeliveryResult:

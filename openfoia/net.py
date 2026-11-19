@@ -311,6 +311,100 @@ def tor_proxy_url(policy: EgressPolicy, *, isolation_token: str | None = None) -
     return f"socks5h://{creds}:{creds}@{policy.tor_host}:{policy.tor_port}"
 
 
+#: SOCKS5 reply codes (RFC 1928), for error messages.
+_SOCKS_REPLIES = {
+    1: "general failure",
+    2: "connection not allowed by ruleset (exit policy)",
+    3: "network unreachable",
+    4: "host unreachable",
+    5: "connection refused",
+    6: "TTL expired",
+    7: "command not supported",
+    8: "address type not supported",
+}
+
+
+class SocksError(OSError):
+    """The Tor SOCKS proxy refused or failed the connection."""
+
+
+def _recv_exact(sock: socket.socket, n: int) -> bytes:
+    data = b""
+    while len(data) < n:
+        chunk = sock.recv(n - len(data))
+        if not chunk:
+            raise SocksError("the SOCKS proxy closed the connection")
+        data += chunk
+    return data
+
+
+def open_tor_stream(
+    policy: EgressPolicy,
+    host: str,
+    port: int,
+    *,
+    timeout: float | None = 60.0,
+    isolation_token: str | None = None,
+) -> socket.socket:
+    """Open a TCP stream to *host*:*port* through the Tor SOCKS5 proxy (blocking).
+
+    For protocols httpx does not speak (SMTP). The hostname goes to the proxy
+    as a SOCKS5 DOMAINNAME, so it is resolved at the exit relay and never
+    looked up locally; only the proxy's own address (tor_host) is. With
+    policy.isolate_streams, a fresh (or *isolation_token*-derived)
+    username/password selects a separate circuit, as tor_proxy_url does.
+
+    Fails closed: TorUnavailableError when the proxy cannot be reached,
+    SocksError when Tor refuses the connection. It never connects directly.
+    Standard library only.
+    """
+    if not policy.is_tor:
+        raise ValueError("open_tor_stream needs a Tor egress policy")
+    try:
+        name = host.strip("[]").encode("idna")
+    except UnicodeError:
+        raise ValueError(f"invalid destination host {host!r}") from None
+    if not 0 < len(name) < 256:
+        raise ValueError(f"invalid destination host {host!r}")
+    try:
+        sock = socket.create_connection((policy.tor_host, policy.tor_port), timeout=timeout)
+    except OSError as exc:
+        raise TorUnavailableError(
+            f"Tor SOCKS proxy at {policy.tor_host}:{policy.tor_port} is not reachable: {exc}"
+        ) from exc
+    try:
+        creds = None
+        if policy.isolate_streams:
+            token = isolation_token if isolation_token is not None else secrets.token_hex(8)
+            creds = token.encode()[:255]
+        method = 0x02 if creds else 0x00
+        sock.sendall(bytes([5, 1, method]))
+        version, chosen = _recv_exact(sock, 2)
+        if version != 5 or chosen != method:
+            raise SocksError("the SOCKS proxy did not accept the offered authentication")
+        if creds:
+            sock.sendall(bytes([1, len(creds)]) + creds + bytes([len(creds)]) + creds)
+            if _recv_exact(sock, 2)[1] != 0:
+                raise SocksError("the SOCKS proxy rejected the stream-isolation credentials")
+        sock.sendall(bytes([5, 1, 0, 3, len(name)]) + name + port.to_bytes(2, "big"))
+        version, reply, _, atyp = _recv_exact(sock, 4)
+        if version != 5 or reply != 0:
+            raise SocksError(
+                f"Tor could not connect to {host}:{port}: "
+                f"{_SOCKS_REPLIES.get(reply, f'SOCKS error {reply}')}"
+            )
+        bound = {1: 4, 4: 16}.get(atyp)
+        if bound is None:
+            if atyp != 3:
+                raise SocksError("malformed SOCKS reply")
+            bound = _recv_exact(sock, 1)[0]
+        _recv_exact(sock, bound + 2)
+        return sock
+    except BaseException:
+        sock.close()
+        raise
+
+
 def egress_client(
     policy: EgressPolicy | None = None,
     *,

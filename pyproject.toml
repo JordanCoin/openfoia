@@ -31,9 +31,12 @@ ocr = [
     # Also strips image metadata (EXIF) on ingest; pytesseract needs it anyway.
     "pillow>=10.0.0",
 ]
-# Delivery gateways
-fax = ["twilio>=8.10.0", "reportlab>=4.0.0"]
-mail = ["lob>=4.0.0"]
+# Delivery gateways. Twilio and Lob are called over their REST APIs with the
+# core httpx (through openfoia.net, so Tor mode applies), not their SDKs, which
+# make their own connections outside it. In Tor mode both also need the tor
+# extra (socksio); without it they refuse to send. SMTP over Tor needs nothing.
+fax = ["reportlab>=4.0.0"]  # the fax PDF; a bare fallback PDF is used without it
+mail = []
 # Cloud AI providers
 cloud-ai = ["anthropic>=0.18.0", "openai>=1.10.0"]
 # Local NER models
