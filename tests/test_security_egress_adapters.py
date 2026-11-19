@@ -25,7 +25,9 @@ import httpx
 import pytest
 
 from openfoia.net import EgressMode, EgressPolicy, egress_client
+from openfoia.records.aleph import AlephAdapter
 from openfoia.records.cia import CIAReadingRoomAdapter
+from openfoia.records.companies_house import CompaniesHouseAdapter
 from openfoia.records.courtlistener import CourtListenerAdapter
 from openfoia.records.documentcloud import DocumentCloudAdapter
 from openfoia.records.fec import FECAdapter
@@ -129,6 +131,8 @@ def test_no_bare_httpx_asyncclient_in_records_adapters():
         NARAAdapter,
         FederalRegisterAdapter,
         CourtListenerAdapter,
+        AlephAdapter,
+        CompaniesHouseAdapter,
     ],
 )
 def test_adapter_accepts_egress_policy_kwarg(adapter_cls):
@@ -153,6 +157,8 @@ def test_adapter_accepts_egress_policy_kwarg(adapter_cls):
         NARAAdapter,
         FederalRegisterAdapter,
         CourtListenerAdapter,
+        AlephAdapter,
+        CompaniesHouseAdapter,
     ],
 )
 def test_adapter_defaults_to_direct_policy_when_unspecified(adapter_cls):
@@ -412,5 +418,45 @@ def test_courtlistener_token_withheld_over_tor(monkeypatch, tmp_path, policy, le
     assert adapter.credentials_withheld is policy.is_tor
     if policy.is_tor:
         assert sent == [] and "not used over Tor" in result.error
+    else:
+        assert sent and result.error is None
+
+
+@pytest.mark.parametrize("policy, leaked", [(TOR, set()), (EgressPolicy(), {"ApiKey aleph-131"})])
+def test_aleph_key_withheld_over_tor(monkeypatch, tmp_path, policy, leaked):
+    import openfoia.records.keyed_api as keyed_api_mod
+
+    monkeypatch.setenv("OPENFOIA_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OPENFOIA_ALEPH_API_KEY", "aleph-131")
+    sent = _capture_requests(monkeypatch, keyed_api_mod, {"results": [], "total": 0})
+    adapter = AlephAdapter(egress=policy)
+    result = asyncio.run(adapter.search("Acme"))
+    assert all(_credentials(r) == leaked for r in sent)
+    assert adapter.credentials_withheld is policy.is_tor
+    if policy.is_tor:
+        assert sent == [] and "not used over Tor" in result.error
+        with pytest.raises(Exception, match="not used over Tor"):
+            asyncio.run(adapter.fetch("deadbeef"))
+        assert sent == []
+    else:
+        assert sent and result.error is None
+
+
+@pytest.mark.parametrize("policy, leaked", [(TOR, set()), (EgressPolicy(), {"Basic Y2gtMTMxOg=="})])
+def test_companies_house_key_withheld_over_tor(monkeypatch, tmp_path, policy, leaked):
+    import openfoia.records.keyed_api as keyed_api_mod
+
+    monkeypatch.setenv("OPENFOIA_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OPENFOIA_COMPANIES_HOUSE_API_KEY", "ch-131")
+    sent = _capture_requests(monkeypatch, keyed_api_mod, {"total_results": 0, "items": []})
+    adapter = CompaniesHouseAdapter(egress=policy)
+    result = asyncio.run(adapter.search("Acme"))
+    assert all(_credentials(r) == leaked for r in sent)
+    assert adapter.credentials_withheld is policy.is_tor
+    if policy.is_tor:
+        assert sent == [] and "not used over Tor" in result.error
+        with pytest.raises(Exception, match="not used over Tor"):
+            asyncio.run(adapter.fetch("00000006"))
+        assert sent == []
     else:
         assert sent and result.error is None

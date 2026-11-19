@@ -11,6 +11,7 @@ import asyncio
 import copy
 import json
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import httpx
@@ -61,7 +62,9 @@ def serve(monkeypatch, responder):
         return responder(request)
 
     def fake_egress_client(policy=None, *, timeout=15.0, isolation_token=None, **kw):
-        return egress_client(None, timeout=timeout, transport=httpx.MockTransport(handler), **kw)
+        # Same policy (retry count included), DIRECT so the mock transport is used.
+        direct = replace(policy, mode=EgressMode.DIRECT) if policy else None
+        return egress_client(direct, timeout=timeout, transport=httpx.MockTransport(handler), **kw)
 
     monkeypatch.setattr(keyed_api, "egress_client", fake_egress_client)
     return sent

@@ -24,6 +24,7 @@ import logging
 import os
 import re
 import time
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -89,9 +90,15 @@ async def read_capped(
 
     The body of a success over *max_bytes* raises AdapterRequestError; an
     error body is cut at ERROR_BODY_BYTES (only a message is wanted from it).
+
+    The transport's own retries are turned off (``max_attempts=1``): each try
+    is a request against the provider's limit, so the caller sends, counts and
+    retries every one itself. The route (direct or Tor) is unchanged.
     """
     async with (
-        egress_client(egress, timeout=timeout, follow_redirects=False) as client,
+        egress_client(
+            replace(egress, max_attempts=1), timeout=timeout, follow_redirects=False
+        ) as client,
         client.stream("GET", url, params=params, headers=headers) as resp,
     ):
         cap = max_bytes if resp.status_code < 400 else ERROR_BODY_BYTES
