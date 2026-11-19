@@ -27,12 +27,38 @@ exhaustive lists.
   result carries it. It never switches or downloads by itself.
 - `analyze runs` names the model that produced each run (English or
   multilingual).
+- OpenSanctions is a records source (`--source opensanctions`), so
+  `openfoia search`, `records search`, `records fetch` and the agent and MCP
+  search tools reach sanctions lists and politically exposed persons. Each
+  result names its lists, topics (sanction, PEP, crime...), countries and
+  match score; `openfoia search --json` rows from OpenSanctions carry that
+  score as `confidence` (no other source has a real score, so no other row
+  has the field). `records fetch <id> --source opensanctions` stores the
+  entity in the active case as text plus a FollowTheMoney-shaped entity.
+- Offline OpenSanctions screening by default once the bulk file is on disk:
+  `openfoia records opensanctions-data --download` (asks first; about 480 MB
+  from data.opensanctions.org, size and SHA-1 checked against the published
+  index, the old file kept until the new one verifies). With the file present
+  `openfoia search` lists OpenSanctions as searched on this machine, not as
+  contacted, and asks for no confirmation; `crossref` uses the file without
+  `--opensanctions-data`. `openfoia records opensanctions-data` alone shows
+  what is on disk.
 
 ### Changed
 
 - CI and release workflows use `actions/checkout` v7.0.1 and
   `actions/setup-python` v7.1.0 (pinned by commit SHA), which run on Node 24;
   the pinned v4/v5 were on the deprecated Node 20 runtime.
+
+- OpenSanctions API checks use `POST /match/default` (a real match score;
+  the name goes in the request body, which OpenSanctions does not log)
+  instead of `GET /search/default`, whose URLs it keeps in logs for 90 days
+  and whose results carry no score, so crossref's old score filter dropped
+  every API result. Crossref and the records adapter share this one code path.
+- Without a usable OpenSanctions key (none set, or withheld over Tor) no
+  request is sent at all; crossref lists the source as not contacted and
+  still reports it as errored. Crossref hits link to the entity's page
+  instead of a search URL containing the name.
 
 ### Fixed
 

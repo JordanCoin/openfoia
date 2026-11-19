@@ -517,6 +517,8 @@ class OpenSanctionsAdapter(RecordAdapter):
             raise OpenSanctionsError(
                 "response", f"Unknown schema {clean_line(schema, 40)!r}; use {', '.join(SCHEMAS)}"
             )
+        if not name.strip():
+            return []
         body = {"queries": {"q": {"schema": schema, "properties": {"name": [name]}}}}
         data = await self._call(
             "POST",
