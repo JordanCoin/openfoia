@@ -302,6 +302,53 @@ https://www.archives.gov/isoo/policy-documents/eo-13526).
   publications. Which have APIs and which are scrape-only was only partly
   confirmed (unverified beyond DocumentCloud).
 
+## Off the ladder: registries and leaks outside the US
+
+Most of the world has no FOIA, but company registries are public in many
+countries, and journalists have collected registries, leaks and court records
+into shared archives. Two of them are OpenFOIA sources. Both need a key that
+belongs to you, so both know who is searching; neither is used over Tor.
+
+- **OCCRP Aleph** (now called Aleph Pro), run by the Organized Crime and
+  Corruption Reporting Project. Company registries, gazettes, court archives,
+  procurement, sanctions lists and leaks, stored as FollowTheMoney entities.
+  OCCRP says it fetches records from over 230 online sources, with a focus on
+  Central and Eastern Europe, Sub-Saharan Africa, South America and offshore
+  jurisdictions (fetched 2026-11-19: the home and about pages served by
+  https://aleph.occrp.org/api/2/metadata). Searching the API without a key
+  returned HTTP 401 "You are not authorized to do this", although its FAQ
+  still says the API is public with rate limits for non-registered users
+  (fetched 2026-11-19: https://aleph.occrp.org/api/2/entities?q=...).
+  Accounts go through a registration form at https://requests.occrp.org/register
+  that OCCRP reviews by hand, need an authenticator app, and generate an API
+  key under Settings; leaks and other restricted material need extended
+  access granted case by case (fetched 2026-11-19, account and API pages in
+  the same metadata). The terms allow journalism in the public interest only,
+  forbid know-your-customer and due-diligence use and "automated or
+  high-volume" access, and ask published stories to credit OCCRP Aleph Pro
+  (fetched 2026-11-19: terms and acceptable-use pages, updated 2026-03-12).
+  No numeric rate limit is published. The search filters and the response
+  shapes OpenFOIA reads come from the open-source Aleph API, which Aleph Pro
+  says alephclient still works with; they were not tried with a key
+  (unverified).
+- **UK Companies House.** Every UK company, its officers (directors and
+  secretaries), its persons with significant control (owners) and its filing
+  history. The API needs a free key from a Companies House account, sent as
+  the username of HTTP Basic authentication (fetched 2026-11-19:
+  https://developer.company-information.service.gov.uk/authentication). The
+  limit is 600 requests in 5 minutes, then HTTP 429 for the rest of the
+  window, and applications that keep exceeding it can be banned without
+  notice (fetched 2026-11-19:
+  https://developer.company-information.service.gov.uk/developer-guidelines).
+  Paths, parameters and fields come from the published Swagger specification
+  (fetched 2026-11-19:
+  https://developer-specs.company-information.service.gov.uk/api.ch.gov.uk-specifications/swagger-2.0/spec/swagger.json);
+  no call was made with a key (unverified beyond the specification and an
+  unauthenticated HTTP 401). The register only holds what companies file:
+  nominee directors and owners in other jurisdictions are common, so an
+  ownership chain often ends at a company abroad, which is where Aleph can
+  help.
+
 ## Worked example: a 1990s gifted program in Detroit
 
 The question "did a 1990s Detroit public-school gifted program use a

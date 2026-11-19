@@ -5954,7 +5954,7 @@ def records_search(
       opensanctions   - Sanctions lists, PEPs, crime and debarment lists. Offline from
                         the bulk file when downloaded ('records opensanctions-data
                         --download'), else the API (key: OPENFOIA_OPENSANCTIONS_API_KEY)
-      aleph           - OCCRP Aleph: registries, leaks, court records, 139 countries
+      aleph           - OCCRP Aleph: company registries, leaks, court records, worldwide
                         (key: OPENFOIA_ALEPH_API_KEY; OCCRP account, journalism only)
       companieshouse  - UK companies, directors, owners (PSC), filing history
                         (key: OPENFOIA_COMPANIES_HOUSE_API_KEY; 600 requests / 5 min)
