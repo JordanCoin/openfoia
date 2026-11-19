@@ -10,6 +10,23 @@ exhaustive lists.
 
 ## [Unreleased]
 
+## [5.1.0] - 2026-11-19
+
+This release makes OpenFOIA more useful outside the United States and closes
+three gaps in Tor mode and deleted-data handling. New: an opt-in multilingual
+entity model (`--ner-model multilingual`) for documents not in English; OCCRP
+Aleph, UK Companies House and OpenSanctions as records sources (OpenSanctions
+also fully offline from its bulk file). In Tor mode, `request send` now sends
+email, fax and mail through Tor or not at all, where it used to warn and send
+directly. Deleted text is now overwritten in the database file, its journal
+and the full-text index, and direct-mode downloads are pinned against DNS
+rebinding. Read the Security section for what each of these does not cover.
+Aleph and Companies House need personal API keys, which identify you to the
+provider and are never sent over Tor; their logged-in responses have not yet
+been checked against the live services. The first run after upgrading merges
+the full-text index once (migration 009), which can take a few seconds on a
+large database.
+
 ### Added
 
 - A multilingual model for entity extraction. The GLiNER tier can now use
@@ -1213,6 +1230,7 @@ security/OPSEC pass; the notes below describe what it changed, factually.
 Baseline for this changelog. Earlier tags (`v0.0.1` through `v2.0.0`,
 2026-02-19 to 2026-03-22) predate it; see the git history for details.
 
+[5.1.0]: https://github.com/JordanCoin/openfoia/compare/v5.0.0...v5.1.0
 [5.0.0]: https://github.com/JordanCoin/openfoia/compare/v4.7.0...v5.0.0
 [4.7.0]: https://github.com/JordanCoin/openfoia/compare/v4.6.2...v4.7.0
 [4.6.2]: https://github.com/JordanCoin/openfoia/compare/v4.6.1...v4.6.2
