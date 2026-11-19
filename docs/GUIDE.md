@@ -375,6 +375,71 @@ Earlier runs stay in the database until you prune them or run `openfoia purge`.
 `--prune` overwrites the freed database pages, but it cannot reach copies made
 before it ran: graph and FtM exports, backups, or old blocks on an SSD.
 
+`analyze runs` also shows which model produced each run, so you can tell an
+English-model run from a multilingual one (next section).
+
+### Documents not in English
+
+The GLiNER tier loads an English model by default
+(`urchade/gliner_medium-v2.1`). On documents in other languages it misses
+many names, and in scripts such as Devanagari, Bengali, Georgian or Amharic it
+finds almost none. If your documents are in Turkish, Swahili, Portuguese,
+Arabic, Russian, Hindi or another language, switch the GLiNER tier to the
+multilingual model (`fastino/gliner2-multi-v1`):
+
+```bash
+openfoia install-extras ner-multilingual            # gliner2 + PyTorch, ~900 MB installed
+
+openfoia analyze extract <document-id> --ner-model multilingual   # one extraction
+export OPENFOIA_NER_MODEL=multilingual                            # this shell
+```
+
+To make it the default, put this in `config.json` in your data directory:
+
+```json
+{ "entities": { "ner_model": "multilingual" } }
+```
+
+What it costs, measured on one 4-core machine (see
+[the benchmark](benchmarks/gliner2.md)):
+
+| | English model (default) | multilingual model |
+|---|---|---|
+| Download, once, from huggingface.co | about 1.6 GB | about 1.25 GB |
+| Peak RAM while extracting | about 2.0 GB | about 3.0 GB |
+| Time per page, 2 threads | 1× | about 1.3× |
+| Names found exactly, 26 news sentences in 13 languages (68 names) | 35 | 54 |
+| Names found exactly, Hindi and Bengali sentences (11 names) | 0 | 9 |
+| Names found exactly, English test page (17 names) | 14 | 16 |
+
+The multilingual sentences behind these numbers were written by a machine and
+have not been checked by native speakers, so treat them as a direction, not a
+promise. Both models find names in Chinese and Japanese only as whole runs of
+text, because those scripts have no spaces between words; check those results
+by hand.
+
+The first extraction with a model downloads it. OpenFOIA warns first, and the
+download goes straight to huggingface.co, not through Tor: Hugging Face sees
+your IP address and which model you fetch, nothing from your documents. With
+`network.tor` on, OpenFOIA refuses that download and extracts without the
+model; download it once with Tor off (or copy the Hugging Face cache from
+another machine into the data directory) and extract again. In
+portable mode the model is stored on the stick (`openfoia-data/cache/`), not in
+the host's home directory. After that, extraction runs offline. To make sure
+nothing is ever downloaded, set `HF_HUB_OFFLINE=1`; an uncached model then
+fails instead of downloading.
+
+If you select the multilingual model but `gliner2` is not installed,
+extraction says so, names the install command, and uses the next tier (spaCy,
+then regex). It does not fall back to the English model, because that could
+start a download you did not ask for.
+
+When the English model is selected and a document is mostly in a non-Latin
+script, or its common words are clearly not English, `analyze extract` prints
+one notice suggesting the multilingual model. It never switches or downloads
+anything by itself. AI agents get the same notice in the `extract_entities`
+result.
+
 ---
 
 ## Building investigation graphs

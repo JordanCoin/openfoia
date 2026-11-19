@@ -86,7 +86,7 @@ class _FakeGliner:
 def test_gliner_mentions_use_document_offsets_and_dedupe(monkeypatch):
     text = _long_text()
     fake = _FakeGliner()
-    monkeypatch.setattr(ex, "_get_gliner", lambda: fake)
+    monkeypatch.setattr(ex, "_get_gliner", lambda **kw: fake)
 
     mentions = EntityExtractor(provider="none")._mentions_from_gliner(text, None)
 

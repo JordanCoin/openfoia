@@ -342,8 +342,8 @@ def _shred_all_db_files(data_dir: Path) -> list[str]:
 def install_extras(
     extra: str = typer.Argument(
         ...,
-        help="Extra to install: ner, ocr, fax, mail, cloud-ai, tor, browser, encryption, "
-        "semantic, mcp, all",
+        help="Extra to install: ner, ner-multilingual, ner-spacy, ocr, fax, mail, cloud-ai, "
+        "tor, browser, encryption, semantic, mcp, all",
     ),
 ):
     """Install optional features after the initial setup.
@@ -352,6 +352,7 @@ def install_extras(
 
     Examples:
         openfoia install-extras ner          # GLiNER entity extraction (~2GB)
+        openfoia install-extras ner-multilingual  # GLiNER2, names in many languages
         openfoia install-extras ocr          # Tesseract OCR support
         openfoia install-extras cloud-ai     # Anthropic + OpenAI
         openfoia install-extras encryption   # SQLCipher encrypted database
@@ -361,6 +362,7 @@ def install_extras(
     """
     valid = {
         "ner",
+        "ner-multilingual",
         "ner-spacy",
         "ocr",
         "fax",
@@ -379,6 +381,7 @@ def install_extras(
 
     size_hints = {
         "ner": "~2GB (PyTorch + GLiNER model)",
+        "ner-multilingual": "~900MB (PyTorch + GLiNER2; the model, ~1.25GB, downloads on first use)",
         "ner-spacy": "~100MB (+ download a model after)",
         "ocr": "~5MB (also needs system tesseract-ocr + poppler-utils)",
         "fax": "~20MB",
@@ -417,6 +420,13 @@ def install_extras(
                 rprint(
                     "[yellow]Model download failed. Run manually: python -m spacy download en_core_web_sm[/yellow]"
                 )
+        elif extra == "ner-multilingual":
+            rprint(
+                "[dim]Select it: openfoia analyze extract <doc> --ner-model multilingual, "
+                'OPENFOIA_NER_MODEL=multilingual, or "entities": {"ner_model": "multilingual"} '
+                "in config.json. The first extraction downloads ~1.25 GB from huggingface.co "
+                "(it warns first); it uses ~3 GB of RAM while extracting.[/dim]"
+            )
         elif extra == "browser":
             rprint("[dim]Also run: playwright install chromium[/dim]")
         elif extra == "encryption":
@@ -3733,6 +3743,13 @@ def analyze_extract(
         help="Force one backend: gliner, spacy, regex (never call an LLM) or llm. "
         "Errors if it is not installed or reachable.",
     ),
+    ner_model: str | None = typer.Option(
+        None,
+        "--ner-model",
+        help="GLiNER-tier model: english (default) or multilingual (needs "
+        "'openfoia install-extras ner-multilingual'). Overrides entities.ner_model "
+        "and OPENFOIA_NER_MODEL.",
+    ),
     csv_path: str | None = typer.Option(None, "--csv", help=CSV_HELP),
     prefer_run: str | None = typer.Option(
         None,
@@ -3754,6 +3771,10 @@ def analyze_extract(
     pass --tier gliner (or spacy/regex), or set OPENFOIA_AI_PROVIDER=none,
     which disables the LLM even if an API key is configured in the config
     file or in OPENFOIA_ANTHROPIC_API_KEY / OPENFOIA_OPENAI_API_KEY.
+
+    For documents not in English, --ner-model multilingual uses a GLiNER2
+    model that finds more names in other languages and scripts (see
+    docs/GUIDE.md, "Documents not in English").
     """
     from .db import get_db_path, get_session  # lazy: startup time
     from .extraction_runs import (  # lazy: startup time
@@ -3810,6 +3831,7 @@ def analyze_extract(
 
         # Run extraction
         from .pipeline.extract import (  # lazy: startup time
+            NER_MODELS,
             TIERS,
             BackendUnavailableError,
             EntityExtractor,
@@ -3818,17 +3840,30 @@ def analyze_extract(
         if tier is not None and tier not in TIERS:
             rprint(f"[red]Unknown --tier '{_safe(tier)}'. Choose from: {', '.join(TIERS)}[/red]")
             raise typer.Exit(1)
+        if ner_model is not None and ner_model not in NER_MODELS:
+            rprint(
+                f"[red]Unknown --ner-model '{_safe(ner_model)}'. Choose from: "
+                f"{', '.join(NER_MODELS)}[/red]"
+            )
+            raise typer.Exit(1)
         if tier and ensemble:
             rprint("[red]--tier and --ensemble cannot be combined.[/red]")
             raise typer.Exit(1)
 
         allow_remote = _remote_ai_consent() if tier in (None, "llm") else None
-        extractor = EntityExtractor(model=model, tier=tier, allow_remote=allow_remote)
+        extractor = EntityExtractor(
+            model=model, tier=tier, allow_remote=allow_remote, ner_model=ner_model
+        )
         backend = tier if tier and tier != "llm" else extractor._resolve_backend()
 
         if backend == "regex" and not tier:
             rprint("[yellow]Using regex-only extraction (dates, money, emails, phones).[/yellow]")
             rprint("[yellow]For people and organizations, install a NER model:[/yellow]")
+            if extractor.ner_model == "multilingual":
+                rprint(
+                    "[cyan]  openfoia install-extras ner-multilingual[/cyan] "
+                    "[dim]GLiNER2, the multilingual model you selected[/dim]"
+                )
             rprint(
                 "[cyan]  openfoia install-extras ner        [/cyan] [dim]GLiNER (~2GB, best accuracy)[/dim]"
             )

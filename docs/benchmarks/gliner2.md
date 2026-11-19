@@ -12,6 +12,179 @@ paired runs on a busy shared machine. The corpus is too small to decide a
 default on (17 English names, 27 multilingual ones). The reasons are under
 [Recommendation](#recommendation).
 
+**Update 2026-11-19: the multilingual model is now a user choice, and the
+default is unchanged.** `entities.ner_model` (env `OPENFOIA_NER_MODEL`, flag
+`analyze extract --ner-model`) selects `english` (the model above, still the
+default) or `multilingual` (`fastino/gliner2-multi-v1`, extra
+`ner-multilingual`). A larger news-style set in 13 languages was added and the
+two choices were re-run on it: see
+[Follow-up: the news set](#follow-up-the-news-set-13-languages-2026-11-19).
+The original report below is unchanged.
+
+## Follow-up: the news set, 13 languages (2026-11-19)
+
+### Why `fastino/gliner2-multi-v1` is the multilingual choice
+
+From the measurements in this report:
+
+- It is the most accurate of the four on both corpora: 24/27 multilingual
+  names (19/27 exact) and the only clean English spans (strict NER F1 0.94).
+  `urchade/gliner_multi-v2.1`, the option that would reuse the `gliner`
+  package, finds 20/27, is worse on the English page (strict F1 0.75), and
+  downloads more (2.3 GB, because gliner fetches both weight formats).
+- Its RAM cost is about the same as the other multilingual models (2,974 MiB
+  peak vs 2,827-2,828 MiB): on a $300 laptop all three need about 1 GB more
+  than the English model, so RAM does not separate them. That cost is why it
+  is opt-in and not the default.
+- A separate extra (`ner-multilingual` = `gliner2[local]`) adds 6.4 MB on top
+  of the torch stack the `ner` extra already pulls in, and `gliner2` does not
+  depend on `gliner`, so a user can install either or both.
+- GLiNER2.5 multi is the close alternative (same 24/27, 146 MiB less RAM,
+  slightly faster), but its English spans are worse (strict F1 0.71) and it
+  misses the street address.
+
+### The sentences are machine-written
+
+**The 26 news sentences were written by an AI model (Claude), not by native
+speakers, and no native speaker has reviewed them.** They may contain
+grammatical errors, unnatural phrasing or wrong inflections, and the gold
+spans reflect one non-native reading. Treat the numbers as a direction, not
+as a measured accuracy for any language. Before these numbers decide
+anything (for example the default), each language needs review by a native
+speaker, ideally with real documents.
+
+What the set is (`NEWS` in `tests/benchmark_extraction.py`): two sentences in
+each of Turkish, Swahili, Portuguese, Spanish, Arabic, Persian, Russian,
+Ukrainian, Hindi, Bengali, Chinese, Indonesian and French, in the factual
+register of an investigative report (audit bodies, ministries, contracts,
+tenders). 68 gold entities: people, organizations, locations. People are
+invented; institutions and places are real; the events are invented and
+neutral. Gold is the surface form in the text, inflection included (Russian
+`Газпромбанком`, Ukrainian `Олегу Коваленку`, Bengali `ঢাকায়`), with some
+"also acceptable" strings per sentence (e.g. `Kenya` inside
+`Benki Kuu ya Kenya`). Each sentence is scored as its own document with the
+loose and strict rules described under [Method](#method).
+
+### Setup
+
+The same machine and software as above (4 vCPU, torch 2.15.0+cpu, gliner
+0.2.30, gliner2 2.1.0), models from the Hub cache (`HF_HUB_OFFLINE=1`). Both
+models ran through the production selection, not the benchmark's model
+override: `tests/benchmark_extraction.py --ner-model english|multilingual`
+builds `EntityExtractor(ner_model=...)` and loads with `_get_gliner` /
+`_get_gliner2`, and each run's metadata recorded the model that ran. One
+process per model, `--repeat 11`, at 4 and then 2 torch threads. The
+1-minute load average before the runs was 1.7-2.5 (other sessions were
+running headless Chrome), lower than for the original report. Accuracy was
+identical at 4 and 2 threads for both models.
+
+The original 23-sentence set and the English page reproduce the numbers
+above exactly: English 14/27 loose, 9/27 strict; multilingual 24/27 loose,
+19/27 strict; English page strict NER F1 0.83 vs 0.94.
+
+### Accuracy, news set (26 sentences, 68 gold entities)
+
+| rule | english `gliner_medium-v2.1` | multilingual `gliner2-multi-v1` |
+|---|---|---|
+| loose | P 0.86 / R 0.60 / F1 0.71 (found 41/68, fp 7) | P 1.00 / R 0.87 / F1 0.93 (found 59/68, fp 0) |
+| strict | P 0.71 / R 0.51 / F1 0.60 (found 35/68, fp 15) | P 0.96 / R 0.79 / F1 0.87 (found 54/68, fp 3) |
+
+The loose rule credits a whole unsegmented Chinese sentence for the names in
+it (2 of the English model's and 3 of the multilingual model's loose finds).
+Without Chinese, the strict counts are 35/62 and 54/62.
+
+Per language, found loose / strict (false positives loose/strict):
+
+| lang | english | multilingual | gold |
+|---|---|---|---|
+| tr | 3 / 3 (0/0) | 4 / 4 (0/0) | 5 |
+| sw | 3 / 3 (3/4) | 5 / 5 (0/0) | 5 |
+| pt | 5 / 5 (0/0) | 5 / 4 (0/1) | 5 |
+| es | 5 / 3 (0/2) | 5 / 5 (0/0) | 5 |
+| ar | 3 / 2 (1/3) | 6 / 6 (0/0) | 6 |
+| fa | 1 / 1 (1/2) | 3 / 2 (0/0) | 5 |
+| ru | 4 / 4 (1/1) | 4 / 4 (0/0) | 5 |
+| uk | 5 / 5 (0/0) | 5 / 5 (0/0) | 5 |
+| hi | 0 / 0 (0/0) | 5 / 5 (0/0) | 6 |
+| bn | 0 / 0 (0/0) | 4 / 4 (0/0) | 5 |
+| zh | 2 / 0 (0/1) | 3 / 0 (0/2) | 6 |
+| id | 5 / 5 (1/1) | 5 / 5 (0/0) | 5 |
+| fr | 5 / 4 (0/1) | 5 / 5 (0/0) | 5 |
+
+Per sentence (`found/gold` loose; `S` = strict found; what was tagged):
+
+| lang | english | multilingual |
+|---|---|---|
+| tr | 1/2 S1: `person:Mehmet Demir` | 2/2 S2: `location:Ankara`; `organization:Ankara Büyükşehir Belediyesi`; `person:Mehmet Demir` |
+| tr | 2/3 S2: `location:İzmir`; `person:Ayşe Kaya` | 2/3 S2: `location:İzmir`; `person:Ayşe Kaya` |
+| sw | 1/2 S1: `location:Mombasa`; `person:Mkaguzi`; `person:Serikali`; `person:Wizara ya Afya` | 2/2 S2: `location:Mombasa`; `organization:Wizara ya Afya` |
+| sw | 2/3 S2: `location:Nairobi`; `location:msemaji wa Benki Kuu ya Kenya`; `person:Grace Wanjiku` | 3/3 S3: `location:Nairobi`; `organization:Benki Kuu ya Kenya`; `person:Grace Wanjiku` |
+| pt | 3/3 S3: `location:Brasília`; `organization:Tribunal de Contas da União`; `person:Carlos Almeida` | 3/3 S2: `location:Brasília`; `organization:União`; `person:Carlos Almeida` |
+| pt | 2/2 S2: `organization:Alfa Engenharia S.A.`; `organization:Petrobras` | 2/2 S2: `organization:Alfa Engenharia S.A.`; `organization:Petrobras` |
+| es | 3/3 S1: `location:Bogotá`; `organization:La Contraloría General de la República`; `person:alcalde Jorge Ramírez` | 3/3 S3: `location:Bogotá`; `organization:Contraloría General de la República`; `person:Jorge Ramírez` |
+| es | 2/2 S2: `organization:Construcciones del Norte S.A.`; `organization:Ministerio de Obras Públicas` | 2/2 S2: same |
+| ar | 1/3 S1: `organization:شركة النور للمقاولات`; `person:دينار` | 3/3 S3: `location:عمّان`; `organization:ديوان المحاسبة`; `organization:شركة النور للمقاولات` |
+| ar | 2/3 S1: `location:القاهرة`; `organization:ع وزير المالية`; `person:أحمد الخطيب الاتفاقية` | 3/3 S3: `location:القاهرة`; `organization:البنك الدولي`; `person:أحمد الخطيب` |
+| fa | 0/3 S0: `organization:شرکت پارس` | 1/3 S0: `location:تهران`; `organization:شرکت پارس‌سازه` |
+| fa | 1/2 S1: `person:علی رضایی`; `person:معاون وزیر نفت` | 2/2 S2: `location:اصفهان`; `person:علی رضایی` |
+| ru | 1/2 S1: `location:Счётная палата`; `organization:СтройИнвест`; `organization:мэрией Новосибирска` | 1/2 S1: `location:Новосибирска`; `organization:СтройИнвест`; `organization:мэрией Новосибирска` |
+| ru | 3/3 S3: `location:Москве`; `organization:Газпромбанком`; `person:Ирина Смирнова` | 3/3 S3: same |
+| uk | 3/3 S3: `location:Харкові`; `organization:Національне антикорупційне бюро України`; `person:Олегу Коваленку` | 3/3 S3: same |
+| uk | 2/2 S2: `organization:Міністерство оборони`; `organization:Техноресурс` | 2/2 S2: same |
+| hi | 0/3 S0: nothing | 2/3 S2: `location:दिल्ली`; `organization:दिल्ली नगर निगम`; `person:राजेश कुमार` |
+| hi | 0/3 S0: nothing | 3/3 S3: `location:मुंबई`; `organization:भारतीय रिज़र्व बैंक`; `person:सुनीता शर्मा` |
+| bn | 0/3 S0: nothing | 2/3 S2: `organization:চট্টগ্রাম বন্দরের`; `organization:দুর্নীতি দমন কমিশন`; `person:রহিম উদ্দিন` |
+| bn | 0/2 S0: nothing | 2/2 S2: `location:ঢাকায়`; `organization:বাংলাদেশ ব্যাংক` |
+| zh | 2/3 S0: `organization:华信建设公司在2023年获得了上海市政府的三个项目` | 3/3 S0: the same run-on span; `organization:审计署发现` |
+| zh | 0/3 S0: nothing | 0/3 S0: nothing |
+| id | 3/3 S3: `location:Surabaya`; `organization:Komisi Pemberantasan Korupsi`; `person:Budi Santoso` | 3/3 S3: same |
+| id | 2/2 S2: `organization:Badan Pemeriksa Keuangan`; `organization:Kementerian Kesehatan`; `person:sebesar` | 2/2 S2: without `sebesar` |
+| fr | 2/2 S1: `organization:La Cour des comptes`; `organization:Méditerranée Travaux` | 2/2 S2: adds `location:Marseille`, `organization:mairie de Marseille` |
+| fr | 3/3 S3: `location:Dakar`; `organization:Banque mondiale`; `person:Paul Lefèvre` | 3/3 S3: adds `organization:Le Monde` |
+
+What this shows, on this set only:
+
+- The English model finds **nothing** in the four Hindi and Bengali
+  sentences (11 names); the multilingual model finds 9.
+- On Latin-script and Cyrillic sentences (Turkish, Portuguese, Spanish,
+  Indonesian, French, Russian, Ukrainian) the English model already does
+  fairly well: 32/35 loose. The gap there is mostly precision and span
+  quality (`alcalde Jorge Ramírez`, `person:sebesar`, `person:Serikali`), and
+  Swahili, where it tags common words as people.
+- Arabic and Persian improve the most after the Indic scripts: 4/11 to 9/11
+  loose. Persian is still the weakest non-CJK language for both
+  (`پارس‌سازه` inside `شرکت پارس‌سازه`, `شهرداری تهران` missed).
+- Neither model segments Chinese, as before: no exact Chinese name in six.
+- Both miss `Счётная палата` as an organization; the English model calls it
+  a location.
+
+### Speed and RAM (news follow-up)
+
+Paired runs, both models in one process, one page of `DOC` each per round,
+first round dropped; ratio = median over rounds of multilingual / English
+time in the same round.
+
+| threads | rounds | English median s/page (min-max) | multilingual median s/page (min-max) | median ratio (min-max) | 1-min load after |
+|---|---|---|---|---|---|
+| 2 | 10 | 0.89 (0.71-0.98) | 1.11 (1.00-1.33) | 1.28 (1.02-1.59) | 2.69 |
+| 2 | 20 | 0.83 (0.69-1.05) | 1.09 (0.90-1.33) | 1.30 (1.06-1.61) | 2.46 |
+| 4 | 20 | 1.02 (0.59-2.08) | 1.57 (0.70-4.86) | 1.36 (1.07-3.11) | 3.97 |
+
+Separate processes (11 pages, first dropped): English 0.63 s/page at 4
+threads and 0.80 at 2; multilingual 0.95 and 1.00. Peak RSS of the whole
+benchmark process: **2,007 MiB English, 2,977 MiB multilingual**, the same as
+in the original report. Model load from a warm cache: 4.7-5.1 s English,
+6.1-6.7 s multilingual. These are one busy 4-vCPU VM; a real 2-core laptop
+has still not been measured.
+
+### Still open
+
+- Native-speaker review of every sentence, then real documents per language.
+- A quiet 2-core machine, and an fp16 or quantised load to bring the
+  multilingual model's RAM down; until then it stays opt-in.
+- CJK word splitting (see the `--word-splitter char` section): a model swap
+  does not fix it.
+
 ## What tier 2 runs today
 
 The issue says tier 2 uses `urchade/gliner_multi-v2.1`. It does not.
@@ -408,10 +581,17 @@ python tests/benchmark_extraction.py --model fastino/gliner2-multi-v1 \
 # Paired speed (all models in one process, round-robin):
 python tests/benchmark_extraction.py --interleave --repeat 11 --threads 4 \
   --model urchade/gliner_medium-v2.1 --model fastino/gliner2-multi-v1
+# Follow-up (2026-11-19): the two user choices through the production
+# selection; --multilingual scores both the 23 sentences and NEWS.
+python tests/benchmark_extraction.py --ner-model english \
+  --repeat 11 --threads 2 --multilingual --json english.json
+python tests/benchmark_extraction.py --ner-model multilingual \
+  --repeat 11 --threads 2 --multilingual --json multilingual.json
 ```
 
 The first use downloads the models (see the sizes above). Set
 `HF_HUB_OFFLINE=1` once they are cached. The script is not collected by
 pytest, because its name does not start with `test_`, and CI's
 `-k "not benchmark"` excludes it anyway. The per-process outputs behind every
-number here are in `docs/benchmarks/gliner2-raw.json`.
+number here are in `docs/benchmarks/gliner2-raw.json`; those of the
+follow-up are in `docs/benchmarks/gliner2-news-raw.json`.

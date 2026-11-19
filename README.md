@@ -131,6 +131,15 @@ backend with `openfoia analyze extract <id> --tier gliner` (or `spacy`,
 `regex`), or set `OPENFOIA_AI_PROVIDER=none`, which wins over any API key
 or Ollama URL in the config file or environment.
 
+Documents not in English: the GLiNER tier's default model is English-only.
+`openfoia install-extras ner-multilingual` and `--ner-model multilingual` (or
+`OPENFOIA_NER_MODEL=multilingual`) switch it to a multilingual model that
+finds far more names in Arabic, Hindi, Bengali, Swahili and other languages,
+at the cost of about 1 GB more RAM and a one-time 1.25 GB download. The
+default does not change; `analyze extract` suggests the switch when a
+document looks non-English. See
+[the guide](docs/GUIDE.md#documents-not-in-english).
+
 Each extraction is stored as a run (backend, model, time, entity count).
 `--force` adds a run instead of overwriting the last one; graphs, crossref and
 exports use the newest run per document. `openfoia analyze runs <id>` lists

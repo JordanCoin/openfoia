@@ -10,11 +10,39 @@ exhaustive lists.
 
 ## [Unreleased]
 
+### Added
+
+- A multilingual model for entity extraction. The GLiNER tier can now use
+  `fastino/gliner2-multi-v1` instead of the English-only default: `openfoia
+  install-extras ner-multilingual`, then `analyze extract --ner-model
+  multilingual`, `OPENFOIA_NER_MODEL=multilingual`, or `"entities":
+  {"ner_model": "multilingual"}` in config.json. On 26 machine-written news
+  sentences in 13 languages (not yet reviewed by native speakers) it found 54
+  of 68 names exactly where the English model found 35. It needs about 1 GB more RAM (about 3.0 GB peak) and a one-time
+  1.25 GB download. The default does not change. See docs/GUIDE.md,
+  "Documents not in English".
+- When the English model is selected and a document is mostly in a non-Latin
+  script or clearly not in English, `analyze extract` prints one notice
+  suggesting the multilingual model, and the agent's `extract_entities`
+  result carries it. It never switches or downloads by itself.
+- `analyze runs` names the model that produced each run (English or
+  multilingual).
+
 ### Changed
 
 - CI and release workflows use `actions/checkout` v7.0.1 and
   `actions/setup-python` v7.1.0 (pinned by commit SHA), which run on Node 24;
   the pinned v4/v5 were on the deprecated Node 20 runtime.
+
+### Fixed
+
+- In Tor mode, entity extraction no longer downloads an uncached GLiNER model
+  (English or multilingual) straight from huggingface.co, which would show your
+  real IP. It says so once and continues with the other tiers; download the
+  model once with Tor off, then extract again.
+- Tier-2 model downloads stay on the stick in portable mode for every entry
+  point (agent, MCP and web server too), not only the CLI. The download
+  notice names the model and its measured size.
 
 ## [5.0.0] - 2026-11-18
 
