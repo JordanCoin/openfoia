@@ -1,0 +1,234 @@
+{
+  "_note": "Written from the Companies House Swagger 2.0 schemas (search.json, companyProfile.json, companyOfficerList.json, pscModels.json, filingHistory.json, officerAppointmentList.json) read on 2026-11-19. NOT recorded: no API key was available. unauthenticated_401 IS the live body.",
+  "unauthenticated_401": {"error": "Empty Authorization header", "type": "ch:service"},
+  "search_companies": {
+    "kind": "search#companies",
+    "total_results": 2,
+    "items_per_page": 20,
+    "start_index": 0,
+    "items": [
+      {
+        "kind": "searchresults#company",
+        "title": "ACME HOLDINGS LIMITED",
+        "company_number": "01234567",
+        "company_status": "active",
+        "company_type": "ltd",
+        "date_of_creation": "2009-03-02",
+        "address_snippet": "1 Example Street, London, EC1A 1AA",
+        "address": {"address_line_1": "1 Example Street", "locality": "London", "postal_code": "EC1A 1AA"},
+        "description": "01234567 - Incorporated on  2 March 2009",
+        "description_identifier": ["incorporated-on"],
+        "links": {"self": "/company/01234567"},
+        "matches": {"title": [1, 4]}
+      },
+      {
+        "kind": "searchresults#company",
+        "title": "ACME TRADING (SCOTLAND) LTD",
+        "company_number": "SC123456",
+        "company_status": "dissolved",
+        "company_type": "ltd",
+        "date_of_creation": "2001-06-11",
+        "date_of_cessation": "2019-02-05",
+        "address_snippet": "2 High Street, Edinburgh, EH1 1AA",
+        "address": {"address_line_1": "2 High Street", "locality": "Edinburgh"},
+        "description": "SC123456 - Dissolved on  5 February 2019",
+        "links": {"self": "/company/SC123456"}
+      }
+    ]
+  },
+  "search_officers": {
+    "kind": "search#officers",
+    "total_results": 1,
+    "items_per_page": 20,
+    "start_index": 0,
+    "items": [
+      {
+        "kind": "searchresults#officer",
+        "title": "Jane Mary SMITH",
+        "appointment_count": 3,
+        "date_of_birth": {"month": 4, "year": 1968},
+        "address_snippet": "1 Example Street, London, EC1A 1AA",
+        "address": {"address_line_1": "1 Example Street", "locality": "London"},
+        "description": "Total number of appointments 3 - Born April 1968",
+        "description_identifiers": ["appointment-count", "born-on"],
+        "links": {"self": "/officers/AbCdEf123456_-xyz/appointments"}
+      }
+    ]
+  },
+  "company_profile": {
+    "company_name": "ACME HOLDINGS LIMITED",
+    "company_number": "01234567",
+    "company_status": "active",
+    "type": "ltd",
+    "jurisdiction": "england-wales",
+    "date_of_creation": "2009-03-02",
+    "registered_office_address": {
+      "address_line_1": "1 Example Street",
+      "locality": "London",
+      "postal_code": "EC1A 1AA",
+      "country": "England"
+    },
+    "sic_codes": ["64209"],
+    "previous_company_names": [
+      {"name": "ACME TRADING LIMITED", "effective_from": "2009-03-02", "ceased_on": "2012-07-01"}
+    ],
+    "accounts": {
+      "accounting_reference_date": {"day": 31, "month": 3},
+      "next_made_up_to": "2026-03-31",
+      "overdue": false,
+      "next_accounts": {"due_on": "2026-12-31", "overdue": false}
+    },
+    "confirmation_statement": {"next_due": "2027-03-16", "next_made_up_to": "2027-03-02", "overdue": true},
+    "has_charges": true,
+    "has_insolvency_history": false,
+    "can_file": true,
+    "etag": "abc",
+    "links": {"self": "/company/01234567"}
+  },
+  "officers": {
+    "kind": "officer-list",
+    "etag": "x",
+    "active_count": 2,
+    "resigned_count": 1,
+    "total_results": 3,
+    "items_per_page": 100,
+    "start_index": 0,
+    "items": [
+      {
+        "name": "SMITH, Jane Mary",
+        "officer_role": "director",
+        "appointed_on": "2015-01-12",
+        "nationality": "British",
+        "occupation": "Company Director",
+        "country_of_residence": "England",
+        "date_of_birth": {"month": 4, "year": 1968},
+        "address": {"address_line_1": "1 Example Street", "locality": "London"},
+        "links": {
+          "self": "/company/01234567/appointments/Zx9",
+          "officer": {"appointments": "/officers/AbCdEf123456_-xyz/appointments"}
+        }
+      },
+      {
+        "name": "ACME NOMINEES LIMITED",
+        "officer_role": "corporate-secretary",
+        "appointed_on": "2009-03-02",
+        "identification": {"identification_type": "uk-limited-company", "registration_number": "07654321"},
+        "links": {
+          "self": "/company/01234567/appointments/Yw8",
+          "officer": {"appointments": "/officers/QrStUv987654/appointments"}
+        }
+      },
+      {
+        "name": "DOE, John",
+        "officer_role": "director",
+        "appointed_on": "2009-03-02",
+        "resigned_on": "2014-12-31",
+        "nationality": "Cypriot",
+        "date_of_birth": {"month": 11, "year": 1959},
+        "links": {
+          "self": "/company/01234567/appointments/Xv7",
+          "officer": {"appointments": "/officers/MnOpQr111222/appointments"}
+        }
+      }
+    ]
+  },
+  "pscs": {
+    "items_per_page": 100,
+    "start_index": 0,
+    "total_results": 2,
+    "active_count": 2,
+    "ceased_count": 0,
+    "links": {"self": "/company/01234567/persons-with-significant-control"},
+    "items": [
+      {
+        "kind": "corporate-entity-person-with-significant-control",
+        "name": "ACME OFFSHORE LTD",
+        "notified_on": "2016-04-06",
+        "natures_of_control": ["ownership-of-shares-75-to-100-percent", "voting-rights-75-to-100-percent"],
+        "identification": {"legal_form": "Limited Company", "country_registered": "British Virgin Islands"},
+        "address": {"address_line_1": "PO Box 1", "locality": "Road Town"},
+        "etag": "e1",
+        "links": {"self": "/company/01234567/persons-with-significant-control/corporate-entity/PscAbc123"}
+      },
+      {
+        "kind": "individual-person-with-significant-control",
+        "name": "Mr Ivan PETROV",
+        "notified_on": "2016-04-06",
+        "nationality": "Russian",
+        "country_of_residence": "Cyprus",
+        "date_of_birth": {"month": 5, "year": 1971},
+        "natures_of_control": ["significant-influence-or-control"],
+        "address": {"address_line_1": "3 Sea Road", "locality": "Limassol"},
+        "etag": "e2",
+        "links": {"self": "/company/01234567/persons-with-significant-control/individual/PscDef456"}
+      }
+    ]
+  },
+  "filing_history": {
+    "kind": "filing-history",
+    "etag": "f",
+    "total_count": 2,
+    "items_per_page": 100,
+    "start_index": 0,
+    "filing_history_status": "filing-history-available",
+    "items": [
+      {
+        "transaction_id": "MzQ1Njc4OTAxMmFkaXF6a2N4",
+        "category": "confirmation-statement",
+        "date": "2026-03-10",
+        "type": "CS01",
+        "description": "confirmation-statement-with-no-updates",
+        "description_values": {"made_up_date": "2026-03-02"},
+        "pages": 3,
+        "barcode": "XC1",
+        "links": {
+          "self": "/company/01234567/filing-history/MzQ1Njc4OTAxMmFkaXF6a2N4",
+          "document_metadata": "https://document-api.company-information.service.gov.uk/document/AbC123dEf456"
+        }
+      },
+      {
+        "transaction_id": "MjAxNTAxMTI",
+        "category": "officers",
+        "date": "2015-01-14",
+        "type": "AP01",
+        "description": "appoint-person-director-company-with-name-date",
+        "description_values": {"officer_name": "Jane Mary Smith", "appointment_date": "2015-01-12"},
+        "pages": 2,
+        "links": {
+          "self": "/company/01234567/filing-history/MjAxNTAxMTI",
+          "document_metadata": "https://document-api.company-information.service.gov.uk/document/ZyX987"
+        }
+      }
+    ]
+  },
+  "appointments": {
+    "kind": "personal-appointment",
+    "etag": "a",
+    "name": "Jane Mary SMITH",
+    "is_corporate_officer": false,
+    "date_of_birth": {"month": 4, "year": 1968},
+    "total_results": 2,
+    "items_per_page": 50,
+    "start_index": 0,
+    "links": {"self": "/officers/AbCdEf123456_-xyz/appointments"},
+    "items": [
+      {
+        "name": "Jane Mary SMITH",
+        "officer_role": "director",
+        "appointed_on": "2015-01-12",
+        "nationality": "British",
+        "occupation": "Company Director",
+        "appointed_to": {"company_name": "ACME HOLDINGS LIMITED", "company_number": "01234567", "company_status": "active"},
+        "links": {"company": "/company/01234567"}
+      },
+      {
+        "name": "Jane Mary SMITH",
+        "officer_role": "director",
+        "appointed_on": "2018-09-01",
+        "resigned_on": "2021-02-28",
+        "appointed_to": {"company_name": "WIDGET SHELL LTD", "company_number": "11223344", "company_status": "dissolved"},
+        "links": {"company": "/company/11223344"}
+      }
+    ]
+  }
+}

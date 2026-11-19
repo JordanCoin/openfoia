@@ -474,12 +474,12 @@ class AlephAdapter(RecordAdapter):
         if entity is None:
             raise AdapterRequestError("Aleph returned an entity without an id or schema.")
         errors: list[str] = []
-        related: list[dict[str, Any]] = []
+        expanded: dict[str, Any] = {}
         try:
             expanded = await self._get(path + "/expand") or {}
-            related = _expanded(expanded)
         except AdapterRequestError as exc:
             errors.append(f"related entities not retrieved: {exc}")
+        related = _expanded(expanded, data)
         main = clean_ftm({**data, "id": entity.identifiers["aleph_id"]}) or {"properties": {}}
         ftm = [main, *(e for e in (clean_ftm(r["entity"]) for r in related) if e)]
         x = entity.extra_data
@@ -605,29 +605,52 @@ def _first_text(hit: dict[str, Any]) -> str:
     return ""
 
 
-def _expanded(data: dict[str, Any]) -> list[dict[str, Any]]:
-    """Neighbour entities from ``/expand``: ``results[*] = {property, entities: [...]}``."""
+def _nested(entity: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    """Entities embedded in reference properties: Aleph's API returns ``director: [{...}]``."""
+    return [
+        (key, value)
+        for key, values in _props(entity).items()
+        if isinstance(values, list)
+        for value in values
+        if isinstance(value, dict)
+    ]
+
+
+def _expanded(data: dict[str, Any], main: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """Neighbour entities: from ``/expand`` (``results[*] = {property, entities}``), the
+    entities embedded in the main entity's references, and those embedded one level down."""
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
+    main_id = _valid_id((main or {}).get("id"))
+    if main_id:
+        seen.add(main_id)
+
+    def add(prop: str, ent: Any) -> None:
+        if not isinstance(ent, dict) or len(out) >= MAX_RELATED:
+            return
+        ent_id = _valid_id(ent.get("id"))
+        if not ent_id or ent_id in seen or not isinstance(ent.get("schema"), str):
+            return
+        seen.add(ent_id)
+        out.append(
+            {
+                "property": prop,
+                "id": ent_id,
+                "name": _first(_props(ent), *_NAME_PROPS) or ent_id[:12],
+                "entity": ent,
+            }
+        )
+
+    groups: list[tuple[str, list[Any]]] = [(k, [v]) for k, v in _nested(main or {})]
     for group in data.get("results") or []:
-        if not isinstance(group, dict):
-            continue
-        prop = clean_line(group.get("property"), 60) or "related"
-        for ent in group.get("entities") or []:
-            if not isinstance(ent, dict) or len(out) >= MAX_RELATED:
-                continue
-            ent_id = _valid_id(ent.get("id"))
-            if not ent_id or ent_id in seen or not isinstance(ent.get("schema"), str):
-                continue
-            seen.add(ent_id)
-            out.append(
-                {
-                    "property": prop,
-                    "id": ent_id,
-                    "name": _first(_props(ent), *_NAME_PROPS) or ent_id[:12],
-                    "entity": ent,
-                }
-            )
+        if isinstance(group, dict) and isinstance(group.get("entities"), list):
+            groups.append((clean_line(group.get("property"), 60) or "related", group["entities"]))
+    for prop, ents in groups:
+        for ent in ents:
+            add(prop, ent)
+            if isinstance(ent, dict):
+                for key, inner in _nested(ent):
+                    add(f"{prop} > {clean_line(key, 60)}", inner)
     return out
 
 

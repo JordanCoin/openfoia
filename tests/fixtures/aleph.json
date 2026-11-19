@@ -1,0 +1,124 @@
+{
+  "_note": "Shapes from the open-source Aleph API (alephclient reads the same fields). NOT recorded: Aleph Pro refused every unauthenticated search on 2026-11-19 (HTTP 401) and no key was available. unauthenticated_401 and invalid_key_401 ARE the live bodies.",
+  "unauthenticated_401": {"message": "You are not authorized to do this.", "status": "error"},
+  "invalid_key_401": "<pre>\nError 401: error 401: invalid credentials for \"Authorization: ApiKey\"</pre>",
+  "search": {
+    "status": "ok",
+    "total": 2,
+    "total_type": "eq",
+    "limit": 10,
+    "offset": 0,
+    "page": 1,
+    "pages": 1,
+    "next": null,
+    "previous": null,
+    "results": [
+      {
+        "id": "3f2a9c41d0e7b8a6c5d4e3f2a1b0c9d8e7f6a5b4.9a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d",
+        "schema": "Company",
+        "properties": {
+          "name": ["ACME HOLDINGS LIMITED"],
+          "jurisdiction": ["gb"],
+          "registrationNumber": ["01234567"],
+          "incorporationDate": ["2009-03-02"],
+          "status": ["Active"]
+        },
+        "collection": {
+          "id": "2053",
+          "collection_id": "2053",
+          "label": "UK Companies House",
+          "category": "company",
+          "countries": ["gb"]
+        },
+        "highlight": ["<em>ACME</em> HOLDINGS LIMITED"],
+        "links": {
+          "self": "https://aleph.occrp.org/api/2/entities/3f2a9c41d0e7b8a6c5d4e3f2a1b0c9d8e7f6a5b4.9a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d",
+          "ui": "https://aleph.occrp.org/entities/3f2a9c41d0e7b8a6c5d4e3f2a1b0c9d8e7f6a5b4.9a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d"
+        },
+        "score": 31.2
+      },
+      {
+        "id": "b7e4f1c2d3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8",
+        "schema": "Person",
+        "properties": {
+          "name": ["Ivan Petrov"],
+          "nationality": ["ru"],
+          "birthDate": ["1971-05"]
+        },
+        "collection": {
+          "id": "88",
+          "collection_id": "88",
+          "label": "Russian Unified State Register of Legal Entities",
+          "category": "company",
+          "countries": ["ru"]
+        },
+        "highlight": ["Director of <em>Acme</em> Trade OOO"],
+        "links": {"self": "https://aleph.occrp.org/api/2/entities/b7e4f1c2d3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8"}
+      }
+    ]
+  },
+  "entity": {
+    "id": "3f2a9c41d0e7b8a6c5d4e3f2a1b0c9d8e7f6a5b4.9a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d",
+    "schema": "Company",
+    "properties": {
+      "name": ["ACME HOLDINGS LIMITED"],
+      "previousName": ["ACME TRADING LIMITED"],
+      "jurisdiction": ["gb"],
+      "registrationNumber": ["01234567"],
+      "incorporationDate": ["2009-03-02"],
+      "status": ["Active"],
+      "address": ["1 Example Street, London, EC1A 1AA"]
+    },
+    "collection": {"id": "2053", "label": "UK Companies House", "category": "company", "countries": ["gb"]},
+    "links": {"self": "https://aleph.occrp.org/api/2/entities/3f2a9c41d0e7b8a6c5d4e3f2a1b0c9d8e7f6a5b4.9a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d"}
+  },
+  "expand": {
+    "status": "ok",
+    "total": 2,
+    "results": [
+      {
+        "property": "directorshipOrganization",
+        "count": 1,
+        "entities": [
+          {
+            "id": "d1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0",
+            "schema": "Directorship",
+            "properties": {
+              "director": [
+                {
+                  "id": "b7e4f1c2d3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8",
+                  "schema": "Person",
+                  "properties": {"name": ["Ivan Petrov"], "nationality": ["ru"]}
+                }
+              ],
+              "organization": ["3f2a9c41d0e7b8a6c5d4e3f2a1b0c9d8e7f6a5b4.9a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d"],
+              "role": ["Director"],
+              "startDate": ["2015-01-12"]
+            }
+          }
+        ]
+      },
+      {
+        "property": "ownershipAsset",
+        "count": 1,
+        "entities": [
+          {
+            "id": "e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0",
+            "schema": "Ownership",
+            "properties": {
+              "owner": [
+                {
+                  "id": "c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00",
+                  "schema": "Company",
+                  "properties": {"name": ["Acme Offshore Ltd"], "jurisdiction": ["vg"]}
+                }
+              ],
+              "asset": ["3f2a9c41d0e7b8a6c5d4e3f2a1b0c9d8e7f6a5b4.9a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d"],
+              "percentage": ["75"]
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
