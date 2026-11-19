@@ -233,10 +233,10 @@ def test_smtp_goes_through_tor_by_hostname(fake_socks, no_local_dns, monkeypatch
     assert (req["cmd"], req["atyp"], req["host"], req["port"]) == (1, 3, "smtp.example.org", 587)
     user, password = req["auth"]  # stream isolation: a fresh circuit for this send
     assert user and user == password
-    lines = b"".join(proxy.smtp)
+    lines = b"".join(proxy.smtp).lower()  # smtplib capitalizes verbs differently by version
     assert b"ehlo [127.0.0.1]" in lines
     assert b"rcpt to:<foia@agency.example>" in lines
-    assert b"Subject: FOIA Request: Records on X" in lines
+    assert b"subject: foia request: records on x" in lines
     assert no_local_dns == []
 
 
@@ -614,7 +614,7 @@ def test_request_send_end_to_end_through_a_fake_tor(
     assert r.exit_code == 0, r.output
     hosts = [req["host"] for req in proxy.requests]
     assert hosts[-1] == "smtp.gmail.com"  # request send's default SMTP host
-    assert b"rcpt to:<foia@agency.example>" in b"".join(proxy.smtp)
+    assert b"rcpt to:<foia@agency.example>" in b"".join(proxy.smtp).lower()
     assert no_local_dns == []
 
 
