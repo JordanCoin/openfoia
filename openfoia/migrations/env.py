@@ -9,9 +9,9 @@ import logging
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, event, pool
 
-from openfoia.db import get_db_path
+from openfoia.db import _set_connection_pragmas, get_db_path
 from openfoia.models import Base
 
 # Alembic Config object
@@ -76,6 +76,8 @@ def run_migrations_online() -> None:
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
+    # Same pragmas as every other connection (secure_delete, persistent journal).
+    event.listen(connectable, "connect", _set_connection_pragmas)
 
     with connectable.connect() as connection:
         context.configure(
