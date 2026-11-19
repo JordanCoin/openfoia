@@ -260,7 +260,18 @@ def _first(props: dict[str, list[Any]], *names: str, limit: int = 300) -> str:
 def _countries(entity: dict[str, Any]) -> set[str]:
     props = _props(entity)
     found: set[str] = set()
-    for name in ("country", "jurisdiction", "nationality", "citizenship", "countries", "flag"):
+    for name in (
+        "country",
+        "jurisdiction",
+        "mainCountry",
+        "nationality",
+        "citizenship",
+        "birthCountry",
+        "residency",
+        "countries",
+        "flag",
+        "pastFlags",
+    ):
         for v in props.get(name) or []:
             if isinstance(v, str):
                 found.add(v.strip().lower())
@@ -591,7 +602,7 @@ def _entity(hit: dict[str, Any], fallback_id: str | None = None) -> RecordEntity
 
 
 def _date(value: str) -> str | None:
-    return value[:10] if re.match(r"\d{4}(-\d{2}(-\d{2})?)?", value or "") else None
+    return value[:10] if re.match(r"\d{4}(-\d{2}(-\d{2})?)?([T ]|$)", value or "") else None
 
 
 def _first_text(hit: dict[str, Any]) -> str:
@@ -629,7 +640,10 @@ def _expanded(data: dict[str, Any], main: dict[str, Any] | None = None) -> list[
         if not isinstance(ent, dict) or len(out) >= MAX_RELATED:
             return
         ent_id = _valid_id(ent.get("id"))
-        if not ent_id or ent_id in seen or not isinstance(ent.get("schema"), str):
+        schema = ent.get("schema")
+        if not ent_id or ent_id in seen or not isinstance(schema, str):
+            return
+        if not re.match(r"^[A-Z][A-Za-z]{1,40}$", schema):  # stored and printed: no escapes
             return
         seen.add(ent_id)
         out.append(
