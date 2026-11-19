@@ -304,33 +304,58 @@ class _EngineHygiene:
 
 _HYGIENE: weakref.WeakKeyDictionary[Engine, _EngineHygiene] = weakref.WeakKeyDictionary()
 
+# One-row table (migration 009): "the full-text index still holds deleted
+# words". Written by the same transaction that deletes the page text, cleared
+# only after a merge succeeds, so a merge that fails (database busy) or never
+# runs (process killed after the commit) is retried by the next session.
+FTS_MERGE_PENDING = "fts_merge_pending"
+
 
 def _watch_page_text_deletes(dbapi_connection: Any, hygiene: _EngineHygiene) -> None:
     """Note when page text is deleted or replaced on this connection.
 
     The full-text index keeps the words (with positions) of a deleted page in
     its older segments until they are merged, so secure_delete alone does not
-    clear them. A TEMP trigger (per connection, nothing written to the file)
-    flags the engine; :func:`_after_session` then merges the index.
+    clear them. A TEMP trigger (per connection) flags the engine and, once
+    migration 009 has run, records the pending merge in
+    :data:`FTS_MERGE_PENDING` inside the deleting transaction;
+    :func:`_after_session` then merges the index.
     """
 
     def _mark() -> None:
         hygiene.page_text_deleted = True
 
+    cursor = dbapi_connection.cursor()
     try:
+        tables = {
+            row[0]
+            for row in cursor.execute(
+                "SELECT name FROM main.sqlite_master WHERE type='table' AND name IN (?, ?)",
+                ("document_pages", FTS_MERGE_PENDING),
+            ).fetchall()
+        }
+        if "document_pages" not in tables:
+            return  # before migrations: nothing to watch yet
         dbapi_connection.create_function("openfoia_page_text_changed", 0, _mark)
-        cursor = dbapi_connection.cursor()
-        try:
-            for event_sql in ("DELETE", "UPDATE OF text"):
-                name = "openfoia_pages_" + event_sql.split()[0].lower()
-                cursor.execute(
-                    f"CREATE TEMP TRIGGER IF NOT EXISTS {name} AFTER {event_sql} "
-                    "ON main.document_pages BEGIN SELECT openfoia_page_text_changed(); END"
-                )
-        finally:
-            cursor.close()
-    except Exception:  # no document_pages table yet (before migrations)
-        pass
+        body = "SELECT openfoia_page_text_changed();"
+        if FTS_MERGE_PENDING in tables:
+            # Unqualified: SQLite before 3.47 refuses schema-qualified names in a
+            # trigger's INSERT; a TEMP trigger resolves it to the main table.
+            body += f" INSERT OR IGNORE INTO {FTS_MERGE_PENDING}(id) VALUES (1);"
+        for event_sql in ("DELETE", "UPDATE OF text"):
+            name = "openfoia_pages_" + event_sql.split()[0].lower()
+            cursor.execute(
+                f"CREATE TEMP TRIGGER IF NOT EXISTS {name} AFTER {event_sql} "
+                f"ON main.document_pages BEGIN {body} END"
+            )
+    except Exception as exc:  # never block opening the database; say what is lost
+        logger.warning(
+            "Could not watch for deleted page text (%s): the full-text index may keep "
+            "deleted words until the next session that merges it.",
+            type(exc).__name__,
+        )
+    finally:
+        cursor.close()
 
 
 def scrub_rollback_journal(engine: Engine, *, busy_ms: int = 250) -> bool:
@@ -394,22 +419,37 @@ def _zero_file_in_place(path: Path, chunk: int = 1 << 20) -> None:
         os.fsync(f.fileno())
 
 
+def _fts_merge_pending(conn: Any) -> bool:
+    """True when :data:`FTS_MERGE_PENDING` records a merge still owed."""
+    exists = conn.exec_driver_sql(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (FTS_MERGE_PENDING,)
+    ).first()
+    return bool(exists) and bool(conn.exec_driver_sql(f"SELECT 1 FROM {FTS_MERGE_PENDING}").first())
+
+
 def _after_session(engine: Engine) -> None:
     """Clean up what a finished session may have left on disk.
 
-    Merges the full-text index when page text was deleted or replaced (so the
-    old words are dropped and their pages zeroed by secure_delete), then
-    scrubs the rollback journal. Best effort: a failure is logged, never
-    raised, because the session's own work has already been committed.
+    Merges the full-text index when page text was deleted or replaced, in this
+    session or in an earlier one whose merge failed or never ran (so the old
+    words are dropped and their pages zeroed by secure_delete), then scrubs
+    the rollback journal. Best effort: a failure is logged, never raised,
+    because the session's own work has already been committed; the pending
+    merge stays recorded and the next session retries it.
     """
     hygiene = _HYGIENE.get(engine)
     try:
-        if hygiene is not None and hygiene.page_text_deleted:
-            hygiene.page_text_deleted = False
+        with engine.connect() as conn:
+            pending = _fts_merge_pending(conn)
+        if pending or (hygiene is not None and hygiene.page_text_deleted):
             from .doctext import merge_fulltext_index  # lazy: circular import
 
             with engine.begin() as conn:
                 merge_fulltext_index(conn)
+                if pending or _fts_merge_pending(conn):
+                    conn.exec_driver_sql(f"DELETE FROM {FTS_MERGE_PENDING}")
+            if hygiene is not None:
+                hygiene.page_text_deleted = False
         if not scrub_rollback_journal(engine):
             logger.warning(
                 "Database busy: the rollback journal was not scrubbed this time "
