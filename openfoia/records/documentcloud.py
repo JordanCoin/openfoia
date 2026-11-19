@@ -29,6 +29,7 @@ from .base import (
     RecordEntity,
     SearchResult,
     check_download_target,
+    public_only_connections,
     validate_download_url,
 )
 from .store import store_text_document
@@ -326,17 +327,20 @@ class DocumentCloudAdapter(RecordAdapter):
                         logger.warning("Not fetching DocumentCloud text: %s", e)
                         text_url = None
                 if text_url:
-                    try:
-                        txt_resp = await client.get(txt_url, timeout=15)
-                        if txt_resp.status_code == 200:
-                            full_text = txt_resp.text
-                    except Exception as e:
-                        logger.debug("Could not fetch text: %s", e)
-                    page_texts = await _fetch_page_texts(
-                        client,
-                        f"{text_url}documents/{doc_id}/pages/{slug}",
-                        doc.get("page_count") or 0,
-                    )
+                    # Pinned to the vetted public address in DIRECT mode, so the
+                    # asset host cannot rebind to 127.0.0.1 after the check.
+                    with public_only_connections(self._egress):
+                        try:
+                            txt_resp = await client.get(txt_url, timeout=15)
+                            if txt_resp.status_code == 200:
+                                full_text = txt_resp.text
+                        except Exception as e:
+                            logger.debug("Could not fetch text: %s", e)
+                        page_texts = await _fetch_page_texts(
+                            client,
+                            f"{text_url}documents/{doc_id}/pages/{slug}",
+                            doc.get("page_count") or 0,
+                        )
                     if full_text is None and page_texts:
                         full_text = join_pages(page_texts)
 

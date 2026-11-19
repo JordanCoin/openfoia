@@ -7,11 +7,13 @@ Supports optional AES-256 encryption at rest via SQLCipher.
 from __future__ import annotations
 
 import importlib
+import logging
 import os
 import shutil
 import stat
 import sys
 import tempfile
+import weakref
 from collections.abc import Generator
 from contextlib import contextmanager, suppress
 from pathlib import Path
@@ -23,6 +25,8 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from .models import Agency, AgencyLevel, DeliveryMethod
+
+logger = logging.getLogger(__name__)
 
 # Check for SQLCipher availability.
 #
@@ -252,14 +256,175 @@ def get_engine(db_path: Path | None = None, password: str | None = None) -> Engi
         url = f"sqlite:///{db_path}"
         engine = create_engine(url, echo=False)
 
-    # Enable foreign keys for SQLite / SQLCipher
+    hygiene = _EngineHygiene()
+    _HYGIENE[engine] = hygiene
+
     @event.listens_for(engine, "connect")
     def set_sqlite_pragma(dbapi_connection, connection_record):
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
+        _set_connection_pragmas(dbapi_connection, connection_record)
+        _watch_page_text_deletes(dbapi_connection, hygiene)
 
     return engine
+
+
+def _set_connection_pragmas(dbapi_connection: Any, connection_record: Any = None) -> None:
+    """Pragmas for every connection OpenFOIA opens (plain SQLite and SQLCipher).
+
+    - ``foreign_keys``: cascades and integrity.
+    - ``secure_delete``: SQLite overwrites deleted content with zeros, in the
+      page and when a page is freed, instead of leaving it in free space.
+    - ``journal_mode = PERSIST``: the rollback journal (which holds the
+      *original* content of every page a transaction changes, so a delete puts
+      the deleted text there) is kept and reused instead of being unlinked
+      after each transaction. An unlinked journal leaves its blocks in the
+      filesystem's free space where nothing can reach them; a persistent one
+      is a named file that :func:`scrub_rollback_journal` zeroes in place after
+      each session and that ``purge --secure`` and ``db encrypt`` shred.
+      OpenFOIA never turns on WAL.
+    - ``temp_store = MEMORY``: temporary tables, sort spills and statement
+      journals stay in memory instead of temp files (outside the data
+      directory, e.g. /tmp on a host running a portable install).
+    """
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA secure_delete=ON")
+        cursor.execute("PRAGMA temp_store=MEMORY")
+        cursor.execute("PRAGMA journal_mode=PERSIST")
+    finally:
+        cursor.close()
+
+
+class _EngineHygiene:
+    """Per-engine flags set by connection hooks, read by :func:`_after_session`."""
+
+    def __init__(self) -> None:
+        self.page_text_deleted = False
+
+
+_HYGIENE: weakref.WeakKeyDictionary[Engine, _EngineHygiene] = weakref.WeakKeyDictionary()
+
+
+def _watch_page_text_deletes(dbapi_connection: Any, hygiene: _EngineHygiene) -> None:
+    """Note when page text is deleted or replaced on this connection.
+
+    The full-text index keeps the words (with positions) of a deleted page in
+    its older segments until they are merged, so secure_delete alone does not
+    clear them. A TEMP trigger (per connection, nothing written to the file)
+    flags the engine; :func:`_after_session` then merges the index.
+    """
+
+    def _mark() -> None:
+        hygiene.page_text_deleted = True
+
+    try:
+        dbapi_connection.create_function("openfoia_page_text_changed", 0, _mark)
+        cursor = dbapi_connection.cursor()
+        try:
+            for event_sql in ("DELETE", "UPDATE OF text"):
+                name = "openfoia_pages_" + event_sql.split()[0].lower()
+                cursor.execute(
+                    f"CREATE TEMP TRIGGER IF NOT EXISTS {name} AFTER {event_sql} "
+                    "ON main.document_pages BEGIN SELECT openfoia_page_text_changed(); END"
+                )
+        finally:
+            cursor.close()
+    except Exception:  # no document_pages table yet (before migrations)
+        pass
+
+
+def scrub_rollback_journal(engine: Engine, *, busy_ms: int = 250) -> bool:
+    """Zero the persistent rollback journal in place, under an exclusive lock.
+
+    With ``journal_mode = PERSIST`` the ``-journal`` file keeps the original
+    content of pages that earlier transactions changed (for a delete: the
+    deleted text) until a later transaction overwrites it. This overwrites the
+    whole file with zeros, flushes it to disk and then truncates it. It holds
+    an EXCLUSIVE lock while doing so, so no other connection (another
+    OpenFOIA process, the web UI) has a transaction that still needs the
+    journal; taking that lock first rolls back a hot journal left by a crash.
+
+    Returns True when the journal is clean (or absent), False when the
+    database was busy and the scrub was skipped (the next session retries).
+    Overwriting in place is effective on spinning disks and ordinary
+    filesystems; SSD wear-levelling and copy-on-write filesystems (btrfs, ZFS,
+    APFS) may still keep the old blocks (docs/THREAT_MODEL.md).
+    """
+    raw = engine.raw_connection()
+    try:
+        conn = raw.driver_connection
+        main = [row[2] for row in conn.execute("PRAGMA database_list") if row[1] == "main"]
+        if not main or not main[0]:
+            return True  # in-memory database: no journal file
+        journal = Path(main[0] + "-journal")
+        try:
+            if journal.stat().st_size == 0:
+                return True
+        except FileNotFoundError:
+            return True
+        conn.execute(f"PRAGMA busy_timeout = {int(busy_ms)}")
+        try:
+            conn.execute("BEGIN EXCLUSIVE")
+        except Exception:  # the driver's OperationalError: locked elsewhere
+            return False
+        try:
+            conn.execute("SELECT count(*) FROM sqlite_master").fetchone()
+            _zero_file_in_place(journal)
+        finally:
+            conn.execute("ROLLBACK")
+        return True
+    finally:
+        raw.close()
+
+
+def _zero_file_in_place(path: Path, chunk: int = 1 << 20) -> None:
+    """Overwrite *path* with zeros, fsync, then truncate it to zero length."""
+    with open(path, "r+b") as f:
+        size = os.fstat(f.fileno()).st_size
+        zeros = bytes(min(chunk, size))
+        written = 0
+        while written < size:
+            n = min(chunk, size - written)
+            f.write(zeros[:n])
+            written += n
+        f.flush()
+        os.fsync(f.fileno())
+        f.truncate(0)
+        f.flush()
+        os.fsync(f.fileno())
+
+
+def _after_session(engine: Engine) -> None:
+    """Clean up what a finished session may have left on disk.
+
+    Merges the full-text index when page text was deleted or replaced (so the
+    old words are dropped and their pages zeroed by secure_delete), then
+    scrubs the rollback journal. Best effort: a failure is logged, never
+    raised, because the session's own work has already been committed.
+    """
+    hygiene = _HYGIENE.get(engine)
+    try:
+        if hygiene is not None and hygiene.page_text_deleted:
+            hygiene.page_text_deleted = False
+            from .doctext import merge_fulltext_index  # lazy: circular import
+
+            with engine.begin() as conn:
+                merge_fulltext_index(conn)
+        if not scrub_rollback_journal(engine):
+            logger.warning(
+                "Database busy: the rollback journal was not scrubbed this time "
+                "(the next session will)."
+            )
+    except Exception as exc:  # best effort, see docstring
+        logger.warning("Could not clean up after the session: %s", type(exc).__name__)
+
+
+def _finish_engine(engine: Engine) -> None:
+    """Run :func:`_after_session` and close the engine's connections."""
+    try:
+        _after_session(engine)
+    finally:
+        engine.dispose()
 
 
 def get_session_factory(engine: Engine | None = None) -> sessionmaker:
@@ -284,6 +449,7 @@ def get_session(password: str | None = None) -> Generator[Session, None, None]:
         raise
     finally:
         session.close()
+        _finish_engine(engine)
 
 
 def _alembic_config():
@@ -360,8 +526,12 @@ def run_migrations(password: str | None = None, db_path: Path | None = None) -> 
         command.upgrade(alembic_cfg, "head")
         alembic_cfg.attributes["connection"].close()
     else:
+        # migrations/env.py applies _set_connection_pragmas to its own engine.
         alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
         command.upgrade(alembic_cfg, "head")
+        engine = get_engine(db_path=db_path, password=password)
+    # A migration that rebuilds a table puts the old rows in the journal.
+    _finish_engine(engine)
 
 
 def init_db(seed: bool = True, password: str | None = None, db_path: Path | None = None) -> None:
@@ -382,7 +552,7 @@ def init_db(seed: bool = True, password: str | None = None, db_path: Path | None
         try:
             seed_agencies(engine)
         finally:
-            engine.dispose()
+            _finish_engine(engine)
 
     _restrict_db_permissions(db_path or get_db_path(password=password))
 

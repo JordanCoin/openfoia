@@ -4,20 +4,30 @@ Sends FOIA requests as certified physical letters via the Lob print-and-mail
 API. Letters are printed, stuffed, stamped, and mailed by Lob with USPS
 tracking included.
 
-Lob API v6+ uses lob-python with Configuration/ApiClient pattern.
-See: https://docs.lob.com/
+The Letters REST API (https://docs.lob.com/#tag/Letters) is called directly
+through openfoia.net.egress_client (no Lob SDK, which makes its own
+connections), so the user's egress policy applies: in Tor mode the request
+goes through the Tor SOCKS proxy with the hostname resolved at the exit, and
+if Tor is unavailable the send fails rather than going direct. Tor hides your
+IP address from Lob; your Lob API key (sent with every request, tied to your
+account and billing), the return address and the letter itself still
+identify you to Lob and to the agency.
 """
 
 from __future__ import annotations
 
-import asyncio
 import html
 import logging
 import re
 from datetime import UTC, datetime
 from typing import Any
 
+from ..net import EgressPolicy, TorUnavailableError
 from .base import DeliveryGateway, DeliveryPayload, DeliveryResult, DeliveryStatus
+from .http import GatewayAPIError, api_request, tor_unavailable_message
+
+#: Lob Letters REST resource.
+LETTERS_API = "https://api.lob.com/v1/letters"
 
 
 def _esc(value: Any) -> str:
@@ -31,6 +41,23 @@ def _esc(value: Any) -> str:
 
 
 logger = logging.getLogger(__name__)
+
+
+def _letter_id(reference_id: str) -> str:
+    """A Lob letter id ("ltr_" + alphanumerics), or ValueError: it goes in the URL path."""
+    if not re.fullmatch(r"ltr_[0-9A-Za-z]{1,64}", reference_id or ""):
+        raise ValueError(f"Not a Lob letter id: {reference_id!r}")
+    return reference_id
+
+
+def _parse_time(value: Any) -> datetime | None:
+    """Lob's ISO 8601 timestamps, or None."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 class LobMailGateway(DeliveryGateway):
@@ -70,22 +97,20 @@ class LobMailGateway(DeliveryGateway):
         return_address: dict[str, str],
         use_certified: bool = True,
         address_verification: bool = True,
+        egress: EgressPolicy | None = None,
     ):
         self.api_key = api_key
         self.return_address = return_address
         self.use_certified = use_certified
         self.address_verification = address_verification
-        self._letters_api: Any = None
-        self._api_client: Any = None
+        self.egress = egress if egress is not None else EgressPolicy()
 
-    def _get_lob(self) -> Any:
-        """Lazily initialize Lob client."""
-        if self._letters_api is None:
-            import lob  # optional: mail
-
-            lob.api_key = self.api_key
-            self._letters_api = lob
-        return self._letters_api
+    async def _api(self, method: str, letter_id: str = "", json: dict | None = None) -> dict:
+        """Call the Letters API with HTTP basic auth (API key as the username)."""
+        url = f"{LETTERS_API}/{letter_id}" if letter_id else LETTERS_API
+        return await api_request(
+            self.egress, "Lob", method, url, auth=(self.api_key, ""), json=json
+        )
 
     async def send(self, payload: DeliveryPayload) -> DeliveryResult:
         """Send FOIA request as a physical letter via Lob.
@@ -94,11 +119,6 @@ class LobMailGateway(DeliveryGateway):
         sends it via Lob's print-and-mail API, and returns tracking info.
         """
         try:
-            # Availability probe: raises ImportError if the extra is missing.
-            import lob  # noqa: F401
-
-            lob_client = self._get_lob()
-
             # Parse recipient address into Lob format
             to_address = self._parse_address(payload.recipient_address)
 
@@ -113,36 +133,38 @@ class LobMailGateway(DeliveryGateway):
                 self.use_certified,
             )
 
-            # Send via Lob API (v4)
-            letter = await asyncio.to_thread(
-                lob_client.Letter.create,
-                description=f"FOIA Request: {payload.subject[:50]}",
-                to_address=to_address,
-                from_address=self.return_address,
-                file=letter_html,
-                color=False,
-                mail_type="usps_first_class",
-                extra_service="certified" if self.use_certified else None,
-                return_envelope=True,
-            )
+            body: dict[str, Any] = {
+                "description": f"FOIA Request: {payload.subject[:50]}",
+                "to": to_address,
+                "from": self.return_address,
+                "file": letter_html,
+                "color": False,
+                "mail_type": "usps_first_class",
+                "return_envelope": True,
+                # Lob requires the page to perforate when a return envelope is included.
+                "perforated_page": 1,
+            }
+            if self.use_certified:
+                body["extra_service"] = "certified"
+            letter = await self._api("POST", json=body)
+            letter_id = str(letter.get("id") or "")
+            if not letter_id:
+                raise GatewayAPIError("Lob accepted the request but returned no letter id")
 
             # Extract tracking info
-            tracking_number = None
-            expected_delivery = None
-            if hasattr(letter, "tracking_number"):
-                tracking_number = letter.tracking_number
-            if hasattr(letter, "expected_delivery_date"):
-                expected_delivery = str(letter.expected_delivery_date)
+            tracking_number = letter.get("tracking_number")
+            expected = letter.get("expected_delivery_date")
+            expected_delivery = str(expected) if expected else None
 
             logger.info(
                 "Letter created: id=%s tracking=%s",
-                letter.id,
+                letter_id,
                 tracking_number,
             )
 
             return DeliveryResult(
                 status=DeliveryStatus.SENT,
-                reference_id=letter.id,
+                reference_id=letter_id,
                 sent_at=datetime.now(UTC),
                 cost_cents=self.estimate_cost(payload),
                 metadata={
@@ -152,14 +174,15 @@ class LobMailGateway(DeliveryGateway):
                     "mail_type": "certified" if self.use_certified else "first_class",
                     "pages": pages,
                     "return_envelope": True,
+                    "egress": "tor" if self.egress.is_tor else "direct",
                 },
             )
 
-        except ImportError:
+        except TorUnavailableError as e:
             return DeliveryResult(
                 status=DeliveryStatus.FAILED,
                 reference_id="",
-                error_message="Mail gateway not installed. Run: openfoia install-extras mail",
+                error_message=tor_unavailable_message(e),
             )
         except Exception as e:
             logger.error("Letter send failed: %s", e)
@@ -176,46 +199,43 @@ class LobMailGateway(DeliveryGateway):
         Processed for Delivery, Delivered, Re-Routed, Returned to Sender.
         """
         try:
-            lob_client = self._get_lob()
-            letter = await asyncio.to_thread(
-                lob_client.Letter.retrieve,
-                reference_id,
-            )
+            letter = await self._api("GET", _letter_id(reference_id))
 
             # Determine delivery status from tracking events
             status = DeliveryStatus.SENT
             delivered_at = None
             tracking_events = []
+            events = [e for e in (letter.get("tracking_events") or []) if isinstance(e, dict)]
 
-            if hasattr(letter, "tracking_events") and letter.tracking_events:
-                for event in letter.tracking_events:
+            if events:
+                for event in events:
                     tracking_events.append(
                         {
-                            "type": getattr(event, "type", None),
-                            "name": getattr(event, "name", None),
-                            "time": str(getattr(event, "time", "")),
-                            "location": getattr(event, "location", None),
+                            "type": event.get("type"),
+                            "name": event.get("name"),
+                            "time": str(event.get("time") or ""),
+                            "location": event.get("location"),
                         }
                     )
 
-                latest = letter.tracking_events[-1]
-                event_name = getattr(latest, "name", "") or ""
-                event_type = getattr(latest, "type", "") or ""
+                latest = events[-1]
+                event_name = str(latest.get("name") or "")
+                event_type = str(latest.get("type") or "")
 
                 if "delivered" in event_name.lower() or "delivered" in event_type.lower():
                     status = DeliveryStatus.DELIVERED
-                    delivered_at = getattr(latest, "time", None)
+                    delivered_at = _parse_time(latest.get("time"))
                 elif "returned" in event_name.lower() or "re-routed" in event_name.lower():
                     status = DeliveryStatus.FAILED
 
             return DeliveryResult(
                 status=status,
                 reference_id=reference_id,
-                sent_at=getattr(letter, "send_date", None),
+                sent_at=_parse_time(letter.get("send_date")),
                 delivered_at=delivered_at,
                 cost_cents=None,
                 metadata={
-                    "tracking_number": getattr(letter, "tracking_number", None),
+                    "tracking_number": letter.get("tracking_number"),
                     "tracking_events": tracking_events,
                     "carrier": "USPS",
                 },
@@ -236,11 +256,7 @@ class LobMailGateway(DeliveryGateway):
         longer possible. Typically there is a ~1 hour window.
         """
         try:
-            lob_client = self._get_lob()
-            await asyncio.to_thread(
-                lob_client.Letter.delete,
-                reference_id,
-            )
+            await self._api("DELETE", _letter_id(reference_id))
             logger.info("Letter %s canceled", reference_id)
             return True
         except Exception as e:

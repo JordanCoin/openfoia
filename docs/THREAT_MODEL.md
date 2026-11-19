@@ -23,6 +23,19 @@ investigations.
   cross-reference — still reaches the destination either way. Run
   `openfoia egress-status` to see the current policy and whether the Tor
   proxy is actually reachable right now.
+- **Sending requests over Tor.** In Tor mode `openfoia request send` sends
+  email (SMTP through the Tor SOCKS proxy, the server name resolved at the
+  exit), fax (Twilio's API) and physical mail (Lob's API) through Tor, or not
+  at all: it checks the Tor proxy first and stops if it is down, and a send
+  that Tor or the provider refuses fails instead of being retried directly.
+  `--direct` sends one request without Tor, and says so. Tor hides your IP
+  address from the mail server, Twilio or Lob; see "When Data Leaves Your
+  Machine" for what still identifies you.
+- **Deleted database content is overwritten.** Deleted rows are zeroed in the
+  database file, the full-text index is merged so a deleted page's words go
+  too, and SQLite's rollback journal is kept as a file that is overwritten
+  with zeros after each session instead of being deleted with the old content
+  still in it. See Known Limitations 2 and 6 for what this does not reach.
 - **Encrypted database.** `openfoia db encrypt` encrypts the SQLite database at
   rest with a password you choose. It shreds the plaintext original and its
   WAL/journal files in place — no plaintext backup is kept.
@@ -104,7 +117,7 @@ OpenFOIA is local-first, but certain features make network requests:
 
 | Feature | Destination | What is sent |
 |---|---|---|
-| `openfoia request send` | Agency FOIA portal / email gateway | Your FOIA request text, your contact info |
+| `openfoia request send` | Your mail server (SMTP), Twilio (fax) or Lob (mail), and through them the agency | Your FOIA request text and contact info (name, email, return address), and your SMTP login and password or your Twilio or Lob API key. In Tor mode this goes through Tor or is not sent; the provider then sees a Tor exit address, but your login or key (and the billing account behind it) and the name on the request identify you to it whatever the route. Many mail providers refuse Tor; `--direct` sends one request from your real IP |
 | `openfoia ingest` (web fetch/archive) | The URL's host | The URL you are fetching. Without `--tor`, from your real IP; the exit node also sees it when `--tor` is used |
 | `openfoia search`, `openfoia records search` | The public-records sources searched (DocumentCloud, MuckRock, SEC EDGAR, OpenCorporates, USAspending, NARA and the others in the records registry) | Your search query, from your real IP unless Tor is used (`--egress tor` or `network.tor`). Sources that need your own key (NARA, CourtListener, OCCRP Aleph, UK Companies House) also receive it, which ties the query to your account with that provider whatever the route. `openfoia search` lists the sources and asks first; with Tor it fails closed and does not send personal API keys, so those sources are skipped |
 | `openfoia crossref` | MuckRock, OpenCorporates, SEC EDGAR, DocumentCloud, OpenSanctions, USASpending, and other configured record sources | **The names of the people and organizations you are investigating** (the subject names extracted from your documents), from your real IP unless `--tor` is used. CLI warns and asks you to confirm before this happens; `--sources icij,opensanctions-local` stays fully offline. The OpenSanctions API is contacted only with a personal key (never over Tor); without one it is listed as not contacted and reported as errored, not as clean |
@@ -121,9 +134,9 @@ If you never use `send`, `ingest`, `search`, `crossref`, `docs embed-model`,
 cloud AI, an MCP client with a remote model, or a GLiNER model that is not yet
 downloaded,
 no data leaves your machine during normal operation. `--tor` (or the `network.tor` config
-default) changes *who the destination sees* for `ingest` and `crossref` — it
-does not change *what* they receive: the URL or the subject names still
-arrive at the destination either way.
+default) changes *who the destination sees* for `ingest`, `crossref`, `search`
+and `request send` — it does not change *what* they receive: the URL, the
+subject names or the request still arrive at the destination either way.
 
 ---
 
@@ -132,12 +145,27 @@ arrive at the destination either way.
 1. **SSD secure delete is theater.** On solid-state drives, overwriting a file
    does not guarantee the old data is erased. Use full-disk encryption (LUKS,
    FileVault, BitLocker) instead.
-2. **SQLite WAL and journal files.** SQLite's write-ahead log
-   (`data.db-wal`) and rollback journal may contain recent writes; on a
-   plaintext database they are plaintext. `purge --secure`, `db encrypt` and
-   `init --force` overwrite them, but SQLite itself deletes them with an
-   ordinary unlink during normal use, so earlier versions of them may be
-   recoverable from free space.
+2. **SQLite journal files.** SQLite's rollback journal (`data.db-journal`)
+   holds the original content of every page a write changes, so a delete
+   copies the deleted text into it. SQLite normally deletes the journal after
+   every transaction, leaving that content in the filesystem's free space.
+   OpenFOIA instead keeps it as a persistent file (`journal_mode=PERSIST`; it
+   never turns on WAL) and, after every database session, overwrites the whole
+   file with zeros, flushes it to disk and truncates it, holding an exclusive
+   lock so no other process still needs it. Temporary tables, sorts and
+   statement journals are kept in memory (`temp_store=MEMORY`), not in temp
+   files. With an encrypted database the journal is encrypted too. What
+   remains:
+   - If OpenFOIA is killed between a write and the scrub, or another process
+     (such as `openfoia serve`) is writing at that moment, the old content
+     stays in `data.db-journal` until the next session scrubs it.
+     `purge --secure` and `db encrypt` shred it either way.
+   - Overwriting a file in place does not reach copies the storage keeps
+     elsewhere: SSD wear-levelling, copy-on-write filesystems (btrfs, ZFS,
+     APFS), filesystem journals that log file data, snapshots and backups.
+   - Versions before this one let SQLite delete the journal, so journals
+     written by them may still be recoverable from free space.
+   Full-disk encryption covers all three.
 3. **Python process memory.** Sensitive data (passwords, document text) exists
    in Python process memory while OpenFOIA is running. A memory dump or core
    dump could expose it.
@@ -149,12 +177,22 @@ arrive at the destination either way.
 5. **No forward secrecy for the database.** If an attacker obtains a copy of
    your encrypted database and later obtains your password, they can decrypt
    everything. There is no per-session key rotation.
-6. **Deleted rows can linger inside the database file.** SQLite marks deleted
-   rows (page text, entities, embeddings) as free space and overwrites it only
-   when the space is reused or the file is vacuumed. With an encrypted
-   database the leftovers are encrypted too; without encryption they can be
-   carved from the file. `openfoia docs embed --drop` zeroes the space it frees;
-   other deletes do not. `purge --secure` shreds the whole file.
+6. **Deleted rows inside the database file.** Every connection runs with
+   SQLite's `secure_delete` on, so deleted rows (page text, entities, notes,
+   embeddings) are overwritten with zeros, in their page and when a page is
+   freed. The full-text index keeps a deleted or replaced page's words, with
+   their positions (enough to rebuild the text), in older index segments until
+   they are merged; after a session that deleted or replaced page text,
+   OpenFOIA merges the whole index, which frees and zeroes the old segments.
+   The test suite deletes a document and replaces a document's pages in a
+   plaintext database and checks that neither the text nor its words remain in
+   the bytes of `data.db` or `data.db-journal`. The cost: about 15% slower
+   ingest, and deleting or replacing a document's pages took 0.3 s instead of
+   0.01 s on a 10,000-page database on the test machine (the index merge grows
+   with the size of the index). What remains: rows deleted by earlier versions
+   stay in free pages until SQLite reuses them; the file itself is subject to
+   the same storage caveats as Limitation 2; and `purge --secure` remains the
+   way to destroy everything.
 7. **Other accounts on the same machine and the web UI.** `openfoia serve`
    opens the browser at a login link (`/login?nonce=...`). Any local account
    can read a browser's command line, so the link is single-use and expires
@@ -179,6 +217,18 @@ arrive at the destination either way.
    library that ignores `XDG_CACHE_HOME` (pip, for one, uses
    `~/Library/Caches` or `%LOCALAPPDATA%`) may still write there during
    `openfoia install-extras`.
+
+9. **Downloads from links in API responses.** File links that records sources
+   return (MuckRock files, DocumentCloud text, NARA, CourtListener, Federal
+   Register and CIA PDFs) must be HTTPS to a public host. In direct mode the
+   host name is resolved, every address must be public, and the connection is
+   made to an address from that same answer, with TLS still verified against
+   the host name, so a DNS server that answers a public address to the check
+   and 127.0.0.1 to the connection (DNS rebinding) cannot point a download at
+   this machine or your network. Not covered: when an `HTTPS_PROXY` or
+   `ALL_PROXY` from the environment is in use, the proxy resolves the name;
+   in Tor mode nothing is resolved locally and the Tor exit's policy is what
+   refuses private addresses.
 
 ## Semantic search embeddings
 

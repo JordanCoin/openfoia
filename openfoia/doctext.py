@@ -103,6 +103,25 @@ def ensure_fts(conn: Connection) -> bool:
     return True
 
 
+def merge_fulltext_index(conn: Connection) -> bool:
+    """Merge the FTS5 index into one segment, dropping deleted pages' words.
+
+    FTS5 records a deletion as a marker in a new segment and keeps the old
+    entries (each word with its positions, enough to rebuild the page's text)
+    until segments are merged. 'optimize' merges them all; with secure_delete
+    on, the pages the old segments occupied are zeroed. Cost grows with the
+    size of the index, so it runs only after page text was deleted or
+    replaced. Returns False when there is no FTS5 index.
+    """
+    exists = conn.exec_driver_sql(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (FTS_TABLE,)
+    ).first()
+    if not exists:
+        return False
+    conn.exec_driver_sql(f"INSERT INTO {FTS_TABLE}({FTS_TABLE}) VALUES ('optimize')")
+    return True
+
+
 @dataclass
 class GrepHit:
     document_id: str

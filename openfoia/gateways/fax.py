@@ -8,25 +8,38 @@ fallback via Twilio's standard voice/messaging infrastructure.
 
 For new accounts, consider using a Twilio fax partner (e.g., Phaxio) or
 SRFax. The gateway interface remains the same regardless of provider.
+
+The Fax REST API is called directly through openfoia.net.egress_client (no
+Twilio SDK), so the user's egress policy applies: in Tor mode the request goes
+through the Tor SOCKS proxy with the hostname resolved at the exit, and if Tor
+is unavailable the send fails rather than going direct. Tor hides your IP
+address from Twilio; your Twilio account (the Account SID and auth token sent
+with every request, and the billing identity behind them), the sending number
+and the request itself still identify you to Twilio and to the agency.
 """
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import html
 import io
 import logging
 import os
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from ..db import _ensure_private_dir, get_data_dir
+from ..net import EgressPolicy, TorUnavailableError
 from .base import DeliveryGateway, DeliveryPayload, DeliveryResult, DeliveryStatus
+from .http import GatewayAPIError, api_request, tor_unavailable_message
 
 logger = logging.getLogger(__name__)
+
+#: Twilio Programmable Fax REST resource (https://www.twilio.com/docs/fax/api).
+FAX_API = "https://fax.twilio.com/v1/Faxes"
 
 
 def _esc(value: Any) -> str:
@@ -47,6 +60,23 @@ def get_fax_media_dir() -> Path:
     `openfoia purge --secure`, which only covers the data directory.
     """
     return _ensure_private_dir(get_data_dir() / "fax_media")
+
+
+def _sid(reference_id: str) -> str:
+    """A Twilio fax SID ("FX" + 32 hex), or ValueError: it becomes part of the URL path."""
+    if not re.fullmatch(r"FX[0-9a-fA-F]{32}", reference_id or ""):
+        raise ValueError(f"Not a Twilio fax SID: {reference_id!r}")
+    return reference_id
+
+
+def _parse_time(value: Any) -> datetime | None:
+    """Twilio's ISO 8601 timestamps ("2026-01-05T14:00:00Z"), or None."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 class TwilioFaxGateway(DeliveryGateway):
@@ -78,6 +108,7 @@ class TwilioFaxGateway(DeliveryGateway):
         webhook_url: str | None = None,
         media_base_url: str | None = None,
         store_media_on_provider: bool = False,
+        egress: EgressPolicy | None = None,
     ):
         self.account_sid = account_sid
         self.auth_token = auth_token
@@ -87,15 +118,19 @@ class TwilioFaxGateway(DeliveryGateway):
         # Off by default: a retained copy on Twilio is outside the user's
         # control and survives any local purge.
         self.store_media_on_provider = store_media_on_provider
-        self._client: Any = None
+        self.egress = egress if egress is not None else EgressPolicy()
 
-    def _get_client(self) -> Any:
-        """Lazily initialize Twilio client."""
-        if self._client is None:
-            from twilio.rest import Client  # optional: fax
-
-            self._client = Client(self.account_sid, self.auth_token)
-        return self._client
+    async def _api(self, method: str, sid: str = "", data: dict[str, str] | None = None) -> dict:
+        """Call the Fax REST API with HTTP basic auth (Account SID : auth token)."""
+        url = f"{FAX_API}/{sid}" if sid else FAX_API
+        return await api_request(
+            self.egress,
+            "Twilio",
+            method,
+            url,
+            auth=(self.account_sid, self.auth_token),
+            data=data,
+        )
 
     async def send(self, payload: DeliveryPayload) -> DeliveryResult:
         """Send FOIA request as fax via Twilio.
@@ -117,26 +152,27 @@ class TwilioFaxGateway(DeliveryGateway):
             # Upload media and get accessible URL for Twilio
             media_url = await self._upload_media(pdf_bytes)
 
-            client = self._get_client()
-
-            # Send fax via Twilio Fax REST API
-            fax = await asyncio.to_thread(
-                client.fax.faxes.create,
-                to=payload.recipient_address,
-                from_=self.from_number,
-                media_url=media_url,
-                quality="fine",  # Higher quality for legal documents
+            form = {
+                "To": payload.recipient_address,
+                "From": self.from_number,
+                "MediaUrl": media_url,
+                "Quality": "fine",  # Higher quality for legal documents
                 # Do NOT leave a copy of the request on Twilio's servers by
                 # default — it is outside the user's control and outside purge.
-                store_media=self.store_media_on_provider,
-                status_callback=self.webhook_url,
-            )
+                "StoreMedia": "true" if self.store_media_on_provider else "false",
+            }
+            if self.webhook_url:
+                form["StatusCallback"] = self.webhook_url
+            fax = await self._api("POST", data=form)
+            sid = str(fax.get("sid") or "")
+            if not sid:
+                raise GatewayAPIError("Twilio accepted the request but returned no fax SID")
 
-            logger.info("Fax queued: SID=%s to=%s", fax.sid, payload.recipient_address)
+            logger.info("Fax queued: SID=%s to=%s", sid, payload.recipient_address)
 
             return DeliveryResult(
                 status=DeliveryStatus.PENDING,
-                reference_id=fax.sid,
+                reference_id=sid,
                 sent_at=datetime.now(UTC),
                 cost_cents=pages * self.COST_PER_PAGE_CENTS,
                 metadata={
@@ -145,14 +181,15 @@ class TwilioFaxGateway(DeliveryGateway):
                     "estimated_pages": pages,
                     "quality": "fine",
                     "media_url": media_url,
+                    "egress": "tor" if self.egress.is_tor else "direct",
                 },
             )
 
-        except ImportError:
+        except TorUnavailableError as e:
             return DeliveryResult(
                 status=DeliveryStatus.FAILED,
                 reference_id="",
-                error_message="Fax gateway not installed. Run: openfoia install-extras fax",
+                error_message=tor_unavailable_message(e),
             )
         except Exception as e:
             logger.error("Fax send failed: %s", e)
@@ -169,10 +206,7 @@ class TwilioFaxGateway(DeliveryGateway):
         receiving, completed, no-answer, busy, failed, canceled.
         """
         try:
-            client = self._get_client()
-            fax = await asyncio.to_thread(
-                client.fax.faxes(reference_id).fetch,
-            )
+            fax = await self._api("GET", _sid(reference_id))
 
             status_map = {
                 "queued": DeliveryStatus.PENDING,
@@ -187,21 +221,22 @@ class TwilioFaxGateway(DeliveryGateway):
                 "canceled": DeliveryStatus.CANCELLED,
             }
 
-            delivery_status = status_map.get(fax.status, DeliveryStatus.PENDING)
+            delivery_status = status_map.get(fax.get("status"), DeliveryStatus.PENDING)
+            price = fax.get("price")
 
             return DeliveryResult(
                 status=delivery_status,
                 reference_id=reference_id,
-                sent_at=fax.date_created,
-                delivered_at=fax.date_updated
+                sent_at=_parse_time(fax.get("date_created")),
+                delivered_at=_parse_time(fax.get("date_updated"))
                 if delivery_status == DeliveryStatus.DELIVERED
                 else None,
-                cost_cents=int(float(fax.price or 0) * -100) if fax.price else None,
+                cost_cents=int(float(price) * -100) if price else None,
                 metadata={
-                    "twilio_status": fax.status,
-                    "num_pages": fax.num_pages,
-                    "duration": fax.duration,
-                    "direction": fax.direction,
+                    "twilio_status": fax.get("status"),
+                    "num_pages": fax.get("num_pages"),
+                    "duration": fax.get("duration"),
+                    "direction": fax.get("direction"),
                 },
             )
 
@@ -216,11 +251,7 @@ class TwilioFaxGateway(DeliveryGateway):
     async def cancel(self, reference_id: str) -> bool:
         """Cancel a pending fax if it hasn't started transmitting."""
         try:
-            client = self._get_client()
-            await asyncio.to_thread(
-                client.fax.faxes(reference_id).update,
-                status="canceled",
-            )
+            await self._api("POST", _sid(reference_id), data={"Status": "canceled"})
             logger.info("Fax %s canceled", reference_id)
             return True
         except Exception as e:
