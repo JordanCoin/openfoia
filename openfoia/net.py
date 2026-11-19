@@ -20,17 +20,22 @@ this module says so rather than claiming "anonymous."
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import contextvars
 import enum
 import logging
 import random
 import secrets
 import socket
 import time
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.parse import quote
 
+import anyio
+import httpcore
 import httpx
 from httpx._utils import get_environment_proxies
 
@@ -126,6 +131,136 @@ class RetryTransport(httpx.AsyncBaseTransport):
         await self._inner.aclose()
 
 
+#: While set (to a resolver), DIRECT requests made through egress_client's own
+#: transport connect only to addresses that resolver vetted. See
+#: public_addresses_only().
+_public_only: contextvars.ContextVar[Callable[[str], list[str]] | None] = contextvars.ContextVar(
+    "openfoia_public_only", default=None
+)
+
+#: The real network backend under the vetting one; a name so tests can swap it.
+_inner_backend_factory: Callable[[], httpcore.AsyncNetworkBackend] = httpcore.AnyIOBackend
+
+
+class UnsafeAddressError(ValueError):
+    """The connect path refused a destination that is not a vetted public address."""
+
+
+@contextlib.contextmanager
+def public_addresses_only(resolve: Callable[[str], list[str]]) -> Iterator[None]:
+    """Within this block, DIRECT connections go only to addresses *resolve* returns.
+
+    *resolve(host)* must return the host's addresses as strings, every one of
+    them checked (e.g. globally routable), or raise ValueError. It runs inside
+    the connect path, and the socket is opened to the address it returned, so
+    the name is looked up once and the answer that was checked is the answer
+    used: a DNS server that answers a public address to an earlier check and
+    127.0.0.1 a moment later (DNS rebinding) cannot redirect the connection.
+    TLS still verifies the certificate against the hostname, and SNI and the
+    Host header still carry it.
+
+    Applies to clients from egress_client() in DIRECT mode that use its own
+    transport. It does not apply in Tor mode (the exit relay resolves the name),
+    to a caller-supplied transport, or to a request sent through an HTTP(S)
+    proxy from the environment (that proxy resolves the name). The value is a
+    context variable, so it covers only the task that set it.
+    """
+    token = _public_only.set(resolve)
+    try:
+        yield
+    finally:
+        _public_only.reset(token)
+
+
+class _VettingBackend(httpcore.AsyncNetworkBackend):
+    """Resolve, vet and connect in one step, to the vetted address only."""
+
+    def __init__(self, resolve: Callable[[str], list[str]]):
+        self._resolve = resolve
+        self._inner = _inner_backend_factory()
+
+    async def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: Any = None,
+    ) -> httpcore.AsyncNetworkStream:
+        try:
+            addresses = await anyio.to_thread.run_sync(self._resolve, host)
+        except ValueError as exc:
+            raise UnsafeAddressError(f"Refusing to connect to {host}: {exc}") from None
+        if not addresses:
+            raise UnsafeAddressError(f"Refusing to connect to {host}: no vetted address")
+        last: Exception | None = None
+        for address in addresses:
+            try:
+                return await self._inner.connect_tcp(
+                    address,
+                    port,
+                    timeout=timeout,
+                    local_address=local_address,
+                    socket_options=socket_options,
+                )
+            except (httpcore.ConnectError, httpcore.ConnectTimeout) as exc:
+                last = exc
+        assert last is not None
+        raise last
+
+    async def connect_unix_socket(
+        self, path: str, timeout: float | None = None, socket_options: Any = None
+    ):
+        raise UnsafeAddressError("Refusing a Unix-socket connection for a public-only request")
+
+    async def sleep(self, seconds: float) -> None:
+        await self._inner.sleep(seconds)
+
+
+def _vetted_transport(resolve: Callable[[str], list[str]]) -> httpx.AsyncHTTPTransport:
+    """An httpx transport whose connections all go through _VettingBackend.
+
+    httpx has no public way to choose the network backend, so the pool it
+    built is replaced by an identical one (default limits, certificate
+    verification against the hostname) that uses the vetting backend.
+    """
+    transport = httpx.AsyncHTTPTransport()
+    transport._pool = httpcore.AsyncConnectionPool(
+        ssl_context=httpx.create_ssl_context(verify=True, trust_env=True),
+        max_connections=100,
+        max_keepalive_connections=20,
+        keepalive_expiry=5.0,
+        network_backend=_VettingBackend(resolve),
+    )
+    return transport
+
+
+class _DirectTransport(httpx.AsyncBaseTransport):
+    """DIRECT-mode transport: plain, or vetted while public_addresses_only() is active.
+
+    Vetted requests use a separate connection pool, so a connection opened
+    earlier without vetting is never reused for them.
+    """
+
+    def __init__(self) -> None:
+        self._plain = httpx.AsyncHTTPTransport()
+        self._vetted: dict[Callable[[str], list[str]], httpx.AsyncHTTPTransport] = {}
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        resolve = _public_only.get()
+        if resolve is None:
+            return await self._plain.handle_async_request(request)
+        transport = self._vetted.get(resolve)
+        if transport is None:
+            transport = self._vetted[resolve] = _vetted_transport(resolve)
+        return await transport.handle_async_request(request)
+
+    async def aclose(self) -> None:
+        await self._plain.aclose()
+        for transport in self._vetted.values():
+            await transport.aclose()
+
+
 class EgressMode(str, enum.Enum):
     DIRECT = "direct"  # clearnet, no proxy (backward-compatible default)
     TOR = "tor"  # route via Tor SOCKS5; FAIL-CLOSED if unavailable
@@ -197,6 +332,7 @@ def egress_client(
       required to send a descriptive UA identifying themselves).
     - Every request goes through RetryTransport (per-host spacing, retries
       for idempotent requests). A caller-supplied *transport* is wrapped too.
+    - DIRECT with its own transport honors public_addresses_only().
     """
     policy = policy or EgressPolicy()
 
@@ -213,9 +349,7 @@ def egress_client(
             for pattern, url in get_environment_proxies().items():
                 inner = httpx.AsyncHTTPTransport(proxy=url) if url else httpx.AsyncHTTPTransport()
                 mounts[pattern] = RetryTransport(inner, policy.max_attempts)
-        default = RetryTransport(
-            caller_transport or httpx.AsyncHTTPTransport(), policy.max_attempts
-        )
+        default = RetryTransport(caller_transport or _DirectTransport(), policy.max_attempts)
         return httpx.AsyncClient(
             transport=default, mounts=mounts, timeout=timeout, headers=merged_headers, **kwargs
         )

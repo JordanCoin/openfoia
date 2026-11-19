@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import ipaddress
 import posixpath
 import re
@@ -13,7 +14,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-from ..net import EgressPolicy, egress_client
+from ..net import EgressPolicy, egress_client, public_addresses_only
 
 #: Names that only ever mean this machine or the local network.
 _LOCAL_NAMES = frozenset({"localhost", "localhost.localdomain", "ip6-localhost", "ip6-loopback"})
@@ -134,6 +135,45 @@ def validate_download_url(url: str) -> str:
 _getaddrinfo = socket.getaddrinfo
 
 
+def public_addresses(host: str) -> list[str]:
+    """Resolve *host* and return its addresses, or raise ValueError unless all are public.
+
+    Refused when the lookup fails or returns nothing, or when any address is
+    internal (loopback, private, link-local, carrier-grade NAT, reserved,
+    multicast, or an IPv4-mapped/NAT64 form of one). An IP literal is checked
+    without a lookup. This is the resolver the download connect path uses
+    (see :func:`openfoia.net.public_addresses_only`), so the addresses it
+    returns are the ones the socket is opened to.
+    """
+    name = normalize_host(host.strip("[]"))
+    try:
+        literal = ipaddress.ip_address(name)
+    except ValueError:
+        literal = None
+    if literal is not None:
+        if not _is_public_ip(literal):
+            raise ValueError(f"{host} is not a public address")
+        return [str(literal)]
+    try:
+        infos = _getaddrinfo(name, None)
+    except (OSError, UnicodeError) as exc:
+        raise ValueError(f"{host} does not resolve ({exc})") from None
+    if not infos:
+        raise ValueError(f"{host} does not resolve")
+    addresses: list[str] = []
+    for info in infos:
+        raw = str(info[4][0]).split("%", 1)[0]
+        try:
+            ip = ipaddress.ip_address(raw)
+        except ValueError:
+            raise ValueError(f"{host} resolved to an unreadable address {raw!r}") from None
+        if not _is_public_ip(ip):
+            raise ValueError(f"{host} resolves to a non-public address ({ip})")
+        if str(ip) not in addresses:
+            addresses.append(str(ip))
+    return addresses
+
+
 def resolves_to_public_address(host: str) -> bool:
     """DNS check that every address *host* resolves to is globally routable.
 
@@ -143,19 +183,25 @@ def resolves_to_public_address(host: str) -> bool:
     when only checking a URL string, and never in Tor mode.
     """
     try:
-        infos = _getaddrinfo(normalize_host(host), None)
-    except (OSError, ValueError, UnicodeError):
+        public_addresses(host)
+    except ValueError:
         return False
-    if not infos:
-        return False
-    for info in infos:
-        try:
-            ip = ipaddress.ip_address(str(info[4][0]).split("%", 1)[0])
-        except ValueError:
-            return False
-        if not _is_public_ip(ip):
-            return False
     return True
+
+
+def public_only_connections(egress: EgressPolicy | None) -> contextlib.AbstractContextManager:
+    """Pin DIRECT connections made in this block to vetted public addresses.
+
+    In DIRECT mode the hostname is resolved once inside the connect path, every
+    address must be public, and the socket goes to an address from that same
+    answer (TLS still verifies the certificate against the hostname), so DNS
+    rebinding between a check and the connection does not work. In Tor mode,
+    or with *egress* None, this does nothing: over Tor the exit relay resolves
+    the name. Covers clients built by egress_client() with its own transport.
+    """
+    if egress is None or egress.is_tor:
+        return contextlib.nullcontext()
+    return public_addresses_only(public_addresses)
 
 
 async def check_download_target(url: str, egress: EgressPolicy | None) -> None:
@@ -169,9 +215,13 @@ async def check_download_target(url: str, egress: EgressPolicy | None) -> None:
     hostname outside Tor, and the name is resolved at the exit relay, whose
     exit policy refuses private and local addresses. Protection against a
     hostname that resolves to an internal address therefore relies on the Tor
-    exit policy in that mode. In either mode this is a check before the
-    request, not a pin: a resolver that answers differently a second later
-    (DNS rebinding) is not stopped by it.
+    exit policy in that mode, and DNS rebinding at the exit is not something
+    OpenFOIA can stop.
+
+    This is a check before the request, not a pin: on its own it does not stop
+    a resolver that answers differently a second later (DNS rebinding). In
+    DIRECT mode the pin is :func:`public_only_connections`, which
+    :func:`download_to_file` applies to the connection itself.
     """
     validate_download_url(url)
     if egress is None or egress.is_tor:
@@ -200,7 +250,13 @@ async def download_to_file(
 
     *url* is checked with :func:`check_download_target` first: pass the
     request's *egress* policy so that in DIRECT mode the hostname must
-    resolve to public addresses (None checks the URL string only). Redirects
+    resolve to public addresses (None checks the URL string only). In DIRECT
+    mode the connection is then made under :func:`public_only_connections`:
+    the name is resolved again inside the connect path and the socket goes to
+    an address from that vetted answer, so a DNS server that changes its answer
+    after the check (rebinding to 127.0.0.1 or the LAN) is refused. That pin
+    needs a client from egress_client() with its own transport; with an
+    HTTP(S) proxy from the environment, the proxy resolves the name. Redirects
     are refused: each one would be a second, unchecked URL.
 
     Returns the number of bytes written.
@@ -217,16 +273,17 @@ async def download_to_file(
     written = 0
 
     try:
-        async with client.stream("GET", url) as response:
-            response.raise_for_status()
-            with open(part, "wb") as f:
-                async for chunk in response.aiter_bytes():
-                    written += len(chunk)
-                    if written > max_bytes:
-                        raise ValueError(
-                            f"Refusing download over {max_bytes} bytes (cap exceeded): {url!r}"
-                        )
-                    f.write(chunk)
+        with public_only_connections(egress):
+            async with client.stream("GET", url) as response:
+                response.raise_for_status()
+                with open(part, "wb") as f:
+                    async for chunk in response.aiter_bytes():
+                        written += len(chunk)
+                        if written > max_bytes:
+                            raise ValueError(
+                                f"Refusing download over {max_bytes} bytes (cap exceeded): {url!r}"
+                            )
+                        f.write(chunk)
         part.replace(dest)
     except BaseException:
         part.unlink(missing_ok=True)
