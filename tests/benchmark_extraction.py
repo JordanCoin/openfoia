@@ -27,7 +27,9 @@ from pathlib import Path
 from openfoia.config import load_config
 from openfoia.graph_template import escape_json_for_script
 from openfoia.pipeline.extract import (
+    NER_MODELS,
     EntityExtractor,
+    Gliner2Adapter,
     _gliner_available,
     _llm_available,
 )
@@ -218,6 +220,294 @@ MULTILINGUAL = [
 ]
 # São Paulo inside the city government's name is also a fair location.
 MULTILINGUAL_ACCEPTABLE = {"location": {"São Paulo", "İstanbul"}}
+
+# News-register sentences in the languages of the mission (#119 follow-up):
+# two per language, each with several entities, in the factual style of an
+# investigative report. MACHINE-WRITTEN: no native speaker has reviewed them
+# (docs/benchmarks/gliner2.md). People are invented; institutions and places
+# are real, and the events are invented and neutral. Gold is the surface form
+# in the text, inflection included (Russian "Газпромбанком", Bengali
+# "ঢাকায়"), because that is the span a reader would mark.
+# (language, sentence, [(type, gold), ...], [(type, also acceptable), ...])
+NEWS = [
+    # tr: The Ankara Metropolitan Municipality gave a 40 million lira tender to
+    # Mehmet Demir's company in 2025.
+    (
+        "tr",
+        "Ankara Büyükşehir Belediyesi, 2025 yılında Mehmet Demir'in şirketine 40 milyon "  # noqa: RUF001
+        "liralık bir ihale verdi.",  # noqa: RUF001
+        [("organization", "Ankara Büyükşehir Belediyesi"), ("person", "Mehmet Demir")],
+        [("location", "Ankara")],
+    ),
+    # tr: According to the Court of Accounts report, Ayşe Kaya signed the
+    # contract for the port project in İzmir.
+    (
+        "tr",
+        "Sayıştay raporuna göre Ayşe Kaya, İzmir'deki liman projesinin sözleşmesini imzaladı.",  # noqa: RUF001
+        [("organization", "Sayıştay"), ("person", "Ayşe Kaya"), ("location", "İzmir")],  # noqa: RUF001
+        [],
+    ),
+    # sw: The Controller and Auditor General said the Ministry of Health spent
+    # two billion shillings in Mombasa.
+    (
+        "sw",
+        "Mkaguzi Mkuu wa Hesabu za Serikali amesema Wizara ya Afya ilitumia shilingi bilioni "
+        "mbili mjini Mombasa.",
+        [("organization", "Wizara ya Afya"), ("location", "Mombasa")],
+        [("organization", "Mkaguzi Mkuu wa Hesabu za Serikali")],
+    ),
+    # sw: Grace Wanjiku, spokeswoman of the Central Bank of Kenya, confirmed the
+    # payments in Nairobi.
+    (
+        "sw",
+        "Grace Wanjiku, msemaji wa Benki Kuu ya Kenya, alithibitisha malipo hayo jijini Nairobi.",
+        [
+            ("person", "Grace Wanjiku"),
+            ("organization", "Benki Kuu ya Kenya"),
+            ("location", "Nairobi"),
+        ],
+        [("location", "Kenya")],
+    ),
+    # pt: The Federal Court of Accounts opened an audit of the contracts signed
+    # by Carlos Almeida in Brasília.
+    (
+        "pt",
+        "O Tribunal de Contas da União abriu uma auditoria sobre os contratos assinados por "
+        "Carlos Almeida em Brasília.",
+        [
+            ("organization", "Tribunal de Contas da União"),
+            ("person", "Carlos Almeida"),
+            ("location", "Brasília"),
+        ],
+        [],
+    ),
+    # pt: According to documents obtained by the reporters, Petrobras paid
+    # R$12 million to Alfa Engenharia S.A. in 2023.
+    (
+        "pt",
+        "Segundo documentos obtidos pela reportagem, a Petrobras pagou R$ 12 milhões à empresa "
+        "Alfa Engenharia S.A. em 2023.",
+        [("organization", "Petrobras"), ("organization", "Alfa Engenharia S.A.")],
+        [],
+    ),
+    # es: The Comptroller General is investigating a contract signed by mayor
+    # Jorge Ramírez in Bogotá.
+    (
+        "es",
+        "La Contraloría General de la República investiga un contrato firmado por el alcalde "
+        "Jorge Ramírez en Bogotá.",
+        [
+            ("organization", "Contraloría General de la República"),
+            ("person", "Jorge Ramírez"),
+            ("location", "Bogotá"),
+        ],
+        [],
+    ),
+    # es: According to the report, Construcciones del Norte S.A. received
+    # 3 million dollars from the Ministry of Public Works.
+    (
+        "es",
+        "Según el informe, la empresa Construcciones del Norte S.A. recibió 3 millones de "
+        "dólares del Ministerio de Obras Públicas.",
+        [
+            ("organization", "Construcciones del Norte S.A."),
+            ("organization", "Ministerio de Obras Públicas"),
+        ],
+        [],
+    ),
+    # ar: The Audit Bureau said Al-Nour Contracting won a five million dinar
+    # contract in Amman.
+    (
+        "ar",
+        "قال ديوان المحاسبة إن شركة النور للمقاولات حصلت على عقد بقيمة خمسة ملايين دينار في عمّان.",
+        [
+            ("organization", "ديوان المحاسبة"),
+            ("organization", "شركة النور للمقاولات"),
+            ("location", "عمّان"),
+        ],
+        [("organization", "النور للمقاولات")],
+    ),
+    # ar: Finance Minister Ahmed Al-Khatib signed the agreement with the World
+    # Bank in Cairo on Tuesday.
+    (
+        "ar",
+        "وقّع وزير المالية أحمد الخطيب الاتفاقية مع البنك الدولي في القاهرة يوم الثلاثاء.",
+        [
+            ("person", "أحمد الخطيب"),
+            ("organization", "البنك الدولي"),
+            ("location", "القاهرة"),
+        ],
+        [("organization", "وزير المالية")],
+    ),
+    # fa: The Supreme Audit Court announced that Pars-Sazeh signed a 200 billion
+    # rial contract with Tehran Municipality.
+    (
+        "fa",
+        "دیوان محاسبات اعلام کرد که شرکت پارس‌سازه قراردادی به ارزش ۲۰۰ میلیارد ریال با "
+        "شهرداری تهران امضا کرده است.",
+        [
+            ("organization", "دیوان محاسبات"),
+            ("organization", "پارس‌سازه"),
+            ("organization", "شهرداری تهران"),
+        ],
+        [("organization", "شرکت پارس‌سازه"), ("location", "تهران")],
+    ),
+    # fa: According to news agencies, Ali Rezaei, deputy oil minister, spoke
+    # with reporters in Isfahan.
+    (
+        "fa",
+        "به گزارش خبرگزاری‌ها، علی رضایی، معاون وزیر نفت، در اصفهان با خبرنگاران گفت‌وگو کرد.",  # noqa: RUF001
+        [("person", "علی رضایی"), ("location", "اصفهان")],
+        [],
+    ),
+    # ru: The Accounts Chamber found violations in the contract that
+    # StroyInvest concluded with the Novosibirsk mayor's office.
+    (
+        "ru",
+        "Счётная палата выявила нарушения в контракте, который компания «СтройИнвест» "
+        "заключила с мэрией Новосибирска.",  # noqa: RUF001
+        [("organization", "Счётная палата"), ("organization", "СтройИнвест")],
+        [("organization", "мэрией Новосибирска"), ("location", "Новосибирска")],
+    ),
+    # ru: Department director Irina Smirnova signed the agreement with
+    # Gazprombank in Moscow.
+    (
+        "ru",
+        "Директор департамента Ирина Смирнова подписала договор с Газпромбанком в Москве.",  # noqa: RUF001
+        [
+            ("person", "Ирина Смирнова"),
+            ("organization", "Газпромбанком"),
+            ("location", "Москве"),
+        ],
+        [],
+    ),
+    # uk: The National Anti-Corruption Bureau of Ukraine served Oleh Kovalenko
+    # with a notice of suspicion over procurement in Kharkiv.
+    (
+        "uk",
+        "Національне антикорупційне бюро України повідомило про підозру Олегу Коваленку "
+        "щодо закупівель у Харкові.",  # noqa: RUF001
+        [
+            ("organization", "Національне антикорупційне бюро України"),
+            ("person", "Олегу Коваленку"),
+            ("location", "Харкові"),
+        ],
+        [("location", "України")],
+    ),
+    # uk: The Ministry of Defence signed a 50 million hryvnia contract with
+    # Tekhnoresurs.
+    (
+        "uk",
+        "Міністерство оборони уклало контракт з компанією «Техноресурс» на 50 мільйонів гривень.",
+        [("organization", "Міністерство оборони"), ("organization", "Техноресурс")],
+        [],
+    ),
+    # hi: The Comptroller and Auditor General said the Municipal Corporation of
+    # Delhi gave Rajesh Kumar's company a contract without a tender.
+    (
+        "hi",
+        "नियंत्रक एवं महालेखा परीक्षक ने कहा कि दिल्ली नगर निगम ने राजेश कुमार की कंपनी को बिना "
+        "निविदा के ठेका दिया।",
+        [
+            ("organization", "नियंत्रक एवं महालेखा परीक्षक"),
+            ("organization", "दिल्ली नगर निगम"),
+            ("person", "राजेश कुमार"),
+        ],
+        [("location", "दिल्ली")],
+    ),
+    # hi: Sunita Sharma met Reserve Bank of India officials in Mumbai.
+    (
+        "hi",
+        "सुनीता शर्मा ने मुंबई में भारतीय रिज़र्व बैंक के अधिकारियों से मुलाकात की।",
+        [
+            ("person", "सुनीता शर्मा"),
+            ("location", "मुंबई"),
+            ("organization", "भारतीय रिज़र्व बैंक"),
+        ],
+        [],
+    ),
+    # bn: The Anti-Corruption Commission said Rahim Uddin had signed a contract
+    # for Chattogram port.
+    (
+        "bn",
+        "দুর্নীতি দমন কমিশন জানিয়েছে, রহিম উদ্দিন চট্টগ্রাম বন্দরের একটি চুক্তিতে স্বাক্ষর করেছিলেন।",
+        [
+            ("organization", "দুর্নীতি দমন কমিশন"),
+            ("person", "রহিম উদ্দিন"),
+            ("location", "চট্টগ্রাম"),
+        ],
+        [("organization", "চট্টগ্রাম বন্দরের")],
+    ),
+    # bn: Bangladesh Bank published new guidelines in Dhaka yesterday.
+    (
+        "bn",
+        "বাংলাদেশ ব্যাংক গতকাল ঢাকায় নতুন নির্দেশনা প্রকাশ করেছে।",
+        [("organization", "বাংলাদেশ ব্যাংক"), ("location", "ঢাকায়")],
+        [("location", "ঢাকা")],
+    ),
+    # zh: The National Audit Office found that Huaxin Construction won three
+    # projects of the Shanghai municipal government in 2023.
+    (
+        "zh",
+        "审计署发现，华信建设公司在2023年获得了上海市政府的三个项目。",  # noqa: RUF001
+        [
+            ("organization", "审计署"),
+            ("organization", "华信建设公司"),
+            ("organization", "上海市政府"),
+        ],
+        [("location", "上海市"), ("location", "上海")],
+    ),
+    # zh: Reporter Li Ming interviewed Ministry of Finance officials in Beijing.
+    (
+        "zh",
+        "记者李明在北京采访了财政部的官员。",
+        [("person", "李明"), ("location", "北京"), ("organization", "财政部")],
+        [],
+    ),
+    # id: The Corruption Eradication Commission detained Budi Santoso over a
+    # toll road project in Surabaya.
+    (
+        "id",
+        "Komisi Pemberantasan Korupsi menahan Budi Santoso terkait proyek jalan tol di Surabaya.",
+        [
+            ("organization", "Komisi Pemberantasan Korupsi"),
+            ("person", "Budi Santoso"),
+            ("location", "Surabaya"),
+        ],
+        [],
+    ),
+    # id: The Audit Board found state losses of Rp5 billion at the Ministry of
+    # Health.
+    (
+        "id",
+        "Badan Pemeriksa Keuangan menemukan kerugian negara sebesar Rp 5 miliar di Kementerian "
+        "Kesehatan.",
+        [("organization", "Badan Pemeriksa Keuangan"), ("organization", "Kementerian Kesehatan")],
+        [],
+    ),
+    # fr: The Court of Audit published a report on the contracts the city of
+    # Marseille awarded to Méditerranée Travaux.
+    (
+        "fr",
+        "La Cour des comptes a publié un rapport sur les marchés attribués par la mairie de "
+        "Marseille à la société Méditerranée Travaux.",
+        [("organization", "Cour des comptes"), ("organization", "Méditerranée Travaux")],
+        [("organization", "mairie de Marseille"), ("location", "Marseille")],
+    ),
+    # fr: According to Le Monde, minister Paul Lefèvre met World Bank
+    # representatives in Dakar.
+    (
+        "fr",
+        "Selon Le Monde, le ministre Paul Lefèvre a rencontré des représentants de la Banque "
+        "mondiale à Dakar.",
+        [
+            ("person", "Paul Lefèvre"),
+            ("organization", "Banque mondiale"),
+            ("location", "Dakar"),
+        ],
+        [("organization", "Le Monde")],
+    ),
+]
 
 
 def _norm(s):
@@ -439,50 +729,34 @@ draw();
 </script></body></html>"""
 
 
-PRODUCTION_MODEL = "urchade/gliner_medium-v2.1"  # what extract._get_gliner loads
-
-
-class Gliner2Adapter:
-    """A GLiNER2 model behind GLiNER's predict_entities, so production windowing,
-    label mapping, scoring and merge run unchanged. Counts errors, which
-    _mentions_from_gliner would otherwise swallow."""
-
-    def __init__(self, model):
-        self.model, self.errors = model, 0
-
-    def predict_entities(self, text, labels, threshold=0.5):
-        try:
-            out = self.model.extract_entities(
-                text, labels, threshold=threshold, include_confidence=True, include_spans=True
-            )
-        except Exception:
-            self.errors += 1
-            raise
-        return [
-            {"text": e["text"], "start": e["start"], "end": e["end"], "label": label}
-            | {"score": e["confidence"]}
-            for label, ents in out["entities"].items()
-            for e in ents
-        ]
+PRODUCTION_MODEL = NER_MODELS["english"].model_id  # the default tier-2 model
+MULTILINGUAL_MODEL = NER_MODELS["multilingual"].model_id  # entities.ner_model = multilingual
 
 
 def load_tier2(model_id, word_splitter=None):
-    """Make *model_id* the model the gliner tier uses."""
+    """Make *model_id* the model the gliner tier uses.
+
+    The two models a user can choose load through the production loaders
+    (offline-first, portable cache, download notice). Other ids load here.
+    """
     from openfoia.pipeline import extract
 
     extract._GLINER_MODEL = None
     if model_id == PRODUCTION_MODEL:
-        return extract._get_gliner()  # the production loader, offline-first
-    if model_id.startswith("fastino/"):
+        return extract._get_gliner()
+    if model_id == MULTILINGUAL_MODEL and not word_splitter:
+        model = extract._get_gliner2()
+    elif model_id.startswith("fastino/"):
         from gliner2 import AutoExtractor
 
         kw = {"word_splitter": word_splitter} if word_splitter else {}
         model = Gliner2Adapter(AutoExtractor.from_pretrained(model_id, map_location="cpu", **kw))
-        extract._gliner_available = lambda: True  # the probe imports `gliner`
     else:
         from gliner import GLiNER
 
         model = GLiNER.from_pretrained(model_id)
+    # The extractors below run with ner_model="english"; this swaps its model.
+    extract._gliner_available = lambda: True  # the probe imports `gliner`
     extract._GLINER_MODEL = model
     return model
 
@@ -507,32 +781,51 @@ def print_prf(scores, strict_scores):
     return ner_micro(scores), ner_micro(strict_scores)
 
 
-def run_multilingual(ext):
-    """Score each MULTILINGUAL sentence as its own document, loose and strict."""
+def run_multilingual(ext, sentences=None, name="Multilingual"):
+    """Score each sentence as its own document, loose and strict.
+
+    *sentences* is MULTILINGUAL (the default) or NEWS. Prints and returns the
+    totals and a per-language breakdown.
+    """
+    sentences = MULTILINGUAL if sentences is None else sentences
     rows, totals = [], {"loose": [0, 0, 0, 0], "strict": [0, 0, 0, 0]}
+    by_lang: dict[str, dict[str, list[int]]] = {}
     start = time.perf_counter()
-    for lang, sentence, gold_pairs in MULTILINGUAL:
+    for lang, sentence, gold_pairs, *rest in sentences:
         gold: dict[str, set[str]] = {}
-        for etype, name in gold_pairs:
-            assert name in sentence, (lang, name)
-            gold.setdefault(etype, set()).add(name)
+        for etype, text in gold_pairs:
+            assert text in sentence, (lang, text)
+            gold.setdefault(etype, set()).add(text)
+        acceptable = {k: set(v) for k, v in MULTILINGUAL_ACCEPTABLE.items()}
+        for etype, text in rest[0] if rest else ():
+            assert text in sentence, (lang, text)
+            acceptable.setdefault(etype, set()).add(text)
         result = asyncio.run(ext.extract(sentence))
         ner = [e for e in result.entities if e.entity_type.value in NER_TYPES]
         row = {
             "lang": lang,
             "got": sorted(f"{e.entity_type.value}:{e.normalized_text}" for e in ner),
         }
+        lang_totals = by_lang.setdefault(lang, {"loose": [0, 0, 0, 0], "strict": [0, 0, 0, 0]})
         for rule in totals:
-            counts = ner_micro(score_types(ner, gold, MULTILINGUAL_ACCEPTABLE, rule == "strict"))
+            counts = ner_micro(score_types(ner, gold, acceptable, rule == "strict"))
             row[rule] = counts["counts"]
             totals[rule] = [a + b for a, b in zip(totals[rule], counts["counts"], strict=True)]
+            lang_totals[rule] = [
+                a + b for a, b in zip(lang_totals[rule], counts["counts"], strict=True)
+            ]
         rows.append(row)
         print(f"    {lang} loose {row['loose']} strict {row['strict']}  {row['got']}")
-    out = {"rows": rows, "s": time.perf_counter() - start}
+    out = {"rows": rows, "s": time.perf_counter() - start, "by_lang": by_lang}
+    for lang, t in by_lang.items():
+        print(
+            f"    {lang}: found {t['loose'][2]}/{t['loose'][3]} loose, "
+            f"{t['strict'][2]}/{t['strict'][3]} strict, fp {t['loose'][1]}/{t['strict'][1]}"
+        )
     for rule, counts in totals.items():
         p, r, f = prf(*counts)
         out[rule] = {"precision": p, "recall": r, "f1": f, "counts": counts}
-        print(f"  Multilingual NER {rule}: P {p:.2f} R {r:.2f} F1 {f:.2f}  {counts}")
+        print(f"  {name} NER {rule}: P {p:.2f} R {r:.2f} F1 {f:.2f}  {counts}")
     return out
 
 
@@ -567,10 +860,17 @@ def main(argv=None):
         help="tier-2 model to run instead of the production one (repeatable); "
         "fastino/* ids load with gliner2, others with gliner",
     )
+    ap.add_argument(
+        "--ner-model",
+        action="append",
+        choices=sorted(NER_MODELS),
+        help="run the tier-2 model a user selects with entities.ner_model, through the "
+        "production selection and loader (repeatable)",
+    )
     ap.add_argument("--repeat", type=int, default=1, help="timed extractions of DOC per backend")
     ap.add_argument("--threads", type=int, help="torch.set_num_threads before loading")
     ap.add_argument("--word-splitter", help="GLiNER2 word splitter, e.g. char")
-    ap.add_argument("--multilingual", action="store_true", help="also score MULTILINGUAL")
+    ap.add_argument("--multilingual", action="store_true", help="also score MULTILINGUAL and NEWS")
     ap.add_argument("--interleave", action="store_true", help="time all --model ids round-robin")
     ap.add_argument("--json", type=Path, help="write the numbers here")
     ap.add_argument("--graph", type=Path, default=Path("test_graph.html"))
@@ -585,9 +885,11 @@ def main(argv=None):
 
     cfg = load_config()
     backends = [("regex", None, None)]
+    # ("gliner", None, "ner_model:<key>") runs EntityExtractor(ner_model=<key>) as is.
+    backends += [("gliner", None, f"ner_model:{k}") for k in args.ner_model or ()]
     if args.model:
         backends += [("gliner", None, m) for m in args.model]
-    else:
+    elif not args.ner_model:
         if _gliner_available():
             backends.append(("gliner", None, PRODUCTION_MODEL))
         if _llm_available(cfg.ai.provider, cfg.ai.api_key, cfg.ai.base_url):
@@ -608,13 +910,21 @@ def main(argv=None):
     report = {"doc_chars": len(DOC), "doc_words": len(DOC.split()), "runs": []}
 
     for backend_name, cfg_override, model_id in backends:
-        ext = EntityExtractor(config=cfg_override, tier=backend_name)
+        ner_key = (
+            model_id.split(":", 1)[1] if model_id and model_id.startswith("ner_model:") else None
+        )
+        ext = EntityExtractor(config=cfg_override, tier=backend_name, ner_model=ner_key)
         row = {"backend": backend_name, "model": model_id}
 
         print(f"--- {backend_name.upper()}{f' {model_id}' if model_id else ''} ---")
         if model_id:
+            from openfoia.pipeline import extract
+
             start = time.perf_counter()
-            load_tier2(model_id, args.word_splitter)
+            if ner_key:
+                extract._get_ner_model(ner_key)  # the production loader
+            else:
+                load_tier2(model_id, args.word_splitter)
             row["load_s"] = time.perf_counter() - start
             print(f"  Load:          {row['load_s']:.1f}s")
         times, cpu = [], []
@@ -668,13 +978,17 @@ def main(argv=None):
         row["entities"] = sorted(
             f"{e.entity_type.value}:{e.normalized_text}" for e in result.entities
         )
+        row["ner_model_ran"] = result.metadata.get("ner_model")
         if args.multilingual:
             print("  Multilingual:")
             row["multilingual"] = run_multilingual(ext)
+            print("  News (machine-written, not reviewed by native speakers):")
+            row["news"] = run_multilingual(ext, NEWS, "News")
         if model_id:
             from openfoia.pipeline import extract
 
-            row["errors"] = getattr(extract._GLINER_MODEL, "errors", 0)
+            loaded = extract._GLINER2_MODEL if ner_key == "multilingual" else extract._GLINER_MODEL
+            row["errors"] = getattr(loaded, "errors", 0)
             if row["errors"]:
                 print(f"  WARNING: {row['errors']} window(s) raised and were skipped")
         report["runs"].append(row)

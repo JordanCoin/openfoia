@@ -18,6 +18,7 @@ import contextlib
 import json
 import math
 import os
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -175,6 +176,22 @@ class GatewayConfig:
     return_address: dict[str, str] = field(default_factory=dict)
 
 
+#: Values of ``entities.ner_model``; pipeline.extract.NER_MODELS maps them to models.
+NER_MODEL_CHOICES = ("english", "multilingual")
+
+
+def normalize_ner_model(value: Any, source: str = "entities.ner_model") -> str:
+    """A valid ``entities.ner_model`` value; anything else warns and keeps "english"."""
+    choice = str(value or "").strip().lower()
+    if choice in NER_MODEL_CHOICES:
+        return choice
+    print(
+        f"Warning: {source}={value!r} is not one of {', '.join(NER_MODEL_CHOICES)}; using english",
+        file=sys.stderr,
+    )
+    return "english"
+
+
 @dataclass
 class EntityConfig:
     """Entity extraction configuration."""
@@ -199,6 +216,13 @@ class EntityConfig:
 
     # Additional prompt instructions for extraction
     extraction_prompt_suffix: str = ""
+
+    # Tier-2 NER model (GLiNER tier), one of NER_MODEL_CHOICES. "english" is
+    # urchade/gliner_medium-v2.1 (extra: ner). "multilingual" is
+    # fastino/gliner2-multi-v1 (extra: ner-multilingual): more names outside
+    # English, about 1 GB more RAM. Env OPENFOIA_NER_MODEL; CLI
+    # `analyze extract --ner-model`. See docs/benchmarks/gliner2.md.
+    ner_model: str = "english"
 
 
 @dataclass
@@ -390,6 +414,8 @@ def _merge_config(config: OpenFOIAConfig, data: dict[str, Any]) -> OpenFOIAConfi
         ent = data["entities"]
         config.entities.custom_types = ent.get("custom_types", [])
         config.entities.extraction_prompt_suffix = ent.get("extraction_prompt_suffix", "")
+        if "ner_model" in ent:
+            config.entities.ner_model = normalize_ner_model(ent["ner_model"])
 
     if "privacy" in data:
         priv = data["privacy"]
@@ -473,6 +499,10 @@ def _apply_env_overrides(config: OpenFOIAConfig, prefix: str) -> OpenFOIAConfig:
                 config.pdf_extract.min_alpha_ratio_threshold = ratio
         except ValueError:
             pass
+
+    # Entity extraction
+    if v := os.environ.get(f"{prefix}NER_MODEL"):
+        config.entities.ner_model = normalize_ner_model(v, f"{prefix}NER_MODEL")
 
     # OCR
     if v := os.environ.get(f"{prefix}OCR_BACKEND"):
@@ -581,6 +611,7 @@ def save_config(config: OpenFOIAConfig, config_path: Path | str | None = None) -
         "entities": {
             "custom_types": config.entities.custom_types,
             "extraction_prompt_suffix": config.entities.extraction_prompt_suffix,
+            "ner_model": config.entities.ner_model,
         },
         "privacy": {
             "browser_default": config.privacy.browser_default,

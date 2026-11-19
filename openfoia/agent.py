@@ -653,7 +653,7 @@ Please contact me if you have questions about this request.
         extractor = EntityExtractor()
         result = await extractor.extract(doc.extracted_text)
 
-        return {
+        out = {
             "document_id": doc_id,
             "entities": [
                 {"type": e.entity_type.value, "text": e.normalized_text, "confidence": e.confidence}
@@ -661,7 +661,13 @@ Please contact me if you have questions about this request.
             ],
             "relationships": result.relationships,
             "total_entities": len(result.entities),
+            "ner_model": result.metadata.get("ner_model"),
         }
+        # The same suggestion the CLI prints, so the agent can pass it on. The
+        # agent cannot act on it: switching models is the user's choice.
+        if hint := result.metadata.get("ner_hint"):
+            out["hint"] = hint
+        return out
 
     async def _build_entity_graph(self, params: dict[str, Any]) -> dict[str, Any]:
         """Build entity graph."""

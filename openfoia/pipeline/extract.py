@@ -518,12 +518,72 @@ def _get_sentence(text: str, pos: int) -> str:
 # ---------------------------------------------------------------------------
 
 _GLINER_MODEL = None
-#: Recorded on each extraction run as the model that produced its entities.
-GLINER_MODEL_ID = "urchade/gliner_medium-v2.1"
+_GLINER2_MODEL = None
+
+
+@dataclass(frozen=True)
+class NerModelSpec:
+    """A tier-2 model the user can choose with ``entities.ner_model``.
+
+    Sizes are measured, not taken from model cards: docs/benchmarks/gliner2.md.
+    """
+
+    key: str  # the entities.ner_model value
+    model_id: str  # Hugging Face repo id, recorded on each extraction run
+    package: str  # import name of the optional extra
+    extra: str  # openfoia install-extras <extra>
+    download: str  # first download, everything the loader fetches
+    ram: str  # peak RSS of a process extracting with it
+
+
+NER_MODELS = {
+    "english": NerModelSpec(
+        key="english",
+        model_id="urchade/gliner_medium-v2.1",
+        package="gliner",
+        extra="ner",
+        download="about 1.6 GB",
+        ram="about 2.0 GB",
+    ),
+    "multilingual": NerModelSpec(
+        key="multilingual",
+        model_id="fastino/gliner2-multi-v1",
+        package="gliner2",
+        extra="ner-multilingual",
+        download="about 1.25 GB",
+        ram="about 3.0 GB",
+    ),
+}
+DEFAULT_NER_MODEL = "english"
+#: The default tier-2 model (kept for callers that predate the choice).
+GLINER_MODEL_ID = NER_MODELS[DEFAULT_NER_MODEL].model_id
+
+
+def _hf_cache_dir() -> str | None:
+    """Keep Hugging Face downloads on the stick in portable mode.
+
+    The CLI does this at startup; the agent, MCP and web entry points do not,
+    so the loaders repeat it before importing huggingface_hub (which reads
+    HF_HOME at import). Returns the hub cache to pass explicitly in portable
+    mode, None otherwise (the library default).
+    """
+    from ..config import confine_caches_to_data_dir, portable_data_dir  # lazy: no cycle
+
+    confine_caches_to_data_dir()
+    if portable_data_dir() is None:
+        return None
+    return os.environ.get("HF_HUB_CACHE") or os.path.join(os.environ["HF_HOME"], "hub")
+
+
+def _download_notice(spec: NerModelSpec) -> str:
+    return (
+        f"{spec.model_id} is not cached; downloading {spec.download} from huggingface.co "
+        "(one time, not through Tor; your IP is visible to Hugging Face)"
+    )
 
 
 def _get_gliner():
-    """Lazily load the GLiNER model (downloads about 1.6 GB on first use).
+    """Lazily load the English GLiNER model (downloads about 1.6 GB on first use).
 
     Loads from the local Hugging Face cache first so a cached model never
     contacts huggingface.co (principle 1). Only if the cache is missing do we
@@ -531,28 +591,94 @@ def _get_gliner():
     """
     global _GLINER_MODEL
     if _GLINER_MODEL is None:
+        _hf_cache_dir()
         from gliner import GLiNER  # optional: ner
         from huggingface_hub import constants as hf_constants  # optional: ner
 
-        model_id = GLINER_MODEL_ID
+        spec = NER_MODELS["english"]
         # ponytail: gliner ignores local_files_only for its tokenizer backbone,
         # so flip the hub-wide offline flag instead of threading kwargs through.
         was_offline = hf_constants.HF_HUB_OFFLINE
         hf_constants.HF_HUB_OFFLINE = True
         try:
-            _GLINER_MODEL = GLiNER.from_pretrained(model_id, local_files_only=True)
+            _GLINER_MODEL = GLiNER.from_pretrained(spec.model_id, local_files_only=True)
         except Exception:
             if was_offline:
                 raise
-            logger.warning(
-                "GLiNER model not cached; downloading about 1.6 GB from huggingface.co "
-                "(one-time; your IP is visible to Hugging Face)"
-            )
+            logger.warning(_download_notice(spec))
             hf_constants.HF_HUB_OFFLINE = False
-            _GLINER_MODEL = GLiNER.from_pretrained(model_id)
+            _GLINER_MODEL = GLiNER.from_pretrained(spec.model_id)
         finally:
             hf_constants.HF_HUB_OFFLINE = was_offline
     return _GLINER_MODEL
+
+
+class Gliner2Adapter:
+    """A GLiNER2 model behind GLiNER's ``predict_entities``.
+
+    The windowing, labels, threshold, label mapping, scoring and merge of the
+    GLiNER tier then run unchanged. ``errors`` counts windows that raised
+    (``_mentions_from_gliner`` skips them).
+    """
+
+    def __init__(self, model: Any):
+        self.model, self.errors = model, 0
+
+    def predict_entities(
+        self, text: str, labels: list[str], threshold: float = 0.5
+    ) -> list[dict[str, Any]]:
+        try:
+            out = self.model.extract_entities(
+                text, labels, threshold=threshold, include_confidence=True, include_spans=True
+            )
+        except Exception:
+            self.errors += 1
+            raise
+        return [
+            {
+                "text": e["text"],
+                "start": e["start"],
+                "end": e["end"],
+                "label": label,
+                "score": e["confidence"],
+            }
+            for label, ents in out["entities"].items()
+            for e in ents
+        ]
+
+
+def _get_gliner2() -> Gliner2Adapter:
+    """Lazily load the multilingual GLiNER2 model (about 1.25 GB on first use).
+
+    Same contract as _get_gliner: the local cache first, and a download only
+    after a warning when the cache is missing (never in HF offline mode).
+    Only the local model is used; gliner2's hosted API client is not.
+    """
+    global _GLINER2_MODEL
+    if _GLINER2_MODEL is None:
+        cache_dir = _hf_cache_dir()
+        from gliner2 import AutoExtractor  # optional: ner-multilingual
+        from huggingface_hub import constants as hf_constants  # optional: ner-multilingual
+
+        spec = NER_MODELS["multilingual"]
+        kwargs: dict[str, Any] = {"map_location": "cpu"}
+        if cache_dir:
+            kwargs["cache_dir"] = cache_dir
+        # The tokenizer is loaded without local_files_only, as in _get_gliner.
+        was_offline = hf_constants.HF_HUB_OFFLINE
+        hf_constants.HF_HUB_OFFLINE = True
+        try:
+            model = AutoExtractor.from_pretrained(spec.model_id, local_files_only=True, **kwargs)
+        except Exception:
+            if was_offline:
+                raise
+            logger.warning(_download_notice(spec))
+            hf_constants.HF_HUB_OFFLINE = False
+            model = AutoExtractor.from_pretrained(spec.model_id, **kwargs)
+        finally:
+            hf_constants.HF_HUB_OFFLINE = was_offline
+        _GLINER2_MODEL = Gliner2Adapter(model)
+    return _GLINER2_MODEL
 
 
 def _gliner_available() -> bool:
@@ -563,6 +689,131 @@ def _gliner_available() -> bool:
         return True
     except ImportError:
         return False
+
+
+def _gliner2_available() -> bool:
+    """Check if the local GLiNER2 runtime is installed (gliner2[local], with torch)."""
+    try:
+        import gliner2  # noqa: F401 - availability probe for the optional extra
+
+        return True
+    except Exception:  # ImportError, or gliner2 installed without its torch stack
+        return False
+
+
+def _ner_model_available(key: str) -> bool:
+    """Is the package for tier-2 model *key* installed? Loads no model."""
+    return _gliner2_available() if key == "multilingual" else _gliner_available()
+
+
+def _get_ner_model(key: str) -> Any:
+    """The loaded tier-2 model for *key* (see NER_MODELS)."""
+    return _get_gliner2() if key == "multilingual" else _get_gliner()
+
+
+# ---------------------------------------------------------------------------
+# "This document is not in English" hint
+# ---------------------------------------------------------------------------
+
+#: Readable names for the first word of unicodedata.name() of a letter.
+_SCRIPT_LABELS = {
+    "CJK": "Han (Chinese/Japanese)",
+    "HIRAGANA": "Japanese kana",
+    "KATAKANA": "Japanese kana",
+    "HANGUL": "Hangul (Korean)",
+}
+#: Frequent English function words, and frequent function words of languages
+#: written in Latin script that the English model handles badly (Spanish,
+#: Portuguese, French, Turkish, Swahili, Indonesian, German, Italian). Words
+#: that are also common English words ("a", "in", "on", "per") are left out.
+_ENGLISH_WORDS = frozenset({
+    "the", "of", "and", "to", "is", "was", "for", "that", "with", "by", "from", "this",
+    "are", "were", "has", "have", "had", "which", "be", "been", "it", "its", "an", "at",
+    "as", "or", "not", "will", "would", "shall", "their", "they", "he", "she", "his", "her",
+})  # fmt: skip
+_OTHER_LATIN_WORDS = frozenset({
+    # es / pt / fr
+    "el", "los", "las", "del", "por", "con", "una", "para", "que", "se", "su", "al",
+    "como", "más", "fue", "entre",
+    "os", "das", "dos", "não", "uma", "com", "ao", "pela", "pelo", "foi", "em", "são", "à",
+    "les", "des", "une", "est", "et", "du", "pour", "dans", "sur", "au", "aux", "qui",
+    "pas", "été", "avec",
+    # tr / sw / id
+    "ve", "bir", "bu", "için", "ile", "olarak", "olan", "gibi", "daha", "çok",
+    "tarafından",  # noqa: RUF001 - Turkish dotless i
+    "na", "ya", "wa", "kwa", "za", "katika", "ni", "kuwa", "cha", "hiyo", "pia",
+    "dan", "yang", "di", "ini", "itu", "dengan", "untuk", "dari", "dalam", "pada",
+    "tidak", "akan", "oleh",
+    # de / it
+    "der", "die", "und", "nicht", "mit", "il", "della", "che", "non", "sono",
+})  # fmt: skip
+_WORD = re.compile(r"[^\W\d_]+")
+#: Below this many letters (wide ones count twice) or words a text is too short to judge.
+_HINT_MIN_LETTERS = 40
+_HINT_MIN_WORDS = 30
+_hint_shown = False
+
+
+def _letter_script(c: str) -> str:
+    if c < "\u0250":  # ASCII, Latin-1, Latin Extended-A/B
+        return "LATIN"
+    name = unicodedata.name(c, "")
+    return name.split(" ", 1)[0] if name else "UNKNOWN"
+
+
+def non_english_reason(text: str) -> str | None:
+    """Why *text* looks like it is not in English, or None.
+
+    Two cheap checks, no model and no network: at least 30% of the letters
+    are in a non-Latin script (Han, kana and hangul count twice, as in
+    _letter_count), or the text is in Latin script but its function words are
+    those of another language rather than English. A heuristic for a hint,
+    not a language identifier.
+    """
+    scripts: Counter[str] = Counter()
+    for c in text:
+        if c.isalpha():
+            scripts[_letter_script(c)] += 2 if _is_wide(c) else 1
+    total = sum(scripts.values())
+    if total < _HINT_MIN_LETTERS:
+        return None
+    other = {k: v for k, v in scripts.items() if k != "LATIN"}
+    if sum(other.values()) >= 0.3 * total:
+        top = max(other, key=lambda k: other[k])
+        return f"is mostly in {_SCRIPT_LABELS.get(top, top.title())} script"
+
+    words = _WORD.findall(text.lower())
+    if len(words) < _HINT_MIN_WORDS:
+        return None
+    english = sum(1 for w in words if w in _ENGLISH_WORDS)
+    foreign = sum(1 for w in words if w in _OTHER_LATIN_WORDS)
+    if foreign >= 0.08 * len(words) and english * 4 < foreign:
+        return "looks like it is not in English"
+    return None
+
+
+def multilingual_hint(text: str, ner_model: str) -> str | None:
+    """The suggestion to switch to the multilingual model, or None.
+
+    Only for the English model, and only text analysis: it never loads,
+    switches or downloads anything.
+    """
+    if ner_model != "english":
+        return None
+    reason = non_english_reason(text)
+    if reason is None:
+        return None
+    english, multi = NER_MODELS["english"], NER_MODELS["multilingual"]
+    return (
+        f"This document {reason}. The English NER model ({english.model_id}) misses "
+        f"many names outside English. The multilingual model ({multi.model_id}) finds "
+        f"more; it downloads {multi.download} once from huggingface.co and uses "
+        f"{multi.ram} of RAM while extracting ({english.ram} for the English one). "
+        f"To use it: openfoia install-extras {multi.extra}, then pass --ner-model "
+        'multilingual, set OPENFOIA_NER_MODEL=multilingual, or put "ner_model": '
+        '"multilingual" under "entities" in config.json. Nothing was switched or '
+        "downloaded. See docs/GUIDE.md, Documents not in English."
+    )
 
 
 #: GLiNER truncates input past 384 words (its own word splitter, below).
@@ -1247,6 +1498,7 @@ class EntityExtractor:
         base_url: str | None = None,
         tier: str | None = None,
         allow_remote: bool | None = None,
+        ner_model: str | None = None,
     ):
         """*tier* forces one backend (see TIERS) instead of the best available.
 
@@ -1256,11 +1508,23 @@ class EntityExtractor:
         *allow_remote* is consent to send text to an LLM that is not on this
         machine (None: config ``ai.allow_remote``). It has no effect in Tor
         mode, where a remote LLM is never used; see remote_llm_refusal.
+
+        *ner_model* picks the tier-2 model, a key of NER_MODELS (None: config
+        ``entities.ner_model``, default "english").
         """
         if tier is not None and tier not in TIERS:
             raise ValueError(f"Unknown tier {tier!r}; choose from {', '.join(TIERS)}")
+        if ner_model is not None and ner_model not in NER_MODELS:
+            raise ValueError(
+                f"Unknown NER model {ner_model!r}; choose from {', '.join(NER_MODELS)}"
+            )
         self.tier = tier
         cfg = config or load_config()
+        self.ner_model = ner_model or getattr(cfg.entities, "ner_model", DEFAULT_NER_MODEL)
+        if self.ner_model not in NER_MODELS:
+            self.ner_model = DEFAULT_NER_MODEL
+        self._ner_fallback_shown = False
+        self._tier2_ran = False
         self.provider = provider or cfg.ai.provider
         self.model = model or cfg.ai.model
         self.api_key = api_key or cfg.ai.api_key
@@ -1298,6 +1562,42 @@ class EntityExtractor:
             self.provider, self.api_key, self.base_url
         )
 
+    @property
+    def ner_spec(self) -> NerModelSpec:
+        return NER_MODELS[self.ner_model]
+
+    @property
+    def ner_model_id(self) -> str:
+        """The Hugging Face id of the configured tier-2 model."""
+        return self.ner_spec.model_id
+
+    def _ner_unavailable_message(self) -> str:
+        spec = self.ner_spec
+        if spec.key == "english":
+            return f"GLiNER is not installed: openfoia install-extras {spec.extra}"
+        return (
+            f"The {spec.key} NER model ({spec.model_id}) is selected, but its package "
+            f"({spec.package}) is not installed: openfoia install-extras {spec.extra}"
+        )
+
+    def _tier2_available(self) -> bool:
+        """Is the configured tier-2 model's package installed? Loads no model.
+
+        A missing multilingual extra is reported once per extractor, and the
+        next tier (spaCy, then regex) is used. The English model stays as
+        before: no message here (the CLI explains the regex-only fallback).
+        """
+        if _ner_model_available(self.ner_model):
+            return True
+        if self.ner_model != DEFAULT_NER_MODEL and not self._ner_fallback_shown:
+            self._ner_fallback_shown = True
+            print(
+                f"{self._ner_unavailable_message()}. Using the next tier (spaCy or "
+                "regex) instead, which finds fewer names outside English.",
+                file=sys.stderr,
+            )
+        return False
+
     def _resolve_backend(self) -> str:
         """Determine which extraction backend to use."""
         if self._backend is not None:
@@ -1313,7 +1613,7 @@ class EntityExtractor:
                     file=sys.stderr,
                 )
             self._backend = "llm"
-        elif _gliner_available():
+        elif self._tier2_available():
             self._backend = "gliner"
         elif _spacy_available():
             self._backend = "spacy"
@@ -1344,9 +1644,11 @@ class EntityExtractor:
         Default: regex + best NER. --ensemble: all NER backends.
         LLM always runs as step 3 validator if available (not as extractor).
         """
+        global _hint_shown
         tier = self.tier
-        if tier == "gliner" and not _gliner_available():
-            raise BackendUnavailableError("GLiNER is not installed: openfoia install-extras ner")
+        self._tier2_ran = False
+        if tier == "gliner" and not _ner_model_available(self.ner_model):
+            raise BackendUnavailableError(self._ner_unavailable_message())
         if tier == "spacy" and not _spacy_available():
             raise BackendUnavailableError(
                 "spaCy or its English model is not installed: openfoia install-extras ner-spacy"
@@ -1368,7 +1670,7 @@ class EntityExtractor:
 
         if ensemble:
             # Run all available NER backends
-            if _gliner_available():
+            if self._tier2_available():
                 all_mentions.extend(
                     await asyncio.to_thread(self._mentions_from_gliner, text, page_numbers)
                 )
@@ -1379,7 +1681,7 @@ class EntityExtractor:
         else:
             # Run best available NER backend alongside regex
             # LLM is NOT here — it runs in Phase 3 as validator
-            if backend in ("gliner", "llm") and _gliner_available():
+            if backend in ("gliner", "llm") and self._tier2_available():
                 all_mentions.extend(
                     await asyncio.to_thread(self._mentions_from_gliner, text, page_numbers)
                 )
@@ -1409,19 +1711,30 @@ class EntityExtractor:
         if llm_available:
             backends_used.append("llm-validator")
 
+        metadata: dict[str, Any] = {
+            "backend": "+".join(backends_used) if backends_used else backend,
+            "backends": backends_used,
+            "total_chars": len(text),
+            "mentions_raw": len(all_mentions),
+            "entities_merged": len(entities),
+            "ensemble": ensemble,
+            "llm_validated": llm_available,
+            # The tier-2 model that actually ran (None when it did not).
+            "ner_model": self.ner_model_id if self._tier2_ran else None,
+        }
+        # A suggestion, not a switch: text analysis only, printed once per process.
+        hint = multilingual_hint(text, self.ner_model) if tier != "regex" else None
+        if hint:
+            metadata["ner_hint"] = hint
+            if not _hint_shown:
+                _hint_shown = True
+                print(hint, file=sys.stderr)
+
         return ExtractionResult(
             entities=entities,
             relationships=relationships,
             summary=self._generate_summary(entities, relationships),
-            metadata={
-                "backend": "+".join(backends_used) if backends_used else backend,
-                "backends": backends_used,
-                "total_chars": len(text),
-                "mentions_raw": len(all_mentions),
-                "entities_merged": len(entities),
-                "ensemble": ensemble,
-                "llm_validated": llm_available,
-            },
+            metadata=metadata,
         )
 
     # ------------------------------------------------------------------
@@ -1985,10 +2298,11 @@ class EntityExtractor:
         return mentions
 
     def _mentions_from_gliner(self, text: str, page_numbers: list[int] | None) -> list[Mention]:
-        """Extract mentions using GLiNER zero-shot NER."""
-        model = _get_gliner()
+        """Extract mentions with the configured tier-2 model (GLiNER or GLiNER2)."""
+        model = _get_ner_model(self.ner_model)
         if model is None:
             return []
+        self._tier2_ran = True
 
         labels = [
             "person",

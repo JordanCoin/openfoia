@@ -55,7 +55,11 @@ def describe_extraction(extractor: Any, metadata: dict[str, Any], ensemble: bool
 
     backends = [b for b in metadata.get("backends", []) if b != "llm-validator"]
     llm = bool(metadata.get("llm_validated"))
-    ner_models = {"gliner": ex.GLINER_MODEL_ID, "spacy": ex.spacy_model_name()}
+    # The tier-2 model that ran: "english" or "multilingual" (entities.ner_model).
+    gliner_model = (
+        metadata.get("ner_model") or getattr(extractor, "ner_model_id", None) or ex.GLINER_MODEL_ID
+    )
+    ner_models = {"gliner": gliner_model, "spacy": ex.spacy_model_name()}
 
     if ensemble:
         backend = "ensemble"

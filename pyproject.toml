@@ -38,6 +38,9 @@ mail = ["lob>=4.0.0"]
 cloud-ai = ["anthropic>=0.18.0", "openai>=1.10.0"]
 # Local NER models
 ner = ["gliner>=0.2.0"]
+# Multilingual NER (entities.ner_model = "multilingual"): GLiNER2 with its
+# local torch runtime. Does not depend on gliner. docs/benchmarks/gliner2.md
+ner-multilingual = ["gliner2[local]>=2.1,<3"]
 ner-spacy = ["spacy>=3.7.0"]
 # Tor routing
 tor = ["socksio>=1.0.0"]
@@ -64,7 +67,7 @@ semantic = ["model2vec>=0.4.0,<1", "sqlite-vec>=0.1.6,<0.2"]
 mcp = ["mcp>=2.0,<3"]
 # Everything
 all = [
-    "openfoia[ocr,fax,mail,cloud-ai,ner,tor,browser,email-files,encryption,semantic,mcp]",
+    "openfoia[ocr,fax,mail,cloud-ai,ner,ner-multilingual,tor,browser,email-files,encryption,semantic,mcp]",
 ]
 # Development
 dev = [
