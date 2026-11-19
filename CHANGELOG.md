@@ -43,13 +43,41 @@ exhaustive lists.
   contacted, and asks for no confirmation; `crossref` uses the file without
   `--opensanctions-data`. `openfoia records opensanctions-data` alone shows
   what is on disk.
+- `records search -s aleph` and `records fetch -s aleph`: OCCRP Aleph (Aleph
+  Pro), company registries, leaks, court records and other datasets as
+  FollowTheMoney entities. `--type` filters by kind (person, company,
+  organization, vessel, document and others) and `-j` by country code; results
+  that do not match a filter are dropped locally, so a filter Aleph ignores
+  never shows unfiltered results. `records fetch <entity id>` stores the
+  entity and its neighbours (directors, owners, linked entities) as a document
+  in the active case and imports them into the entity graph through the
+  FollowTheMoney importer. Needs a personal API key in
+  `OPENFOIA_ALEPH_API_KEY` (environment only): Aleph refused searches without
+  one when checked on 2026-11-19. Accounts are reviewed by OCCRP. The key
+  identifies you to OCCRP, which can link your searches to your account, so it
+  is never sent over Tor and Aleph is skipped in Tor mode. OCCRP's terms allow
+  journalism use only. OpenFOIA limits itself to 30 requests a minute and 500
+  a day (`OPENFOIA_ALEPH_IGNORE_BUDGET=1` lifts this); OCCRP publishes no
+  number.
+- `records search -s companieshouse` and `records fetch -s companieshouse`:
+  UK Companies House companies, officers (`-t officer`), persons with
+  significant control (owners) and filing history. `records fetch <company
+  number>` stores the company with its officers, owners and filings and
+  imports them, with directorships and ownerships, into the entity graph;
+  `officer:<id>` stores one person's appointments. Needs a free API key from a
+  Companies House account in `OPENFOIA_COMPANIES_HOUSE_API_KEY` (environment
+  only). The key belongs to your account and identifies you to Companies
+  House, so it is never sent over Tor and the source is skipped in Tor mode.
+  Requests are counted locally against Companies House's 600 per 5 minutes; a
+  company fetch is 4 requests.
+- `openfoia search` includes both sources when their key is set, and reports
+  them as skipped, with the reason, when it is not or when Tor is on.
 
 ### Changed
 
 - CI and release workflows use `actions/checkout` v7.0.1 and
   `actions/setup-python` v7.1.0 (pinned by commit SHA), which run on Node 24;
   the pinned v4/v5 were on the deprecated Node 20 runtime.
-
 - OpenSanctions API checks use `POST /match/default` (a real match score;
   the name goes in the request body, which OpenSanctions does not log)
   instead of `GET /search/default`, whose URLs it keeps in logs for 90 days

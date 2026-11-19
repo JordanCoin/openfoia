@@ -2065,6 +2065,8 @@ def _doc_source(request_number: str | None) -> str:
         "MUCKROCK": "muckrock",
         "NARA": "nara",
         "CL": "courtlistener",
+        "ALEPH": "aleph",
+        "CH": "companieshouse",
     }.get(prefix, "local")
 
 
@@ -5625,20 +5627,24 @@ def ingest_url(
 #: Search filters only some adapters understand; other sources are skipped
 #: rather than returning unfiltered results under a filtered query.
 _FILTER_SOURCES = {
-    "jurisdiction": ("opencorporates",),
-    "filing_type": ("sec", "federalregister"),
+    "jurisdiction": ("opencorporates", "aleph"),
+    "filing_type": ("sec", "federalregister", "aleph", "companieshouse"),
     "agency": ("federalregister",),
     "since": ("federalregister",),
     "until": ("federalregister",),
     "docket": ("federalregister",),
 }
 #: Sources whose search is paged until the CLI's --limit, with their page-size cap.
-_PAGED_SOURCES = {"documentcloud": 100, "federalregister": 1000}
+_PAGED_SOURCES = {"documentcloud": 100, "federalregister": 1000, "aleph": 50, "companieshouse": 100}
 #: Sources that cannot answer without a personal key: skipped in --all-sources without one.
 _KEYED_SOURCES = {
     "nara": "OPENFOIA_NARA_API_KEY",
     "courtlistener": "OPENFOIA_COURTLISTENER_API_KEY",
+    "aleph": "OPENFOIA_ALEPH_API_KEY",
+    "companieshouse": "OPENFOIA_COMPANIES_HOUSE_API_KEY",
 }
+#: Sources whose adapter reads a personal key and says what sending it reveals.
+_PERSONAL_KEY_SOURCES = ("aleph", "companieshouse")
 
 
 def _courtlistener_note(requests: int = 1) -> str:
@@ -5782,6 +5788,9 @@ def _records_search_all(
         )
     if "courtlistener" in sources and getattr(adapters["courtlistener"], "has_key", False):
         say(f"Note: {query!r} also goes to {_courtlistener_note()}")
+    for keyed in _PERSONAL_KEY_SOURCES:
+        if keyed in sources and getattr(adapters[keyed], "has_key", False):
+            say(f"Note: {keyed} {adapters[keyed].search_notice}")
 
     async def one(source: str):
         for key, owners in _FILTER_SOURCES.items():
@@ -5856,14 +5865,17 @@ def records_search(
         help=(
             "Data source (opencorporates, sec, muckrock, documentcloud, usaspending, "
             "nonprofits, govinfo, fec, regulations, federalregister, cia, nara, courtlistener, "
-            "opensanctions)"
+            "opensanctions, aleph, companieshouse)"
         ),
     ),
     jurisdiction: str | None = typer.Option(
         None,
         "--jurisdiction",
         "-j",
-        help="Jurisdiction filter (e.g. us_ca, gb); courtlistener: court ids (e.g. dcd nysd)",
+        help=(
+            "Jurisdiction filter (e.g. us_ca, gb); courtlistener: court ids (e.g. dcd nysd); "
+            "aleph: country code (e.g. gb, ru)"
+        ),
     ),
     filing_type: str | None = typer.Option(
         None,
@@ -5872,7 +5884,9 @@ def records_search(
         help=(
             "sec: filing type (e.g. 10-K, 8-K). federalregister: document type "
             "(rule, proposed-rule, notice, presidential; comma-separated). courtlistener: "
-            "r dockets (default), rd filings, d dockets only, o opinions"
+            "r dockets (default), rd filings, d dockets only, o opinions. aleph: person, company, "
+            "organization, publicbody, legalentity, vessel, airplane, realestate, document. "
+            "companieshouse: company (default) or officer"
         ),
     ),
     agency: str | None = typer.Option(
@@ -5940,6 +5954,10 @@ def records_search(
       opensanctions   - Sanctions lists, PEPs, crime and debarment lists. Offline from
                         the bulk file when downloaded ('records opensanctions-data
                         --download'), else the API (key: OPENFOIA_OPENSANCTIONS_API_KEY)
+      aleph           - OCCRP Aleph: company registries, leaks, court records, worldwide
+                        (key: OPENFOIA_ALEPH_API_KEY; OCCRP account, journalism only)
+      companieshouse  - UK companies, directors, owners (PSC), filing history
+                        (key: OPENFOIA_COMPANIES_HOUSE_API_KEY; 600 requests / 5 min)
 
     Examples:
         openfoia records search "Acme Corp" --source opencorporates
@@ -5956,6 +5974,8 @@ def records_search(
         openfoia records search "facial recognition" -s federalregister --agency DHS -t rule
         openfoia records search -s federalregister --docket EPA-HQ-OAR-2021-0317
         openfoia records search "Ivar Testerov" -s opensanctions
+        openfoia records search "Acme Holdings" -s aleph -t company -j gb
+        openfoia records search "Jane Smith" -s companieshouse -t officer
     """
     from .config import load_config  # lazy: startup time
     from .records import list_sources  # lazy: startup time
@@ -6012,7 +6032,9 @@ def records_search(
     if source == "courtlistener":
         _courtlistener_key_or_exit(adapter)  # before "Sending": without a key nothing is sent
     if source == "opensanctions":
-        _opensanctions_usable_or_exit(adapter)  # before "Sending": nothing is sent without
+        _opensanctions_usable_or_exit(adapter)  # exits before anything is sent
+    if source in _PERSONAL_KEY_SOURCES:
+        _personal_key_or_exit(adapter)
     if offline:
         _echo(
             f"Searching {source} on this machine ({adapter.local_notice}); nothing is sent.",
@@ -6058,6 +6080,8 @@ def records_search(
         typer.echo(f"Note: sending {query!r} to {_courtlistener_note()}", err=True)
     elif source == "opensanctions" and not offline:
         typer.echo(f"Note: OpenSanctions {adapter.search_notice}", err=True)
+    elif source in _PERSONAL_KEY_SOURCES:
+        typer.echo(f"Note: {source} {adapter.search_notice}", err=True)
 
     try:
         if quiet:
@@ -6236,6 +6260,35 @@ def _print_search_result(
             f"(up to {DOCKET_FETCH_REQUESTS} API requests); a filing's text: rd:<id>; "
             "an opinion: op:<id>[/dim]"
         )
+
+    elif source in _PERSONAL_KEY_SOURCES:
+        # Text cells: upstream strings are never read as Rich markup.
+        table = Table(expand=True)
+        table.add_column("ID", style="dim", width=14, no_wrap=True, overflow="ellipsis")
+        table.add_column("Name", style="cyan", ratio=3)
+        table.add_column("Type", width=12)
+        table.add_column("Where" if source == "aleph" else "Status", width=10)
+        table.add_column("Dataset" if source == "aleph" else "Address", ratio=2)
+        table.add_column("Date", width=10)
+        for e in entities:
+            x = e.extra_data
+            _row(
+                table,
+                next(iter(e.identifiers.values()), "-"),
+                e.name,
+                x.get("schema") or x.get("company_type") or e.entity_type.lower(),
+                (", ".join(x.get("countries") or []) if source == "aleph" else e.status) or "-",
+                (x.get("dataset") if source == "aleph" else x.get("address")) or "-",
+                x.get("date") or x.get("date_of_birth") or "-",
+            )
+        _emit_table(table, csv_path)
+        dropped = (result.raw_response or {}).get("filtered_out_locally")
+        if dropped:
+            rprint(
+                f"[dim]{dropped} result(s) Aleph returned did not match --type/--jurisdiction "
+                "and were dropped here.[/dim]"
+            )
+        rprint(f"\n[dim]Fetch and store a record: openfoia records fetch <ID> -s {source}[/dim]")
 
     elif source == "usaspending":
         table = Table(expand=True)
@@ -6730,6 +6783,15 @@ def records_fetch(
         except ValueError as e:
             rprint(f"[red]{escape(str(e))}[/red]")
             raise typer.Exit(2) from None
+    if source in _PERSONAL_KEY_SOURCES:
+        from .records import aleph, companies_house  # lazy: startup time
+
+        canonical = {"aleph": aleph, "companieshouse": companies_house}[source].canonical_id
+        try:
+            ids = list(dict.fromkeys(canonical(i) for i in ids))
+        except ValueError as e:
+            rprint(f"[red]{escape(str(e))}[/red]")
+            raise typer.Exit(2) from None
     if source == "cia":
         for doc_id in ids:
             _records_fetch_cia(doc_id)
@@ -6752,6 +6814,8 @@ def records_fetch(
         "federalregister": "FR-",
         "courtlistener": "CL-",
         "opensanctions": "OS-",
+        "aleph": "ALEPH-",
+        "companieshouse": "CH-",
     }
     if source == "opensanctions":
         from .records.opensanctions import valid_id  # lazy: startup time
@@ -6777,6 +6841,8 @@ def records_fetch(
         _courtlistener_key_or_exit(adapter)
     if source == "opensanctions":
         _opensanctions_usable_or_exit(adapter)
+    if source in _PERSONAL_KEY_SOURCES:
+        _personal_key_or_exit(adapter)
     if offline:
         typer.echo(
             f"Reading {source} from this machine ({adapter.local_notice}); nothing is sent.",
@@ -6790,6 +6856,8 @@ def records_fetch(
             "lookups use no credits).",
             err=True,
         )
+    if source in _PERSONAL_KEY_SOURCES:
+        typer.echo(f"Note: {source} {adapter.search_notice}", err=True)
     if source == "federalregister":
         typer.echo(
             "Note: each document's details come from www.federalregister.gov and its PDF "
@@ -7032,6 +7100,13 @@ def _opensanctions_usable_or_exit(adapter) -> None:
 
     if adapter.unavailable_reason():
         rprint(f"[red]{TOR_KEY_MESSAGE if adapter.credentials_withheld else NO_KEY_MESSAGE}[/red]")
+        raise typer.Exit(1)
+
+
+def _personal_key_or_exit(adapter) -> None:
+    """Stop before anything is sent when a source that needs a personal key has none."""
+    if not adapter.has_key:
+        rprint(f"[red]{escape(adapter.missing_key_message())}[/red]")
         raise typer.Exit(1)
 
 
