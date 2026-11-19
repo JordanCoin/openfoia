@@ -66,10 +66,10 @@ behavior bumps the major.
    If any step fails, nothing is tagged or published.
 
    Every action in `.github/workflows/` is pinned to a full commit SHA, with
-   the release it came from in a comment (`# v4.4.0`), and no checkout keeps
+   the release it came from in a comment (`# v7.0.1`), and no checkout keeps
    the token in `.git/config` (`persist-credentials: false`). To update an
    action, look up the new tag's commit (`git ls-remote
-   https://github.com/actions/checkout 'refs/tags/v4*'`; for an annotated tag
+   https://github.com/actions/checkout 'refs/tags/v7*'`; for an annotated tag
    take the commit on its `^{}` line) and change the SHA and the comment
    together.
 

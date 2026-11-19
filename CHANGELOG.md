@@ -10,6 +10,12 @@ exhaustive lists.
 
 ## [Unreleased]
 
+### Changed
+
+- CI and release workflows use `actions/checkout` v7.0.1 and
+  `actions/setup-python` v7.1.0 (pinned by commit SHA), which run on Node 24;
+  the pinned v4/v5 were on the deprecated Node 20 runtime.
+
 ## [5.0.0] - 2026-11-18
 
 This release fixes 18 security problems found by an outside audit, one of them
