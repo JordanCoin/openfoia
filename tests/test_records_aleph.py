@@ -133,6 +133,34 @@ def test_filters_map_onto_params_and_are_checked_locally(monkeypatch):
     assert [e.name for e in people.entities] == ["Ivan Petrov"]
 
 
+def _search_body(*results):
+    return {"total": len(results), "results": list(results)}
+
+
+def test_country_typed_properties_beyond_country_count_for_the_local_check(monkeypatch):
+    body = _search_body(
+        {"id": "a1", "schema": "Company", "properties": {"name": ["Acme"], "mainCountry": ["gb"]}},
+        {"id": "b2", "schema": "Person", "properties": {"name": ["Jane"], "birthCountry": ["gb"]}},
+    )
+    serve(monkeypatch, lambda request: httpx.Response(200, json=body))
+    result = asyncio.run(AlephAdapter(api_key="k").search("acme", jurisdiction="gb"))
+    assert [e.name for e in result.entities] == ["Acme", "Jane"]
+    assert result.raw_response["filtered_out_locally"] == 0
+
+
+def test_everything_dropped_by_the_local_check_is_not_shown_as_no_results(monkeypatch):
+    """Aleph answered, the re-check dropped every hit: say so, not a bare "No results"."""
+    body = _search_body(
+        {"id": "a1", "schema": "Company", "properties": {"name": ["Acme"], "country": ["us"]}}
+    )
+    monkeypatch.setenv(al.KEY_ENV, "k")
+    serve(monkeypatch, lambda request: httpx.Response(200, json=body))
+    r = runner.invoke(app, ["records", "search", "acme", "-s", "aleph", "-j", "gb"])
+    out = " ".join(r.output.split())
+    assert "No results found" in out
+    assert "Aleph returned 1 result(s), but none matched --type/--jurisdiction" in out
+
+
 @pytest.mark.parametrize(
     "kwargs, message",
     [({"filing_type": "10-K"}, "Unknown Aleph type"), ({"jurisdiction": "us_ca"}, "country code")],
@@ -215,6 +243,20 @@ def test_cli_search_table_shows_fetchable_ids(monkeypatch):
     assert r.exit_code == 0, r.output
     rows = [json.loads(line) for line in r.stdout.splitlines() if line.startswith("{")]
     assert rows[0]["id"] == COMPANY_ID and rows[0]["source"] == "aleph"
+
+
+def test_cli_search_table_shows_the_whole_id(monkeypatch):
+    """The table's ID is what `records fetch` takes: it may wrap, never be cut."""
+    monkeypatch.setenv(al.KEY_ENV, "k")
+    monkeypatch.setenv("COLUMNS", "100")
+    serve(monkeypatch, routes({"/api/2/entities": fx("search")}))
+    r = runner.invoke(app, ["records", "search", "acme", "-s", "aleph"])
+    assert r.exit_code == 0, r.output
+    cells = "".join(
+        line.split("│")[1].strip() for line in r.output.splitlines() if line.count("│") > 2
+    )
+    assert COMPANY_ID in cells
+    assert "…" not in cells
 
 
 # ---------------------------------------------------------------------------
@@ -373,7 +415,10 @@ def test_cli_fetch_stores_document_and_imports_ftm_graph(monkeypatch):
         links = session.query(entity_links).count()
     assert {"ACME HOLDINGS LIMITED", "Ivan Petrov", "Acme Offshore Ltd"} <= names
     assert links == 2  # Directorship and Ownership
-    assert list((Path(str(al.BUDGET.path().parent)) / "downloads" / "ftm").glob("aleph-*.ftm.json"))
+    # Imported from memory: no plaintext copy of the people and companies on disk.
+    data_dir = Path(str(al.BUDGET.path().parent))
+    leftover = [p for p in data_dir.rglob("*") if p.is_file() and b"Ivan Petrov" in p.read_bytes()]
+    assert [p.name for p in leftover if not p.name.startswith("data.db")] == []
 
 
 # ---------------------------------------------------------------------------

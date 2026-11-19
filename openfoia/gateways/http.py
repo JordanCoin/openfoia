@@ -46,6 +46,12 @@ def _error_text(provider: str, response: httpx.Response) -> str:
     return f"{provider} API error (HTTP {response.status_code})" + (f": {detail}" if detail else "")
 
 
+def _describe(exc: Exception) -> str:
+    """'ReadTimeout' or 'ConnectError: <detail>': some httpx errors stringify to ''."""
+    detail = " ".join(str(exc).split())[:200]
+    return f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
+
+
 async def api_request(
     egress: EgressPolicy,
     provider: str,
@@ -58,21 +64,40 @@ async def api_request(
 ) -> dict[str, Any]:
     """Send one request to a provider API and return its JSON object.
 
-    Raises TorUnavailableError (Tor mode without the SOCKS stack),
-    GatewayAPIError (HTTP error status, redirect, a non-JSON body, or in Tor
-    mode a failure through the proxy) or an httpx transport error (DIRECT). The credentials go in the Authorization header,
-    never in the URL, so they do not appear in error messages.
+    Raises TorUnavailableError (Tor mode without the SOCKS stack) or
+    GatewayAPIError: HTTP error status, redirect, a non-JSON body, no
+    connection (nothing sent), or no answer after the request went out (it may
+    have been accepted; the message says to check before sending again). The
+    credentials go in the Authorization header, never in the URL, so they do
+    not appear in error messages.
     """
     async with egress_client(egress, timeout=API_TIMEOUT, follow_redirects=False) as client:
         try:
             response = await client.request(method, url, auth=auth, data=data, json=json)
-        except (httpx.ConnectError, httpx.ProxyError) as exc:
+        except (
+            httpx.ConnectError,
+            httpx.ConnectTimeout,
+            httpx.PoolTimeout,
+            httpx.ProxyError,
+            httpx.UnsupportedProtocol,
+        ) as exc:
+            # No connection to the provider was made, so the request was not sent.
             if not egress.is_tor:
-                raise
+                raise GatewayAPIError(
+                    f"could not connect to {provider} ({_describe(exc)}). Nothing was sent"
+                ) from exc
             raise GatewayAPIError(
                 f"could not reach {provider} through the Tor SOCKS proxy at "
-                f"{egress.tor_host}:{egress.tor_port} ({type(exc).__name__}: {exc}). "
+                f"{egress.tor_host}:{egress.tor_port} ({_describe(exc)}). "
                 "Nothing was sent directly"
+            ) from exc
+        except httpx.TransportError as exc:
+            # Connected, then lost the answer (read timeout, dropped connection):
+            # the provider may already have accepted the request.
+            raise GatewayAPIError(
+                f"no answer from {provider} after the request was sent ({_describe(exc)}). "
+                f"It may have been accepted: check your {provider} dashboard before sending "
+                "again, or it may be sent (and charged) twice"
             ) from exc
     if response.is_redirect or response.status_code >= 400:
         raise GatewayAPIError(_error_text(provider, response))

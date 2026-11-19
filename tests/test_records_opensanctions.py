@@ -353,6 +353,19 @@ def test_plan_lists_local_source_as_searched_not_contacted(local_file, no_http):
     assert report.statuses[0].status == "ok"
 
 
+def test_local_miss_says_exact_matching_is_not_proof(local_file, no_http):
+    """A sanctions-screening miss offline must not read as a clean result."""
+    r = runner.invoke(app, ["records", "search", "Nobody Here Atall", "-s", "opensanctions"])
+    out = " ".join(r.output.split())
+    assert "No results found" in out
+    assert "no result is not proof the name is not listed" in out
+
+    plan = search_mod.plan_search("Nobody Here Atall", ["opensanctions"], policy=EgressPolicy())
+    report = asyncio.run(search_mod.run_search(plan, allow_network=False, log_to_case=False))
+    (status,) = report.statuses
+    assert status.status == "no_results" and "not proof" in (status.reason or "")
+
+
 def test_api_mode_is_contacted_with_its_notice(monkeypatch):
     monkeypatch.setenv(osx.KEY_ENV, KEY)
     plan = search_mod.plan_search("Acme", ["opensanctions"], policy=EgressPolicy())

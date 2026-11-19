@@ -137,6 +137,60 @@ def test_replaced_page_text_is_not_in_the_database_file(plain_db):
     assert _leftovers(_journal(plain_db)) == []
 
 
+def _next_session() -> None:
+    from openfoia.models import Agency
+
+    with dbmod.get_session() as s:
+        s.query(Agency).count()
+
+
+def test_index_merge_skipped_by_a_kill_is_done_by_the_next_session(plain_db, monkeypatch):
+    """The process dies after the delete commits, before the merge: the next session merges."""
+    with monkeypatch.context() as m:
+        m.setattr(dbmod, "_after_session", lambda engine: None)
+        _seed_and_delete(plain_db)
+    assert _leftovers(plain_db), "precondition: the index still holds the words"
+    _next_session()
+    assert _leftovers(plain_db) == []
+    assert _leftovers(_journal(plain_db)) == []
+    with sqlite3.connect(plain_db) as conn:
+        assert conn.execute("SELECT count(*) FROM fts_merge_pending").fetchone()[0] == 0
+
+
+def test_index_merge_blocked_by_a_busy_database_is_retried(plain_db, monkeypatch):
+    """Another process holds the write lock during the merge: the next session merges."""
+    real = dbmod._after_session
+
+    def locked(engine):
+        other = sqlite3.connect(plain_db, timeout=0.1)
+        other.execute("BEGIN IMMEDIATE")
+        try:
+            real(engine)
+        finally:
+            other.rollback()
+            other.close()
+
+    with monkeypatch.context() as m:
+        m.setattr(dbmod, "_after_session", locked)
+        m.setattr(dbmod, "scrub_rollback_journal", lambda engine, **kw: False)
+        _seed_and_delete(plain_db)
+    assert _leftovers(plain_db), "precondition: the merge could not run"
+    _next_session()
+    assert _leftovers(plain_db) == []
+    assert _leftovers(_journal(plain_db)) == []
+
+
+def test_pending_merge_is_recorded_in_the_deleting_transaction(plain_db, monkeypatch):
+    _next_session()  # clears the row migration 009 leaves for databases it upgrades
+    with sqlite3.connect(plain_db) as conn:
+        assert conn.execute("SELECT id FROM fts_merge_pending").fetchall() == []
+    with monkeypatch.context() as m:
+        m.setattr(dbmod, "_after_session", lambda engine: None)
+        _seed_and_delete(plain_db)
+    with sqlite3.connect(plain_db) as conn:
+        assert conn.execute("SELECT id FROM fts_merge_pending").fetchall() == [(1,)]
+
+
 # --- controls: what each part protects against ---------------------------------
 
 

@@ -421,11 +421,32 @@ async def run_search(
         status.status = OK if kept else NO_RESULTS
         if not kept and status.older_than_since:
             status.reason = f"{status.older_than_since} result(s) older than --since"
+        elif not kept:
+            status.reason = " ".join(empty_result_caveats(source, result)) or None
 
     report = SearchReport(plan.query, plan.egress, since, limit, statuses, rows)
     if log_to_case and searched:
         _log(report)
     return report
+
+
+def empty_result_caveats(source: str, result: Any) -> list[str]:
+    """Why an empty result is not a clean "nothing there" for this source."""
+    raw = result.raw_response or {}
+    notes = []
+    dropped = raw.get("filtered_out_locally")
+    if source == "aleph" and dropped:
+        notes.append(
+            f"Aleph returned {dropped} result(s), but none matched --type/--jurisdiction when "
+            "re-checked here, so all were dropped. Search again without those options to see them."
+        )
+    if source == "opensanctions" and raw.get("mode") == "local":
+        notes.append(
+            "Offline screening matches whole names and aliases exactly (word order and middle "
+            "names matter), so no result is not proof the name is not listed. The API "
+            "(OPENFOIA_OPENSANCTIONS_API_KEY) does fuzzy matching."
+        )
+    return notes
 
 
 def _log(report: SearchReport) -> None:

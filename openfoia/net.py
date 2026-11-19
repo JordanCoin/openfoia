@@ -441,7 +441,8 @@ def egress_client(
         # HTTP(S)_PROXY / ALL_PROXY / NO_PROXY mounts are rebuilt here, wrapped.
         if caller_transport is None and kwargs.get("trust_env", True):
             for pattern, url in get_environment_proxies().items():
-                inner = httpx.AsyncHTTPTransport(proxy=url) if url else httpx.AsyncHTTPTransport()
+                # A NO_PROXY match (url None) connects directly: same pinned transport as default.
+                inner = httpx.AsyncHTTPTransport(proxy=url) if url else _DirectTransport()
                 mounts[pattern] = RetryTransport(inner, policy.max_attempts)
         default = RetryTransport(caller_transport or _DirectTransport(), policy.max_attempts)
         return httpx.AsyncClient(

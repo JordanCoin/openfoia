@@ -5809,6 +5809,10 @@ def _records_search_all(
     for keyed in _PERSONAL_KEY_SOURCES:
         if keyed in sources and getattr(adapters[keyed], "has_key", False):
             say(f"Note: {keyed} {adapters[keyed].search_notice}")
+    if "opensanctions" in sources:
+        notice = getattr(adapters["opensanctions"], "search_notice", None)
+        if notice and getattr(adapters["opensanctions"], "has_key", False):
+            say(f"Note: OpenSanctions {notice}")
 
     async def one(source: str):
         for key, owners in _FILTER_SOURCES.items():
@@ -6176,6 +6180,10 @@ def _print_search_result(
             )
         else:
             rprint(f"[yellow]No results found for '{query}' on {source}.[/yellow]")
+            from .search import empty_result_caveats  # lazy: search imports cli
+
+            for note in empty_result_caveats(source, result):
+                rprint(f"[yellow]{note}[/yellow]")
         if not csv_path:
             return
     else:
@@ -6282,7 +6290,8 @@ def _print_search_result(
     elif source in _PERSONAL_KEY_SOURCES:
         # Text cells: upstream strings are never read as Rich markup.
         table = Table(expand=True)
-        table.add_column("ID", style="dim", width=14, no_wrap=True, overflow="ellipsis")
+        # Folded, never cut: the ID is what `records fetch` takes (Aleph ids run to 40+ chars).
+        table.add_column("ID", style="dim", min_width=14, ratio=2, overflow="fold")
         table.add_column("Name", style="cyan", ratio=3)
         table.add_column("Type", width=12)
         table.add_column("Where" if source == "aleph" else "Status", width=10)

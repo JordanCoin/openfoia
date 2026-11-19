@@ -140,7 +140,7 @@ def test_fresh_database_has_runs_table_and_entity_run_column():
     from openfoia.db import init_db
 
     init_db(seed=False)
-    assert _rows("select version_num from alembic_version") == [("008",)]
+    assert _rows("select version_num from alembic_version") == [("009",)]
     cols = {r[1] for r in _rows("pragma table_info(extraction_runs)")}
     assert {
         "id",
@@ -195,7 +195,7 @@ def test_upgrade_from_007_keeps_entities_without_a_run(data_dir, monkeypatch):
     with dbmod.get_session() as s:
         (ent,) = current_entities(s.query(Entity)).all()
         assert ent.id == "e1" and ent.extraction_run_id is None
-    assert _rows("select version_num from alembic_version") == [("008",)]
+    assert _rows("select version_num from alembic_version") == [("009",)]
 
     # The ADD COLUMN carries a real foreign key with ON DELETE CASCADE.
     run_id = _store("d1", "Ana New", "Bo New")

@@ -158,8 +158,10 @@ subject names or the request still arrive at the destination either way.
    remains:
    - If OpenFOIA is killed between a write and the scrub, or another process
      (such as `openfoia serve`) is writing at that moment, the old content
-     stays in `data.db-journal` until the next session scrubs it.
-     `purge --secure` and `db encrypt` shred it either way.
+     stays in `data.db-journal` until the next session scrubs it, and a
+     deleted page's words stay in the full-text index in `data.db` until the
+     next session merges it (Limitation 6). `purge --secure` and `db encrypt`
+     shred both either way.
    - Overwriting a file in place does not reach copies the storage keeps
      elsewhere: SSD wear-levelling, copy-on-write filesystems (btrfs, ZFS,
      APFS), filesystem journals that log file data, snapshots and backups.
@@ -184,6 +186,11 @@ subject names or the request still arrive at the destination either way.
    their positions (enough to rebuild the text), in older index segments until
    they are merged; after a session that deleted or replaced page text,
    OpenFOIA merges the whole index, which frees and zeroes the old segments.
+   The deleting transaction itself records that a merge is owed (a one-row
+   table, `fts_merge_pending`), and the record is cleared only once a merge
+   succeeds: if OpenFOIA is killed right after a delete, or another process
+   holds the database while the merge is attempted, the words stay in
+   `data.db` until the next OpenFOIA session, which merges first.
    The test suite deletes a document and replaces a document's pages in a
    plaintext database and checks that neither the text nor its words remain in
    the bytes of `data.db` or `data.db-journal`. The cost: about 15% slower
@@ -225,8 +232,10 @@ subject names or the request still arrive at the destination either way.
    made to an address from that same answer, with TLS still verified against
    the host name, so a DNS server that answers a public address to the check
    and 127.0.0.1 to the connection (DNS rebinding) cannot point a download at
-   this machine or your network. Not covered: when an `HTTPS_PROXY` or
-   `ALL_PROXY` from the environment is in use, the proxy resolves the name;
+   this machine or your network. Hosts matched by `NO_PROXY` connect
+   directly and get the same check. Not covered: when an `HTTPS_PROXY` or
+   `ALL_PROXY` from the environment is in use for a host, the proxy resolves
+   the name;
    in Tor mode nothing is resolved locally and the Tor exit's policy is what
    refuses private addresses.
 
